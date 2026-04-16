@@ -1,0 +1,1 @@
+# crypto_ai_trader/collectors/__init__.py
