@@ -12,6 +12,7 @@ from utils.telegram_utils import CALLBACK_QUEUE, send_telegram_alert, _token, _c
 from config import (
     SYMBOLS, POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD,
     DAILY_LOSS_LIMIT_PCT, DRAWDOWN_HALT_PCT, LLM_ENABLED,
+    LIVE_TRADE_ENABLED,
 )
 
 TICK_SECONDS = 1
@@ -32,6 +33,7 @@ class PaperTrader:
         self._drawdown_cb   = DrawdownCircuitBreaker(initial_equity=equity)
 
         self._coordinator = None          # optional; set externally before run()
+        self._binance_client = None       # set by run_live.py when LIVE_TRADE_ENABLED=True
         self._last_regime: Dict[str, str] = {}   # sym → regime string for critique context
 
     # ── equity helpers ─────────────────────────────────────────────────────────
@@ -145,6 +147,30 @@ class PaperTrader:
         except Exception:
             return 0.0
 
+    # ── live order submission ──────────────────────────────────────────────────
+
+    async def _submit_order(self, sym: str, side: str, qty: float) -> None:
+        """Submit a real Binance market order when LIVE_TRADE_ENABLED=True, else no-op."""
+        if not LIVE_TRADE_ENABLED:
+            return
+        if self._binance_client is None:
+            log.error("LIVE_TRADE_ENABLED=True but _binance_client not set — skipping real order",
+                      extra={"symbol": sym, "side": side})
+            return
+        try:
+            await asyncio.wait_for(
+                self._binance_client.create_order(
+                    symbol=sym,
+                    side=side,
+                    type="MARKET",
+                    quantity=round(qty, 6),
+                ),
+                timeout=10.0,
+            )
+            log.info("LIVE ORDER submitted", extra={"symbol": sym, "side": side, "qty": qty})
+        except Exception as exc:  # noqa: BLE001
+            log.error("LIVE ORDER failed: %s", exc, extra={"symbol": sym, "side": side})
+
     # ── order execution ────────────────────────────────────────────────────────
 
     async def _auto_buy(self, sym: str, price: float, atr: float = 0.0,
@@ -170,6 +196,7 @@ class PaperTrader:
         self.cash -= cost
         self.positions[sym] = self.positions.get(sym, 0) + qty
         self.cost_basis[sym] = self.cost_basis.get(sym, 0) + cost
+        await self._submit_order(sym, "BUY", qty)
         log.info("AUTO BUY", extra={
             "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
             "atr": round(atr, 4), "cost": round(cost, 4), "cash": round(self.cash, 4),
@@ -187,6 +214,7 @@ class PaperTrader:
         self.cash     += proceeds
         cost           = self.cost_basis.pop(sym, 0)
         self.realised += proceeds - cost
+        await self._submit_order(sym, "SELL", qty)
         log.info("AUTO SELL", extra={
             "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
             "proceeds": round(proceeds, 4), "pnl": round(proceeds - cost, 4),

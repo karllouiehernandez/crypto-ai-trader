@@ -10,235 +10,45 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-17 (Sprint 13 closed) |
-| **Sprint completed** | Sprint 13 ✅ — committed + pushed to GitHub |
-| **Next sprint** | Sprint 14 — Live Trade Execution Gate (wire LIVE_TRADE_ENABLED into PaperTrader) |
+| **Last updated** | 2026-04-17 (Sprint 14 closed) |
+| **Sprint completed** | Sprint 14 ✅ — committed + pushed to GitHub |
+| **Next sprint** | Sprint 15 — Order Fill Confirmation (confirm Binance fill before updating paper state) |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 13 complete |
+| **Reason for handoff** | Sprint 14 complete |
 
 ---
 
-## Resume Here — Sprint 14: Live Trade Execution Gate
+## Resume Here — Sprint 15: Order Fill Confirmation
 
-**Sprint 13 complete.** Dashboard Promotion Panel is live. 371 tests passing.
+**Sprint 14 complete.** Live Trade Execution Gate is wired. 383 tests passing.
 
-### What was done in Sprint 13
-- `config.py` — added `LIVE_TRADE_ENABLED` flag (default False, read from `.env`)
-- `dashboard/streamlit_app.py` — added "🤖 AI Promotion Gate" sidebar section; queries `Promotion` table; shows Sharpe/MaxDD/PF; warns when `LIVE_TRADE_ENABLED=true`
-- `simulator/coordinator.py` — added `promotion_status() -> dict` public method for dashboard polling
-- `database/promotion_queries.py` — NEW: read-only SQLite helper; connection-safe `try/finally`
-- `tests/test_dashboard_promotion.py` — NEW: 16 unit tests
-- **371 total passing** (+16 from Sprint 13)
+### What was done in Sprint 14
+- `simulator/paper_trader.py` — added `LIVE_TRADE_ENABLED` import; `_binance_client=None` attribute; `_submit_order()` async method with `asyncio.wait_for(timeout=10.0)`; called in `_auto_buy` and `_auto_sell`
+- `run_live.py` — `log` logger added; credentials + `testnet=BINANCE_TESTNET` passed to `AsyncClient.create()`; `try/finally` closes client on exit; startup warning + Telegram alert
+- `tests/test_live_trade_gate.py` — NEW: 12 unit tests
+- **383 total passing** (+12 from Sprint 14)
 
-### Sprint 14 Goal — Live Trade Execution Gate
-Wire `LIVE_TRADE_ENABLED` from `config.py` into `PaperTrader` so that when it is `True`, the bot calls the real Binance `create_order` API instead of simulating fills internally. When `False` (default), nothing changes — paper trading continues as before.
+### Sprint 15 Goal — Order Fill Confirmation
+Currently paper state (cash/positions) is updated **before** the real Binance order is submitted. If the order fails, internal state is ahead of reality. Fix this by submitting the order first and only applying the internal fill after confirmation.
 
----
-
-### Exact changes required
-
-#### 1. `simulator/paper_trader.py`
-
-**Import change** — add `LIVE_TRADE_ENABLED` to the existing config import on line 12:
-```python
-from config import (
-    SYMBOLS, POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD,
-    DAILY_LOSS_LIMIT_PCT, DRAWDOWN_HALT_PCT, LLM_ENABLED,
-    LIVE_TRADE_ENABLED,                          # ← add this
-)
-```
-
-**Add a Binance client attribute** — in `PaperTrader.__init__` (around line 24), add:
-```python
-self._binance_client = None   # set by run_live.py when LIVE_TRADE_ENABLED=True
-```
-
-**Add `_submit_order` helper** — new private method after `_compute_atr`:
-```python
-async def _submit_order(self, sym: str, side: str, qty: float) -> None:
-    """Submit real Binance order when LIVE_TRADE_ENABLED, else no-op (fill already applied)."""
-    if not LIVE_TRADE_ENABLED:
-        return
-    if self._binance_client is None:
-        log.error("LIVE_TRADE_ENABLED=True but _binance_client not set — skipping real order")
-        return
-    try:
-        await self._binance_client.create_order(
-            symbol=sym,
-            side=side,       # "BUY" or "SELL"
-            type="MARKET",
-            quantity=round(qty, 6),
-        )
-        log.info("LIVE ORDER submitted", extra={"symbol": sym, "side": side, "qty": qty})
-    except Exception as exc:
-        log.error("LIVE ORDER failed: %s", exc, extra={"symbol": sym, "side": side})
-```
-
-**Call `_submit_order` from `_auto_buy`** — after the internal fill is applied (after `self.positions[sym] = ...` around line 171), add:
-```python
-await self._submit_order(sym, "BUY", qty)
-```
-
-**Call `_submit_order` from `_auto_sell`** — after `self.cash += proceeds` (around line 188), add:
-```python
-await self._submit_order(sym, "SELL", qty)
-```
-
----
-
-#### 2. `run_live.py`
-
-When building the `PaperTrader`, pass it the Binance async client when live trading is enabled. Find where `PaperTrader()` is instantiated and add:
-
-```python
-from config import LIVE_TRADE_ENABLED
-
-trader = PaperTrader()
-if LIVE_TRADE_ENABLED:
-    trader._binance_client = client   # `client` is the AsyncClient already created in boot()
-    log.warning("=" * 60)
-    log.warning("⚡  LIVE TRADING ENABLED — real orders will be submitted")
-    log.warning("=" * 60)
-    send_telegram_alert(_token(), _chat_id(),
-        "⚡ *LIVE TRADING ENABLED*\nBot is now submitting real Binance orders.")
-```
-
----
-
-#### 3. `tests/test_live_trade_gate.py` — NEW file
-
-Write at minimum these test cases (use `unittest.mock.AsyncMock` for the Binance client):
-
-```python
-# test_live_gate_paper_path:
-#   LIVE_TRADE_ENABLED=False → _submit_order returns without calling binance_client
-#
-# test_live_gate_real_buy:
-#   LIVE_TRADE_ENABLED=True, _binance_client set →
-#   _auto_buy calls _binance_client.create_order with side="BUY"
-#
-# test_live_gate_real_sell:
-#   LIVE_TRADE_ENABLED=True, _binance_client set →
-#   _auto_sell calls _binance_client.create_order with side="SELL"
-#
-# test_live_gate_no_client_logs_error:
-#   LIVE_TRADE_ENABLED=True, _binance_client=None →
-#   _submit_order logs error, does NOT raise
-#
-# test_live_gate_binance_exception_does_not_crash_trader:
-#   LIVE_TRADE_ENABLED=True, create_order raises Exception →
-#   _submit_order logs error, does NOT propagate exception
-```
-
----
+### Scope
+- `simulator/paper_trader.py` — refactor `_auto_buy` and `_auto_sell` to call `_submit_order` first; only update cash/positions/cost_basis if the order succeeds (returns True); log a warning and abort the fill on failure
+- `simulator/paper_trader.py` — change `_submit_order` return type to `bool` (True = submitted OK or paper mode, False = live order failed)
+- `tests/test_live_trade_gate.py` — add tests: fill aborted on order failure, fill applied on order success, paper mode always applies fill
 
 ### Step 1 — Verify baseline
 ```bash
-pytest tests/ -q   # must show 371 passed
+pytest tests/ -q   # must show 383 passed
 ```
 
-### Step 2 — After implementing, run full suite
-```bash
-pytest tests/ -q   # expect 371 + new tests passing
-```
-
-### Step 3 — Sprint close checklist
+### Step 2 — Sprint close checklist
 - [ ] All CRITICAL and HIGH review findings fixed
-- [ ] `knowledge/sprint_log.md` updated with Sprint 14 entry
+- [ ] `knowledge/sprint_log.md` updated with Sprint 15 entry
 - [ ] `HANDOFF.md` Current State table updated
-- [ ] Committed and pushed to GitHub (`git push`)
-- [ ] GitHub issue created and closed for Sprint 14
-
-## Resume Here — Sprint 10: LLM Core Layer
-
-**Sprint 9 complete.** Strategy plugin system is live. 245 tests passing.
-
-### What was done in Sprint 9
-- `strategy/base.py` — `StrategyBase` ABC with `should_long/short + evaluate()` (regime-gated, not overridable)
-- `strategies/loader.py` — hot-reload engine (watchdog file watcher + compile/exec bypass of pyc cache)
-- `strategies/example_rsi_mean_reversion.py` — reference plugin translating existing mean-reversion logic
-- `config.py` — LLM config section (`ANTHROPIC_API_KEY`, `LLM_MODEL`, `LLM_ENABLED`, `LLM_CONFIDENCE_GATE`, `validate_env_llm()`)
-- `requirements.txt` — added `anthropic>=0.25.0`, `watchdog>=4.0.0`
-- `docs/architecture.html` — full system architecture + Jesse-AI comparison document
-- 32 new tests: `test_strategy_base.py` (18) + `test_strategy_loader.py` (14)
-
-### Sprint 10 Goal — `llm/` package
-Build the Claude API wrapper with TTL cache, strategy generator, backtest analyzer, and trade critiquer.
-
-**Key files to create:**
-- `llm/__init__.py`
-- `llm/cache.py` — thread-safe TTL cache (5-min minimum, SHA-256 keyed)
-- `llm/client.py` — Anthropic SDK wrapper, prompt caching, fallback to heuristic
-- `llm/prompts.py` — all 4 system prompt templates as module-level constants
-- `llm/generator.py` — NL → Python strategy, AST validate, write to `strategies/`
-- `llm/analyzer.py` — backtest metrics → JSON (param suggestions + confidence score)
-- `llm/critiquer.py` — trade critique after SELL (GOOD/MEDIOCRE/BAD)
-
-**Pre-requisite:** Add `ANTHROPIC_API_KEY=sk-ant-...` to `.env` (Sprint 10 needs it for integration testing; tests themselves mock the client)
-
-### How to start Sprint 10
-```bash
-# Verify 245 tests still pass
-pytest tests/ -v
-# Check new plugin system works
-python -c "from strategies.loader import list_strategies; print(list_strategies())"
-# Begin Sprint 10: create llm/ package
-```
-
-## Resume Here — Start Paper Trading
-
-**All 8 sprints done. Hummingbot integration complete. Dashboard UX fixed.** The bot is ready to run.
-
-### Pre-Live Checklist Status
-- [x] Credentials in `.env` (Sprint 0)
-- [x] Backtester fixed and validated (Sprint 0)
-- [x] ATR-based position sizing (Sprint 3)
-- [x] Daily loss limit + drawdown circuit breaker (Sprint 3)
-- [x] Test suite passing — 213 tests (Sprint 2+8)
-- [x] Knowledge base initialized (Sprint 1+)
-- [x] Walk-forward validation with acceptance gates (Sprint 8)
-- [x] Hummingbot ScriptStrategy wrapping signal_engine (Hummingbot sprint)
-- [x] Dashboard overlay toggles persist across auto-refresh (UX fix)
-- [ ] **30+ days paper trading with positive Sharpe** — this is the remaining gate
-
-### How to Start Paper Trading (no Docker needed)
-
-**Terminal 1 — the trading bot:**
-```bash
-cd D:\trader\crypto_ai_trader
-python run_live.py
-```
-
-**Terminal 2 — the live dashboard:**
-```bash
-cd D:\trader\crypto_ai_trader
-streamlit run dashboard/streamlit_app.py
-# Open browser: http://localhost:8501
-```
-
-### Dashboard Features (after UX fix)
-- Sidebar overlay checkboxes (Candlesticks, BB, EMA 9/21/55, EMA 200, Trade Markers) — all persist across auto-refresh
-- Live countdown timer `⏱ Auto-refresh in 14s` instead of frozen blank screen
-- Unchecking OHLC switches to a clean line chart (no blank chart)
-- Symbol selector, timeframe buttons, regime badge, RSI/ADX/BB metrics all persist
-
-### Hummingbot (optional — Docker required)
-Docker Desktop needs `HypervisorPlatform` Windows feature enabled + PC restart.
-After Docker works:
-```bash
-cd hummingbot_integration
-docker compose build && docker compose up -d
-docker attach hummingbot_crypto_ai
-# Inside CLI: connect binance_paper_trade → start --script crypto_ai_trader_strategy.py
-```
-
-### Files Changed This Session
-- `dashboard/streamlit_app.py` — overlay checkboxes backed by session_state; countdown timer; line chart fallback
-- `hummingbot_integration/scripts/crypto_ai_trader_strategy.py` — Hummingbot ScriptStrategy
-- `hummingbot_integration/Dockerfile` + `docker-compose.yml` — container setup
-- `hummingbot_integration/conf/connectors/binance_paper_trade.yml.template`
+- [ ] Committed and pushed to GitHub
+- [ ] GitHub issue created and closed for Sprint 15
 
 ---
 
@@ -260,6 +70,7 @@ docker attach hummingbot_crypto_ai
 | Sprint 11 — Self-Learning Loop + KB Integration | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 | Sprint 12 — Live Promotion Coordinator | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 13 — Dashboard Promotion Panel + Live Trade Gate | ✅ CLOSED | Claude Code | 2026-04-17 |
+| Sprint 14 — Live Trade Execution Gate | ✅ CLOSED | Claude Code | 2026-04-17 |
 
 ---
 

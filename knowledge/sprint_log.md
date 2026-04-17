@@ -5,6 +5,40 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 14 — Live Trade Execution Gate
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Agent:** Claude Code
+**Goal:** Wire LIVE_TRADE_ENABLED into PaperTrader so real Binance market orders are submitted when flag is True; paper path completely unchanged when False.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `simulator/paper_trader.py` — MODIFIED: added `LIVE_TRADE_ENABLED` import; `_binance_client=None` attribute on `__init__`; new `_submit_order(sym, side, qty)` async method with `asyncio.wait_for(timeout=10.0)` guard; `_submit_order` called at end of `_auto_buy` and `_auto_sell` after paper state is applied
+- [x] `run_live.py` — MODIFIED: added `log = logging.getLogger(__name__)`; imports `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_TESTNET`; creates `AsyncClient.create(key, secret, testnet=BINANCE_TESTNET)` when flag is True; wraps `asyncio.gather` in `try/finally` to close client on exit; logs startup warning + sends Telegram alert
+- [x] `tests/test_live_trade_gate.py` — NEW: 12 unit tests covering paper path (no Binance call), live BUY/SELL paths, qty rounding, no-client error handling, Binance exception isolation, and integration tests for `_auto_buy`/`_auto_sell` calling `_submit_order`
+
+### Test Results
+- Before: 371 tests passing
+- After: **383 tests passing** (+12 new) — 0 failures
+
+### Key Technical Decisions
+1. **`asyncio.wait_for(timeout=10.0)`**: CLAUDE.md engineering standards mandate a timeout on all Binance API calls. 10s is enough for market orders to confirm while preventing infinite hangs from freezing the trading loop.
+2. **Paper state applied before live order**: Internal state (cash, positions) updated before `_submit_order`. If the real order fails, paper state is ahead of reality — documented as known limitation. The alternative (order-first) requires fill confirmation and is deferred to a future sprint.
+3. **`try/finally` for client close**: `asyncio.gather` runs until CancelledError; `finally` ensures `AsyncClient.close()` is always called to release the underlying aiohttp session.
+4. **Credentials + testnet explicitly passed**: `AsyncClient.create()` receives `BINANCE_API_KEY`, `BINANCE_API_SECRET`, and `testnet=BINANCE_TESTNET` from config — prevents silent use of empty keys or accidental mainnet submission.
+
+### Code Review Outcome
+**Pass 1 result:** APPROVED AFTER FIXES
+- CRITICAL-1: `log` undefined in `run_live.py` — **fixed** (`log = logging.getLogger(__name__)` added)
+- CRITICAL-2: `AsyncClient.create()` missing credentials and testnet flag — **fixed**
+- HIGH-1: AsyncClient never closed — **fixed** (`try/finally` wrapping gather)
+- HIGH-2: No timeout on `create_order` — **fixed** (`asyncio.wait_for(timeout=10.0)`)
+- MEDIUM-4: `_run()` used deprecated `get_event_loop()` — **fixed** (`asyncio.run()`)
+- MEDIUM-1 (state before order): accepted as known limitation, documented above
+- LOWs: accepted as non-blocking
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17
