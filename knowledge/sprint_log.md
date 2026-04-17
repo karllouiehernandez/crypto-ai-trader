@@ -195,16 +195,68 @@ All new logic covered by deterministic controlled-DataFrame tests. Ready for Spr
 ---
 
 ## Sprint 6 — Multi-Strategy Portfolio
-**Date started:** —
-**Goal:** Add momentum and breakout strategies alongside mean reversion
-**Status:** PENDING
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Goal:** Add momentum and breakout strategies alongside mean reversion; route by regime
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `strategy/signal_momentum.py` — new module: `momentum_signal(df)` — EMA9>EMA21>EMA55 stack + ADX>25 + price within 0.5% above EMA-21 pullback + volume ≥ 1.5× avg → BUY; EMA9 crosses below EMA21 → SELL
+- [x] `strategy/signal_breakout.py` — new module: `breakout_signal(df)` — close > prior 20-period high + volume ≥ 2× avg → BUY; close < prior 20-period low (trailing stop) → SELL
+- [x] `strategy/signal_engine.py` — full regime routing: TRENDING→momentum, SQUEEZE→breakout, RANGING→mean-reversion, HIGH_VOL→HOLD; imports wired correctly
+- [x] `strategy/ta_features.py` — `ema_9`, `ema_21`, `ema_55` already added in Sprint 5; no changes needed
+- [x] `config.py` — added `MOMENTUM_PULLBACK_TOL=0.005`, `BREAKOUT_LOOKBACK=20`, `BREAKOUT_VOLUME_MULT=2.0`
+- [x] `tests/test_signal_momentum.py` — 15 unit tests covering BUY (9), SELL (3), HOLD (3) conditions and edge cases
+- [x] `tests/test_signal_breakout.py` — 11 unit tests covering BUY (5), SELL (3), HOLD (3) conditions and edge cases
+- [x] `tests/test_signal_engine.py` — added `TestStrategyRouting` (3 tests, routing via mocks) + `TestStrategyRoutingIntegration` (2 end-to-end tests without mocking strategy functions)
+- [x] `knowledge/parameter_history.md` — documented 3 new Sprint 6 config constants
+- [x] `knowledge/strategy_learnings.md` — updated to reflect multi-strategy routing system
+
+### Code Review (1 pass)
+**Pass 1 result:** APPROVED AFTER FIXES — 0 CRITICAL functional issues; 3 documentation/coverage gaps:
+- CRITICAL-1: `parameter_history.md` missing Sprint 6 params — **fixed**
+- CRITICAL-2: `strategy_learnings.md` still showed Sprint 4 as current strategy — **fixed**
+- CRITICAL-3: Integration tests missing (routing tests only mocked strategy functions) — **fixed** (added `TestStrategyRoutingIntegration`)
+- CRITICAL-4: `HANDOFF.md` not updated to Sprint 7 — **fixed**
+
+### Outcome
+172 tests passing. Signal engine now routes to three distinct strategies based on market regime:
+- RANGING → mean-reversion (RSI+BB+MACD+EMA200+volume)
+- TRENDING → momentum (EMA stack + ADX + pullback + volume)
+- SQUEEZE → breakout (Donchian high/low + volume)
+- HIGH_VOL → HOLD (all strategies halted)
+Ready for Sprint 7.
 
 ---
 
 ## Sprint 7 — Dashboard Fixes + Observability
-**Date started:** —
-**Goal:** Fix broken dashboard imports; add structured logging across all modules
-**Status:** PENDING
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Goal:** Fix broken dashboard imports; add regime status display; structured logging across all modules
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/streamlit_app.py` — fixed broken `from crypto_ai_trader.config import` → `from config import`; removed duplicate `add_indicators` (was re-implementing strategy.ta_features); imports `add_indicators` from `strategy.ta_features` and `detect_regime` from `strategy.regime`; added regime badge + active-strategy name in sidebar; added RSI/ADX/BB-width live metrics; added EMA-9/21/55 lines to price chart; added ADX chart (3rd column); colored BUY/SELL trade markers (green/red); all chart creation guarded with `if not df.empty:` to prevent crashes on fresh DB
+- [x] `strategy/signal_engine.py` — added `log = logging.getLogger(__name__)`; logs HIGH_VOL halt and all non-HOLD signals with structured extra fields: symbol, signal, regime, price, rsi, adx; `_log_signal()` helper function
+- [x] `simulator/paper_trader.py` — replaced module-level `logging.basicConfig` with `log = logging.getLogger(__name__)`; BUY log now includes qty, price, atr, cost, cash; SELL log includes qty, price, proceeds, pnl, cash; halt warnings include reason field
+- [x] `collectors/live_streamer.py` — removed `logging.basicConfig` (now configured centrally by entry point); added `log = logging.getLogger(__name__)`; stream error logs use structured extra fields (symbol, error, retry_in_s); Telegram error uses log.error; startup/stop use module logger
+- [x] `backtester/engine.py` — removed `logging.basicConfig`; added `log = logging.getLogger(__name__)`; backtest result log includes symbol, final_equity, pnl_pct as structured extra fields
+- [x] `run_live.py` — added `logging.basicConfig` as the single root logger configuration; format includes `%(name)s` for module-level filtering
+
+### Code Review (1 pass)
+**Pass 1 result:** APPROVED AFTER FIXES — 1 CRITICAL, 1 MEDIUM found
+- CRITICAL: Dashboard crashed with empty DataFrame (fresh DB) — all chart sections now guarded with `if not df.empty:` checks; empty state shows "No data available" annotation
+- MEDIUM: Multiple `logging.basicConfig()` calls in library modules — **fixed**: removed from `live_streamer.py`, `backtester/engine.py`; only `run_live.py` (entry point) configures root logger
+
+### Outcome
+172 tests passing. Dashboard now:
+- Loads without import errors (fixed `crypto_ai_trader.config` → `config`)
+- Shows live regime badge (🔵/🟢/🟡/🔴) + active strategy name
+- Displays RSI-14, ADX-14, BB-Width as sidebar metrics
+- Renders EMA-9/21/55 lines alongside SMA-21/55
+- Shows 3-column layout: MACD | RSI | ADX
+- Handles empty database gracefully with fallback annotation
+All modules now use `logging.getLogger(__name__)` for consistent structured logging. `run_live.py` is the sole root logger configurator. Ready for Sprint 8.
 
 ---
 

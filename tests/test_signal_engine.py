@@ -14,7 +14,8 @@ import pandas as pd
 import pytest
 
 from database.models import Candle
-from strategy.signal_engine import Signal, compute_signal
+from strategy.signal_engine import compute_signal
+from strategy.signals import Signal
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ def _controlled_indicator_df(last_row: dict, prev_row: dict, n: int = 5) -> pd.D
         "ma_21": 100.0, "ma_55": 100.0, "rsi_14": 50.0,
         "bb_hi": 105.0, "bb_lo": 95.0, "bb_width": 0.05,
         "macd": 0.0, "macd_s": 0.0,
+        "ema_9": 100.0, "ema_21": 100.0, "ema_55": 100.0,
         "ema_200": 100.0, "volume_ma_20": 500.0,
         "adx_14": 15.0,   # RANGING by default so signal tests aren't blocked by regime
     }
@@ -506,3 +508,122 @@ class TestRegimeGate:
              patch("strategy.signal_engine.detect_regime", return_value=Regime.RANGING):
             sig = compute_signal(session, candles[-1])
         assert sig == Signal.SELL
+
+
+# ── strategy routing by regime ─────────────────────────────────────────────────
+
+class TestStrategyRouting:
+    """Verify compute_signal routes to the correct strategy function by regime."""
+
+    def test_trending_regime_calls_momentum_signal(self):
+        """TRENDING regime → momentum_signal() is called and its result returned."""
+        from strategy.regime import Regime
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row={}, last_row={"adx_14": 30.0},
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.TRENDING), \
+             patch("strategy.signal_engine.momentum_signal", return_value=Signal.BUY) as mock_mom:
+            sig = compute_signal(session, candles[-1])
+        mock_mom.assert_called_once()
+        assert sig == Signal.BUY
+
+    def test_squeeze_regime_calls_breakout_signal(self):
+        """SQUEEZE regime → breakout_signal() is called and its result returned."""
+        from strategy.regime import Regime
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row={}, last_row={},
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.SQUEEZE), \
+             patch("strategy.signal_engine.breakout_signal", return_value=Signal.BUY) as mock_bo:
+            sig = compute_signal(session, candles[-1])
+        mock_bo.assert_called_once()
+        assert sig == Signal.BUY
+
+    def test_high_vol_never_calls_strategy(self):
+        """HIGH_VOL regime → no strategy function is called, returns HOLD immediately."""
+        from strategy.regime import Regime
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(prev_row={}, last_row={})
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.HIGH_VOL), \
+             patch("strategy.signal_engine.momentum_signal") as mock_mom, \
+             patch("strategy.signal_engine.breakout_signal") as mock_bo:
+            sig = compute_signal(session, candles[-1])
+        mock_mom.assert_not_called()
+        mock_bo.assert_not_called()
+        assert sig == Signal.HOLD
+
+
+# ── strategy routing integration (no mocking of strategy functions) ────────────
+
+class TestStrategyRoutingIntegration:
+    """End-to-end tests: compute_signal routes to real strategy logic without mocking
+    momentum_signal or breakout_signal. Verifies the full call chain fires correctly."""
+
+    def test_trending_regime_buy_via_momentum(self):
+        """TRENDING + full momentum BUY conditions → BUY returned from momentum_signal."""
+        from strategy.regime import Regime
+        from config import ADX_TREND_THRESHOLD, MOMENTUM_PULLBACK_TOL, VOLUME_CONFIRMATION_MULT
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row={},
+            last_row={
+                "ema_9": 105.0, "ema_21": 100.0, "ema_55": 95.0,
+                "adx_14": float(ADX_TREND_THRESHOLD) + 5.0,
+                "close": 100.3,   # 0.3% above EMA21 — within MOMENTUM_PULLBACK_TOL
+                "volume": VOLUME_CONFIRMATION_MULT * 500.0 + 1.0,
+                "volume_ma_20": 500.0,
+            },
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.TRENDING):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.BUY
+
+    def test_squeeze_regime_buy_via_breakout(self):
+        """SQUEEZE + breakout conditions → BUY returned from breakout_signal."""
+        from strategy.regime import Regime
+        from config import BREAKOUT_LOOKBACK, BREAKOUT_VOLUME_MULT
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+
+        # Build a DataFrame with enough rows for breakout: last close > prior N-period high
+        n = BREAKOUT_LOOKBACK + 5
+        idx = pd.date_range("2024-01-01", periods=n, freq="1min")
+        closes = np.ones(n) * 100.0
+        highs  = closes + 1.0         # prior highs at 101
+        lows   = closes - 1.0
+        closes[-1] = 102.5            # last close breaks above prior high of 101
+        highs[-1]  = 103.0
+        volume_ma_20 = 500.0
+        last_volume  = BREAKOUT_VOLUME_MULT * volume_ma_20 + 1.0
+        volumes = np.full(n, 500.0)
+        volumes[-1] = last_volume
+
+        controlled = pd.DataFrame({
+            "open": closes, "high": highs, "low": lows, "close": closes,
+            "volume": volumes, "volume_ma_20": np.full(n, volume_ma_20),
+            "ma_21": 100.0, "ma_55": 100.0, "rsi_14": 50.0,
+            "bb_hi": 105.0, "bb_lo": 95.0, "bb_width": 0.05,
+            "macd": 0.0, "macd_s": 0.0,
+            "ema_9": 100.0, "ema_21": 100.0, "ema_55": 100.0,
+            "ema_200": 100.0, "adx_14": 15.0,
+        }, index=idx)
+
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.SQUEEZE):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.BUY

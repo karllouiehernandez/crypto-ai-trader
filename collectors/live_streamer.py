@@ -42,8 +42,8 @@ except ImportError:  # user might be running script *inside* package dir
 
 from database.models import Candle, SessionLocal, init_db
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s | %(levelname)s | %(message)s")
+log = logging.getLogger(__name__)
+
 
 def safe_telegram(msg: str):
     """Send `msg` if global alerts are enabled; swallow/log failures."""
@@ -52,7 +52,7 @@ def safe_telegram(msg: str):
     try:
         send_telegram_alert(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
     except Exception as e:  # pragma: no cover – network error logging only
-        logging.error(f"Telegram send failed: {e}")
+        log.error("Telegram send failed", extra={"error": str(e)})
 
 
 async def stream_symbol(sym: str, client: AsyncClient, retry: int = 0) -> None:
@@ -88,7 +88,7 @@ async def stream_symbol(sym: str, client: AsyncClient, retry: int = 0) -> None:
             retry = 0  # reset back‑off on success
         except Exception as exc:
             wait = min(60, 2 ** retry)    # exponential back‑off, max 60 s
-            logging.warning(f"{sym} stream error: {exc} – retrying in {wait}s")
+            log.warning("stream error", extra={"symbol": sym, "error": str(exc), "retry_in_s": wait})
             retry += 1
             await asyncio.sleep(wait)
             continue
@@ -99,7 +99,7 @@ async def stream_symbol(sym: str, client: AsyncClient, retry: int = 0) -> None:
 async def main() -> None:
     """Spin up one task per symbol, send Telegram startup ping, then wait."""
     init_db()
-    logging.info("try TELEGRAM")
+    log.info("try TELEGRAM")
 
     safe_telegram("✅ Live streamer started – Telegram OK")
 
@@ -117,4 +117,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.info("Live streamer stopped by user")
+        log.info("Live streamer stopped by user")

@@ -5,40 +5,43 @@ Update this file after every backtest and after every paper trading session.
 
 ---
 
-## Current Strategy — Sprint 4 (2026-04-17)
+## Current Strategy — Sprint 6 (2026-04-17)
 
-**Name:** 3-condition mean reversion
-**Location:** `strategy/signal_engine.py`
+**Name:** Multi-strategy portfolio with regime routing
+**Location:** `strategy/signal_engine.py`, `strategy/signal_momentum.py`, `strategy/signal_breakout.py`
 **Status:** ACTIVE (paper trading)
 
-**Buy signal:**
-- RSI-14 < 35 (oversold — note: standard threshold is 30, ours is slightly loose)
-- Close price < Bollinger Band lower band (BB-20)
-- MACD line crosses above signal line (bullish crossover on current vs prior candle)
-- Close price > EMA-200 (trend filter — uptrend required for long entries)
-- Entry candle volume >= 1.5× 20-period volume average (volume confirmation)
+**Regime routing (priority: HIGH_VOL > SQUEEZE > TRENDING > RANGING):**
+- HIGH_VOL → HOLD immediately (no strategy fires)
+- SQUEEZE → breakout strategy
+- TRENDING → momentum strategy
+- RANGING → mean-reversion strategy
 
-**Sell signal:**
-- RSI-14 > 70 (overbought)
-- Close price > Bollinger Band upper band
-- MACD line crosses below signal line (bearish crossover)
-- Close price < EMA-200 (trend filter — downtrend required for short entries)
-- Entry candle volume >= 1.5× 20-period volume average (volume confirmation)
+**Mean-reversion (RANGING regime):**
+- Buy: RSI-14 < 35 + close < BB-lower + MACD bullish crossover + close > EMA-200 + volume ≥ 1.5× avg
+- Sell: RSI-14 > 70 + close > BB-upper + MACD bearish crossover + close < EMA-200 + volume ≥ 1.5× avg
 
-**Otherwise:** HOLD
+**Momentum (TRENDING regime — ADX > 25):**
+- Buy: EMA9 > EMA21 > EMA55 (stack) + ADX > 25 + close within 0.5% above EMA-21 (pullback) + volume ≥ 1.5× avg
+- Sell: EMA9 crosses below EMA21 (momentum reversal crossover)
 
-**Regime gate (Sprint 5):**
-- Mean-reversion BUY/SELL only fires when `detect_regime(df) == RANGING`
-- HIGH_VOL regime halts all signals immediately (highest priority)
-- SQUEEZE and TRENDING regimes also suppress mean-reversion (return HOLD)
-- Regime priority: HIGH_VOL > SQUEEZE > TRENDING > RANGING
+**Breakout (SQUEEZE regime — BB width below 20th percentile):**
+- Buy: close breaks above prior 20-period high + volume ≥ 2× avg
+- Sell: close falls below prior 20-period low (trailing stop, no volume confirmation)
+
+**Regime gate:**
+- HIGH_VOL: recent realized vol > 2× prior-window baseline → halt all signals
+- SQUEEZE: BB width below 20th percentile of available history → breakout watch
+- TRENDING: ADX > 25 → momentum strategy active
+- RANGING: ADX ≤ 25 → mean-reversion active (default)
 
 **Known weaknesses:**
-1. All conditions must fire simultaneously — very rare, may miss many valid entries
-2. EMA-200 runs on 1m candles (3.3h context) not 1h candles (8.3d context) as specified — see `parameter_history.md` 2026-04-17 for design rationale; proper 1h EMA-200 deferred to Sprint 6+
-3. No multi-timeframe confirmation (1m+5m+15m) — deferred from Sprint 4; requires separate data feeds; target Sprint 6+
+1. All mean-reversion conditions must fire simultaneously — very rare, may miss many valid entries
+2. EMA-200 runs on 1m candles (3.3h context) not 1h candles (8.3d context) as specified — see `parameter_history.md` 2026-04-17 for design rationale; proper 1h EMA-200 deferred to later sprint
+3. No multi-timeframe confirmation (1m+5m+15m) — deferred from Sprint 4; requires separate data feeds; target later sprint
 4. HIGH_VOL short window is 10 1m-candles (prototype); production spec is 30-day baseline — deferred to later sprint
 5. Minimum 210 candles required — ~3.5h wait before any signal can fire
+6. Momentum strategy uses same 1m EMA-9/21/55 (short context); true momentum needs 1h+ data
 
 **Backtest results:** None yet (backtester was broken at project start — fixed in Sprint 0)
 
@@ -48,14 +51,15 @@ Update this file after every backtest and after every paper trading session.
 
 ## Planned Improvements (by sprint)
 
-| Sprint | Improvement | Expected Impact |
-|--------|-------------|-----------------|
-| 4 | Add 200 EMA trend filter | Reduce losing trades in trending markets by ~40% |
-| 4 | Multi-timeframe confirmation (1m+5m+15m) | Reduce false signals |
-| 4 | Volume confirmation (1.5× avg) | Filter low-conviction entries |
-| 5 | Regime detection (ADX gate) | Only use mean reversion when ADX < 20 |
-| 6 | Add momentum strategy (EMA crossover) | Capture trending regime alpha |
-| 6 | Add volatility squeeze strategy | Capture pre-breakout compression plays |
+| Sprint | Improvement | Expected Impact | Status |
+|--------|-------------|-----------------|--------|
+| 4 | Add 200 EMA trend filter | Reduce losing trades in trending markets by ~40% | ✅ Done |
+| 4 | Volume confirmation (1.5× avg) | Filter low-conviction entries | ✅ Done |
+| 5 | Regime detection (ADX gate) | Only use mean reversion when ADX < 20 | ✅ Done |
+| 6 | Add momentum strategy (EMA crossover) | Capture trending regime alpha | ✅ Done |
+| 6 | Add volatility squeeze / breakout strategy | Capture pre-breakout compression plays | ✅ Done |
+| 7 | Dashboard observability | Monitor regime + signal distribution in real time | PENDING |
+| 8 | Multi-timeframe 1h+ data feed | Proper EMA-200 context + better regime detection | PENDING |
 
 ---
 

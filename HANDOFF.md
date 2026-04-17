@@ -9,35 +9,35 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-17 (Sprint 5) |
-| **Sprint completed** | Sprint 5 ✅ |
-| **Next sprint** | Sprint 6 |
+| **Last active agent** | GitHub Copilot |
+| **Last updated** | 2026-04-17 (Sprint 7) |
+| **Sprint completed** | Sprint 7 ✅ |
+| **Next sprint** | Sprint 8 |
 | **Blocking issues** | None |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 4 complete |
+| **Reason for handoff** | Sprint 7 complete |
 
 ---
 
-## Resume Here — Sprint 6
+## Resume Here — Sprint 8
 
-**GitHub issue:** https://github.com/karllouiehernandez/crypto-ai-trader/issues/7
+**GitHub issue:** https://github.com/karllouiehernandez/crypto-ai-trader/issues/9
 
-**Goal:** Multi-strategy portfolio — add momentum and breakout strategies alongside mean reversion.
+**Goal:** Backtesting rigor — walk-forward validation; slippage modeling; Sharpe/DD/profit-factor acceptance gates.
 
 **Acceptance criteria:**
-- `strategy/signal_momentum.py` — EMA9>EMA21>EMA55 + ADX>25 + pullback-to-EMA21 momentum signal; active when regime == TRENDING
-- `strategy/signal_breakout.py` — close above 20-period high + volume 2× avg breakout signal; active when regime == SQUEEZE
-- `strategy/signal_engine.py` — route to appropriate strategy based on regime (RANGING→mean reversion, TRENDING→momentum, SQUEEZE→breakout, HIGH_VOL→HOLD)
-- `strategy/ta_features.py` — add `ema_9`, `ema_21`, `ema_55` columns
-- `config.py` — add `BREAKOUT_VOLUME_MULT=2.0`, `BREAKOUT_LOOKBACK=20`
-- `tests/test_signal_momentum.py`, `tests/test_signal_breakout.py` — unit tests for new strategies
+- `backtester/engine.py` — add slippage (0.05–0.1% per fill) alongside `FEE_RATE`; add `SLIPPAGE_PCT` to `config.py`
+- `backtester/walk_forward.py` — new module: rolling 3-month windows (70% train / 30% OOS); returns per-window metrics
+- `backtester/metrics.py` — new module: `sharpe_ratio()`, `max_drawdown()`, `profit_factor()`, `acceptance_gate()` (Sharpe > 1.5, max_dd < 20%, PF > 1.5, min 200 trades)
+- `run_backtest.py` — run walk-forward by default; print summary table; fail with exit code 1 if acceptance gate not met
+- `tests/test_metrics.py`, `tests/test_walk_forward.py` — unit tests
 - `knowledge/sprint_log.md`, `HANDOFF.md`
 
 **Context from prior sprints:**
-- `detect_regime()` in `strategy/regime.py` is already wired; just route to new strategies
-- Multi-timeframe confirmation still deferred — see `parameter_history.md`
+- `backtester/engine.py` now has module-level `log = logging.getLogger(__name__)` (Sprint 7)
+- `config.py` has `FEE_RATE=0.001`; add `SLIPPAGE_PCT` alongside it
+- `run_backtest.py` currently calls `run_backtest()` from `backtester.engine` directly
 
 ---
 
@@ -51,6 +51,8 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Sprint 3 — Risk management overhaul | ✅ CLOSED | GitHub Copilot | 2026-04-16 |
 | Sprint 4 — Signal quality improvements | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 5 — Regime detection | ✅ CLOSED | Claude Code | 2026-04-17 |
+| Sprint 6 — Multi-strategy portfolio | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
+| Sprint 7 — Dashboard fixes + observability | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 
 ---
 

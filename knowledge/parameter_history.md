@@ -105,6 +105,36 @@ Initial parameter snapshot from `config.py` at project start. No changes have be
 
 ---
 
+## 2026-04-17 — MOMENTUM_PULLBACK_TOL (new parameter)
+**Old value:** N/A
+**New value:** 0.005 (via `config.MOMENTUM_PULLBACK_TOL`)
+**Reason:** Momentum BUY fires when price has pulled back to within 0.5% above EMA-21. Larger tolerance risks chasing extended moves; smaller tolerance makes entries too rare. 0.5% balances trade frequency with entry quality.
+**Expected effect:** Filters momentum entries to only true pullbacks to EMA-21 support, reducing chasing-extended-move losses.
+**Sprint:** Sprint 6
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-17 — BREAKOUT_LOOKBACK (new parameter)
+**Old value:** N/A
+**New value:** 20 (via `config.BREAKOUT_LOOKBACK`)
+**Reason:** Scans the prior 20 candles for the resistance/support high/low. Aligns with the standard 20-period Donchian channel used in breakout systems. Matches the BB-20 window for regime/squeeze consistency.
+**Expected effect:** Identifies meaningful prior consolidation highs/lows rather than very recent micro-resistance.
+**Sprint:** Sprint 6
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-17 — BREAKOUT_VOLUME_MULT (new parameter)
+**Old value:** N/A
+**New value:** 2.0 (via `config.BREAKOUT_VOLUME_MULT`)
+**Reason:** Breakout entries require 2× the 20-period average volume (stricter than the 1.5× mean-reversion gate). False breakouts typically have low volume; genuine breakouts have strong volume expansion.
+**Expected effect:** Filters low-conviction breakouts; reduces whipsaw entries above resistance.
+**Sprint:** Sprint 6
+**Result:** Pending backtest validation.
+
+---
+
 ### Entry Format
 ```markdown
 ## [DATE] — [PARAMETER NAME]

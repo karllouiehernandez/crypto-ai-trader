@@ -19,7 +19,7 @@ from database.models import Candle, SessionLocal
 from strategy.signal_engine import compute_signal, Signal
 from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+log = logging.getLogger(__name__)
 
 
 class BacktestResult(pd.DataFrame):
@@ -65,6 +65,7 @@ def run_backtest(symbol: str, start: datetime, end: datetime) -> BacktestResult:
 
         final_equity = cash + position * candles[-1].close
         pnl_pct      = (final_equity / STARTING_BALANCE_USD - 1) * 100
-        logging.info(f"{symbol} back-test finished – final equity ${final_equity:,.2f} (PnL {pnl_pct:.2f}%)")
+        log.info("backtest finished",
+                 extra={"symbol": symbol, "final_equity": round(final_equity, 2), "pnl_pct": round(pnl_pct, 2)})
 
     return BacktestResult(trades)

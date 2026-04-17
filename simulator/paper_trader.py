@@ -17,8 +17,7 @@ from config import (
 TICK_SECONDS = 1
 ATR_LOOKBACK = 20  # candles used to estimate ATR for position sizing
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s | %(levelname)s | %(message)s")
+log = logging.getLogger(__name__)
 
 
 class PaperTrader:
@@ -50,10 +49,12 @@ class PaperTrader:
 
     def _trading_halted(self) -> bool:
         if self._daily_tracker.is_halted:
-            logging.warning("Trading halted: daily loss limit reached.")
+            log.warning("Trading halted: daily loss limit reached.",
+                        extra={"reason": "daily_loss_limit"})
             return True
         if self._drawdown_cb.is_halted:
-            logging.warning("Trading halted: drawdown circuit breaker triggered.")
+            log.warning("Trading halted: drawdown circuit breaker triggered.",
+                        extra={"reason": "drawdown_circuit_breaker"})
             return True
         return False
 
@@ -68,13 +69,14 @@ class PaperTrader:
         except asyncio.CancelledError:
             consumer.cancel()
             await consumer
-            logging.info("PaperTrader stopped.")
+            log.info("PaperTrader stopped.")
 
     async def _consume_callbacks(self):
         while True:
             action, symbol = await CALLBACK_QUEUE.get()
             if self._trading_halted():
-                logging.warning("Manual %s for %s ignored — trading halted.", action, symbol)
+                log.warning("Manual %s for %s ignored — trading halted.", action, symbol,
+                            extra={"action": action, "symbol": symbol, "reason": "halt"})
                 continue
             if action == "BUY":
                 await self._manual_buy(symbol)
@@ -165,7 +167,10 @@ class PaperTrader:
         self.cash -= cost
         self.positions[sym] = self.positions.get(sym, 0) + qty
         self.cost_basis[sym] = self.cost_basis.get(sym, 0) + cost
-        logging.info(f"AUTO BUY  {sym} qty={qty:.4f} @ {price:.2f}  atr={atr:.4f}  cash={self.cash:.2f}")
+        log.info("AUTO BUY", extra={
+            "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
+            "atr": round(atr, 4), "cost": round(cost, 4), "cash": round(self.cash, 4),
+        })
         send_telegram_alert(_token(), _chat_id(),
                             f"🤖 Auto-BUY {sym} qty={qty:.4f} @ {price:.2f}")
 
@@ -179,7 +184,11 @@ class PaperTrader:
         self.cash     += proceeds
         cost           = self.cost_basis.pop(sym, 0)
         self.realised += proceeds - cost
-        logging.info(f"AUTO SELL {sym} qty={qty:.4f} @ {price:.2f}  cash={self.cash:.2f}")
+        log.info("AUTO SELL", extra={
+            "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
+            "proceeds": round(proceeds, 4), "pnl": round(proceeds - cost, 4),
+            "cash": round(self.cash, 4),
+        })
         send_telegram_alert(_token(), _chat_id(),
                             f"🤖 Auto-SELL {sym} qty={qty:.4f} @ {price:.2f}")
 

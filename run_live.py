@@ -3,10 +3,17 @@
 Boot sequence: load history → start live streamer → launch paper trader
 """
 import asyncio
+import logging
+
 from config import validate_env
 from collectors.historical_loader import main as load_history
 from collectors.live_streamer     import main as live_stream
 from simulator.paper_trader       import PaperTrader
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
 
 async def boot():
     await load_history()          # idempotent — skips already-stored candles

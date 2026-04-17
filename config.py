@@ -79,3 +79,10 @@ ADX_TREND_THRESHOLD         = 25    # ADX > this → TRENDING; ADX ≤ 25 (incl.
 BB_WIDTH_SQUEEZE_PERCENTILE = 20    # BB width below this percentile of available history → SQUEEZE
 HIGH_VOL_MULTIPLIER         = 2.0   # recent vol > this × baseline vol → HIGH_VOL
 HIGH_VOL_SHORT_WINDOW       = 10    # candles for recent-vol window (prototype uses 1m; production: ~30m)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  Multi-strategy portfolio (Sprint 6)
+# ─────────────────────────────────────────────────────────────────────────────
+MOMENTUM_PULLBACK_TOL = 0.005  # close within 0.5% above EMA-21 counts as pullback entry
+BREAKOUT_LOOKBACK     = 20     # periods to scan for prior high/low in breakout strategy
+BREAKOUT_VOLUME_MULT  = 2.0    # breakout entry volume must be >= this × volume_ma_20

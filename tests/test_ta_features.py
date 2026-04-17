@@ -34,7 +34,8 @@ class TestAddIndicatorsColumns:
     def test_expected_columns_present(self):
         df = add_indicators(_synthetic_ohlcv(220))
         for col in ("ma_21", "ma_55", "macd", "macd_s", "rsi_14", "bb_hi", "bb_lo",
-                    "ema_200", "volume_ma_20"):
+                    "bb_width", "ema_9", "ema_21", "ema_55", "ema_200",
+                    "volume_ma_20", "adx_14"):
             assert col in df.columns, f"Missing column: {col}"
 
     def test_input_columns_preserved(self):
@@ -139,6 +140,48 @@ class TestMovingAverages:
         result = add_indicators(df)
         assert np.allclose(result["ma_21"], 50.0, atol=1e-6)
         assert np.allclose(result["ma_55"], 50.0, atol=1e-6)
+
+
+# ── EMA fast (9 / 21 / 55) ────────────────────────────────────────────────────
+
+class TestFastEMAs:
+    def test_ema_9_21_55_present(self):
+        df = add_indicators(_synthetic_ohlcv(220))
+        for col in ("ema_9", "ema_21", "ema_55"):
+            assert col in df.columns
+
+    def test_ema_9_21_55_positive(self):
+        df = add_indicators(_synthetic_ohlcv(220))
+        for col in ("ema_9", "ema_21", "ema_55"):
+            assert (df[col] > 0).all()
+
+    def test_ema_stack_on_rising_prices(self):
+        """Strongly rising prices → ema_9 > ema_21 > ema_55 at the end."""
+        n = 220
+        close = np.linspace(100, 300, n)
+        idx = pd.date_range("2024-01-01", periods=n, freq="1min")
+        df = pd.DataFrame(
+            {"open": close, "high": close + 0.1, "low": close - 0.1,
+             "close": close, "volume": np.ones(n) * 500},
+            index=idx,
+        )
+        result = add_indicators(df)
+        assert result["ema_9"].iloc[-1] > result["ema_21"].iloc[-1]
+        assert result["ema_21"].iloc[-1] > result["ema_55"].iloc[-1]
+
+    def test_ema_stack_inverted_on_falling_prices(self):
+        """Strongly falling prices → ema_9 < ema_21 < ema_55 at the end."""
+        n = 220
+        close = np.linspace(300, 100, n)
+        idx = pd.date_range("2024-01-01", periods=n, freq="1min")
+        df = pd.DataFrame(
+            {"open": close, "high": close + 0.1, "low": close - 0.1,
+             "close": close, "volume": np.ones(n) * 500},
+            index=idx,
+        )
+        result = add_indicators(df)
+        assert result["ema_9"].iloc[-1] < result["ema_21"].iloc[-1]
+        assert result["ema_21"].iloc[-1] < result["ema_55"].iloc[-1]
 
 
 # ── EMA-200 ────────────────────────────────────────────────────────────────────
