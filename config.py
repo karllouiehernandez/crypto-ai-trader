@@ -116,13 +116,28 @@ MAX_DD_GATE         = 0.20    # maximum peak-to-trough drawdown (fraction)
 PROFIT_FACTOR_GATE  = 1.5     # minimum profit factor (gross profit / gross loss)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ▓▓  LLM / Claude API (Sprint 9+)
+# ▓▓  LLM — Multi-provider (Sprint 10)
+# Supported providers: anthropic | groq | openrouter
 # ─────────────────────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY     = os.environ.get("ANTHROPIC_API_KEY", "")
-LLM_MODEL             = os.environ.get("LLM_MODEL", "claude-sonnet-4-6")
-LLM_CACHE_TTL_SECONDS = int(os.environ.get("LLM_CACHE_TTL_SECONDS", "300"))   # 5-min minimum
+LLM_PROVIDER          = os.environ.get("LLM_PROVIDER", "anthropic").lower()
 LLM_ENABLED           = os.environ.get("LLM_ENABLED", "true").lower() == "true"
+LLM_CACHE_TTL_SECONDS = int(os.environ.get("LLM_CACHE_TTL_SECONDS", "300"))   # 5-min minimum
 LLM_MAX_TOKENS        = int(os.environ.get("LLM_MAX_TOKENS", "4096"))
+
+# Provider API keys (only the one matching LLM_PROVIDER is required)
+ANTHROPIC_API_KEY     = os.environ.get("ANTHROPIC_API_KEY", "")
+GROQ_API_KEY          = os.environ.get("GROQ_API_KEY", "")
+OPENROUTER_API_KEY    = os.environ.get("OPENROUTER_API_KEY", "")
+
+# Model name — must match provider's model ID
+# anthropic:   claude-sonnet-4-6
+# groq:        llama-3.3-70b-versatile  (fast, generous free tier)
+# openrouter:  anthropic/claude-sonnet-4-6  or  meta-llama/llama-3.3-70b-instruct
+LLM_MODEL = os.environ.get("LLM_MODEL", _LLM_MODEL_DEFAULTS := {
+    "anthropic":   "claude-sonnet-4-6",
+    "groq":        "llama-3.3-70b-versatile",
+    "openrouter":  "anthropic/claude-sonnet-4-6",
+}.get(os.environ.get("LLM_PROVIDER", "anthropic").lower(), "claude-sonnet-4-6"))
 
 # Self-learning loop
 LLM_CONFIDENCE_GATE   = float(os.environ.get("LLM_CONFIDENCE_GATE", "0.80"))  # 0.0–1.0
@@ -132,13 +147,27 @@ LLM_AUTO_PROMOTE      = os.environ.get("LLM_AUTO_PROMOTE", "false").lower() == "
 # Plugin strategy directory
 STRATEGIES_DIR = BASE_DIR / "strategies"
 
+# Provider base URLs (OpenAI-compatible endpoints for groq/openrouter)
+_LLM_BASE_URLS = {
+    "groq":       "https://api.groq.com/openai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
+LLM_BASE_URL = _LLM_BASE_URLS.get(LLM_PROVIDER, "")
+
 
 def validate_env_llm() -> None:
-    """Validate credentials required for LLM features.
-    Call at startup when LLM_ENABLED=True. Raises RuntimeError if key is missing.
+    """Validate that the active LLM provider has an API key in .env.
+    Call at startup when LLM_ENABLED=True.
     """
-    if not ANTHROPIC_API_KEY:
+    key_map = {
+        "anthropic":  ANTHROPIC_API_KEY,
+        "groq":       GROQ_API_KEY,
+        "openrouter": OPENROUTER_API_KEY,
+    }
+    if not key_map.get(LLM_PROVIDER, ""):
+        env_var = {"anthropic": "ANTHROPIC_API_KEY", "groq": "GROQ_API_KEY",
+                   "openrouter": "OPENROUTER_API_KEY"}.get(LLM_PROVIDER, "LLM API key")
         raise RuntimeError(
-            "Missing ANTHROPIC_API_KEY in .env. "
-            "Set LLM_ENABLED=false in .env to run without LLM features."
+            f"Missing {env_var} in .env for provider '{LLM_PROVIDER}'. "
+            "Set LLM_ENABLED=false to run without LLM features."
         )

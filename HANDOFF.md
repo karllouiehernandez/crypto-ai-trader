@@ -10,15 +10,58 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-17 (Sprint 9 — Strategy Plugin System) |
-| **Sprint completed** | Sprint 9 ✅ |
-| **Next sprint** | Sprint 10 — LLM Core Layer (`llm/`) |
-| **Blocking issues** | None — add `ANTHROPIC_API_KEY` to `.env` before Sprint 10 |
+| **Last updated** | 2026-04-17 (Sprint 10 — LLM Core Layer) |
+| **Sprint completed** | Sprint 10 ✅ |
+| **Next sprint** | Sprint 11 — Self-Learning Loop + KB Integration |
+| **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
 | **Reason for handoff** | Sprint 9 complete; continuing to Sprint 10 |
 
 ---
+
+## Resume Here — Sprint 11: Self-Learning Loop + KB Integration
+
+**Sprint 10 complete.** LLM layer is live with Anthropic/Groq/OpenRouter support. 295 tests passing.
+
+### What was done in Sprint 10
+- `llm/__init__.py` — package marker
+- `llm/cache.py` — thread-safe TTL cache, SHA-256 keyed, 5-min minimum
+- `llm/client.py` — multi-provider wrapper (anthropic SDK + openai SDK for groq/openrouter), prompt caching for Anthropic, graceful fallback on all errors
+- `llm/prompts.py` — 4 system prompt templates: STRATEGY_GENERATOR, BACKTEST_ANALYZER, TRADE_CRITIQUER, SELF_LEARNING
+- `llm/generator.py` — NL → Python strategy, AST validate, writes to `strategies/`
+- `llm/analyzer.py` — backtest metrics → JSON (confidence score, param suggestions, recommendation)
+- `llm/critiquer.py` — trade critique after SELL (GOOD/MEDIOCRE/BAD, 5-min cache)
+- `config.py` — multi-provider config (`LLM_PROVIDER`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `LLM_BASE_URL`)
+- `requirements.txt` — added `openai>=1.30.0`
+- 50 new tests → **295 total passing**
+
+### Sprint 11 Goal — Self-Learning Loop + KB Integration
+Close the feedback loop: paper metrics → LLM analysis → KB write → confidence gate.
+
+**Key files to create:**
+- `llm/self_learner.py` — `SelfLearner` class: 24h asyncio loop, `evaluate()`, `_write_kb_entry()`
+- `llm/confidence_gate.py` — 5-gate composite check → `GateResult`
+- Modify `simulator/paper_trader.py` — add coordinator hook + LLM trade critique after SELL
+
+**Provider setup (.env)** — pick one:
+```
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+LLM_MODEL=llama-3.3-70b-versatile
+```
+or
+```
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+LLM_MODEL=anthropic/claude-sonnet-4-6
+```
+or
+```
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+LLM_MODEL=claude-sonnet-4-6
+```
 
 ## Resume Here — Sprint 10: LLM Core Layer
 
@@ -125,6 +168,7 @@ docker attach hummingbot_crypto_ai
 | Sprint 7 — Dashboard fixes + observability | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 | Sprint 8 — Backtesting rigor | ✅ CLOSED | GitHub Copilot | 2026-04-18 |
 | Sprint 9 — Strategy Plugin System + StrategyBase ABC | ✅ CLOSED | Claude Code | 2026-04-17 |
+| Sprint 10 — LLM Core Layer (multi-provider) | ✅ CLOSED | Claude Code | 2026-04-17 |
 
 ---
 
