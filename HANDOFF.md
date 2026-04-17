@@ -11,12 +11,12 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 |-------|-------|
 | **Last active agent** | Codex |
 | **Last updated** | 2026-04-17 (Sprint 15 closed) |
-| **Sprint completed** | Sprint 15 ✅ — local changes complete, tests passing |
+| **Sprint completed** | Sprint 15 ✅ — committed + pushed to GitHub |
 | **Next sprint** | Sprint 16 — Exchange Fill Reconciliation (use Binance executed qty / avg fill price instead of requested qty / signal price) |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 15 complete |
+| **Reason for handoff** | Sprint 15 complete; GitHub issue closeout blocked by app permissions |
 
 ---
 
