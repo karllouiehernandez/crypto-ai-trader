@@ -108,6 +108,107 @@ def filter_runtime_data(
     return filtered
 
 
+def list_runtime_strategies(
+    trades: pd.DataFrame,
+    equity: pd.DataFrame,
+    active_strategy_name: str,
+) -> list[str]:
+    """Return strategy names seen in runtime data, keeping the active strategy first."""
+    seen: set[str] = set()
+    for frame in (trades, equity):
+        if frame.empty or "strategy_name" not in frame.columns:
+            continue
+        for value in frame["strategy_name"].dropna().tolist():
+            name = str(value).strip()
+            if name:
+                seen.add(name)
+
+    if active_strategy_name:
+        seen.add(active_strategy_name)
+
+    if not seen:
+        return [active_strategy_name] if active_strategy_name else []
+
+    ordered = sorted(seen)
+    if active_strategy_name in ordered:
+        ordered.remove(active_strategy_name)
+        ordered.insert(0, active_strategy_name)
+    return ordered
+
+
+def runtime_mode_table(
+    trades: pd.DataFrame,
+    equity: pd.DataFrame,
+    starting_balance: float = STARTING_BALANCE_USD,
+) -> pd.DataFrame:
+    """Return one summary row per runtime mode for comparison in the dashboard."""
+    modes: set[str] = set()
+    for frame in (trades, equity):
+        if frame.empty or "run_mode" not in frame.columns:
+            continue
+        modes.update(str(value) for value in frame["run_mode"].dropna().tolist() if str(value))
+
+    if not modes:
+        return pd.DataFrame(columns=[
+            "run_mode",
+            "equity",
+            "balance",
+            "unreal_pnl",
+            "realized_pnl",
+            "trade_count",
+            "last_trade_side",
+            "last_trade_regime",
+            "last_trade_ts",
+            "last_snapshot_ts",
+            "strategy_version",
+        ])
+
+    rows: list[dict[str, Any]] = []
+    for mode in sorted(modes):
+        mode_trades = trades[trades["run_mode"].fillna("paper") == mode].copy() if not trades.empty and "run_mode" in trades.columns else pd.DataFrame()
+        mode_equity = equity[equity["run_mode"].fillna("paper") == mode].copy() if not equity.empty and "run_mode" in equity.columns else pd.DataFrame()
+        summary = runtime_summary(mode_trades, mode_equity, starting_balance=starting_balance)
+        latest_snapshot = mode_equity.iloc[-1].to_dict() if not mode_equity.empty else {}
+
+        strategy_version = ""
+        if latest_snapshot.get("strategy_version"):
+            strategy_version = str(latest_snapshot["strategy_version"])
+        elif not mode_trades.empty and "strategy_version" in mode_trades.columns:
+            strategy_values = mode_trades["strategy_version"].dropna()
+            if not strategy_values.empty:
+                strategy_version = str(strategy_values.iloc[-1])
+
+        rows.append(
+            {
+                "run_mode": mode,
+                "equity": summary["equity"],
+                "balance": summary["balance"],
+                "unreal_pnl": summary["unreal_pnl"],
+                "realized_pnl": float(mode_trades["pnl"].fillna(0).sum()) if not mode_trades.empty and "pnl" in mode_trades.columns else 0.0,
+                "trade_count": summary["trade_count"],
+                "last_trade_side": summary["last_trade_side"],
+                "last_trade_regime": summary["last_trade_regime"],
+                "last_trade_ts": summary["last_trade_ts"],
+                "last_snapshot_ts": latest_snapshot.get("ts"),
+                "strategy_version": strategy_version or "—",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def compute_cumulative_trade_pnl(trades: pd.DataFrame) -> pd.DataFrame:
+    """Return cumulative realised P&L grouped by runtime mode."""
+    if trades.empty or "pnl" not in trades.columns or "ts" not in trades.columns:
+        return pd.DataFrame(columns=["ts", "run_mode", "cumulative_pnl"])
+
+    curve = trades.copy()
+    curve["run_mode"] = curve["run_mode"].fillna("paper") if "run_mode" in curve.columns else "paper"
+    curve["pnl"] = curve["pnl"].fillna(0.0)
+    curve = curve.sort_values(["run_mode", "ts"]).reset_index(drop=True)
+    curve["cumulative_pnl"] = curve.groupby("run_mode")["pnl"].cumsum()
+    return curve[["ts", "run_mode", "cumulative_pnl"]]
+
+
 def runtime_summary(
     trades: pd.DataFrame,
     equity: pd.DataFrame,
@@ -122,9 +223,11 @@ def runtime_summary(
         "equity": latest_equity,
         "balance": latest_balance,
         "unreal_pnl": latest_unreal,
+        "realized_pnl": float(trades["pnl"].fillna(0).sum()) if not trades.empty and "pnl" in trades.columns else 0.0,
         "trade_count": int(len(trades)),
         "last_trade_side": last_trade.get("side", "—"),
         "last_trade_price": float(last_trade["price"]) if "price" in last_trade and pd.notna(last_trade["price"]) else None,
         "last_trade_regime": last_trade.get("regime", "—"),
         "last_trade_ts": last_trade.get("ts"),
+        "last_snapshot_ts": equity["ts"].iloc[-1] if not equity.empty and "ts" in equity.columns else None,
     }

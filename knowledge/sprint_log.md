@@ -159,6 +159,34 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
+## Sprint 19 — Paper/Live Strategy Monitoring
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Agent:** Codex
+**Goal:** Make the runtime monitor feel like a continuation of the strategy workbench by separating paper/live views cleanly and keeping runtime attribution tied to strategy identity.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/workbench.py` — MODIFIED: added pure helpers for runtime strategy discovery, per-mode runtime summaries, cumulative realised P&L curves, and richer runtime summary fields including realised P&L and snapshot timestamps
+- [x] `dashboard/streamlit_app.py` — MODIFIED: expanded runtime trade loading to include qty/fee/pnl; added `Runtime Strategy View` selection; shifted runtime filtering to strategy-aware monitoring instead of only the currently active strategy; added runtime overview cards, per-mode comparison table, paper/live-aware equity + drawdown charts, cumulative realised P&L chart, and denser recent execution context
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the runtime-monitor changes still keep the dashboard in a workbench model rather than collapsing back into a generic observability screen
+- [x] `tests/test_workbench_helpers.py` — MODIFIED: added coverage for runtime strategy discovery ordering, per-mode runtime summaries, cumulative P&L curves, and the expanded runtime summary payload
+
+### Test Results
+- Before: 408 tests passing
+- After: **411 tests passing** (+3 new) — 0 failures
+
+### Key Technical Decisions
+1. **Runtime strategy view is now explicit:** the monitor can inspect any strategy present in runtime history instead of assuming the currently active strategy is the only one worth monitoring.
+2. **Paper/live separation is preserved through the full monitor:** mode-aware comparison tables, equity/drawdown traces, and cumulative realised P&L prevent paper and live history from being visually merged into one ambiguous runtime line.
+3. **Runtime metrics rely on pure helper functions first:** per-mode summaries and P&L curves live in `dashboard/workbench.py`, which keeps the Streamlit layer thinner and directly testable.
+4. **Trade context must include execution payload fields:** runtime queries now include `qty`, `fee`, and `pnl`, which makes the execution table and runtime P&L analysis useful for actual evaluation rather than just observability.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 411/411. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

@@ -26,11 +26,14 @@ from backtester.service import (
 )
 from dashboard.workbench import (
     build_strategy_catalog_frame,
+    compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
     filter_backtest_runs,
     filter_runtime_data,
     format_strategy_origin,
+    list_runtime_strategies,
+    runtime_mode_table,
     runtime_summary,
 )
 from database.promotion_queries import query_promotions
@@ -105,7 +108,7 @@ def load_trades(sym: str) -> pd.DataFrame:
     try:
         con = sqlite3.connect(DB_PATH)
         df = pd.read_sql(
-            "SELECT ts, side, price, strategy_name, strategy_version, run_mode, regime "
+            "SELECT ts, side, qty, price, fee, pnl, strategy_name, strategy_version, run_mode, regime "
             "FROM trades WHERE symbol = ? ORDER BY ts",
             con, params=[sym], parse_dates=["ts"]
         )
@@ -207,13 +210,16 @@ show_bb     = st.sidebar.checkbox("Bollinger Bands",   key="show_bb")
 show_ema    = st.sidebar.checkbox("EMA 9 / 21 / 55",   key="show_ema")
 show_ema200 = st.sidebar.checkbox("EMA 200",           key="show_ema200")
 show_trades = st.sidebar.checkbox("Trade Markers",     key="show_trades")
-runtime_mode_filter = st.sidebar.selectbox("Runtime Mode", ["All", "paper", "live"], key="runtime_mode_filter")
 
 active_strategy = get_active_strategy_config()
 strategy_catalog = load_strategy_catalog()
 strategy_errors = load_strategy_errors()
 strategy_names = [item["name"] for item in strategy_catalog]
 strategy_lookup = {item["name"]: item for item in strategy_catalog}
+runtime_trades_all = load_trades(symbol)
+runtime_equity_all = load_equity()
+runtime_strategy_names = list_runtime_strategies(runtime_trades_all, runtime_equity_all, active_strategy["name"])
+runtime_mode_filter = st.sidebar.selectbox("Runtime Mode", ["All", "paper", "live"], key="runtime_mode_filter")
 
 if strategy_names:
     if "strategy_focus_name" not in st.session_state or st.session_state["strategy_focus_name"] not in strategy_names:
@@ -237,6 +243,14 @@ if strategy_names:
         st.session_state["active_strategy_selector"] = default_strategy_name
     if st.session_state.get("bt_strategy") not in strategy_names:
         st.session_state["bt_strategy"] = default_strategy_name
+if runtime_strategy_names:
+    if st.session_state.get("runtime_strategy_filter") not in runtime_strategy_names:
+        st.session_state["runtime_strategy_filter"] = active_strategy["name"] if active_strategy["name"] in runtime_strategy_names else runtime_strategy_names[0]
+runtime_strategy_filter = st.sidebar.selectbox(
+    "Runtime Strategy View",
+    runtime_strategy_names or [active_strategy["name"]],
+    key="runtime_strategy_filter",
+)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Strategy")
@@ -560,7 +574,7 @@ with backtest_col:
 # ── Timeframe selector (horizontal buttons) ───────────────────────────────────
 st.markdown("## Runtime Monitor")
 st.caption(
-    f"Viewing {runtime_mode_filter} runtime data for active strategy `{active_strategy['name']}`. "
+    f"Viewing `{runtime_strategy_filter}` in `{runtime_mode_filter}` mode for runtime monitoring. "
     "Changing the active strategy affects dashboard backtests immediately and paper/live after restart."
 )
 st.markdown("### 📈 " + symbol + " Chart")
@@ -587,9 +601,14 @@ else:
     ohlcv = pd.DataFrame()
 
 df = add_indicators(ohlcv) if not ohlcv.empty else ohlcv
-tr = filter_runtime_data(load_trades(symbol), active_strategy["name"], runtime_mode_filter)
-eq = filter_runtime_data(load_equity(), active_strategy["name"], runtime_mode_filter)
+tr = filter_runtime_data(runtime_trades_all, runtime_strategy_filter, runtime_mode_filter)
+eq = filter_runtime_data(runtime_equity_all, runtime_strategy_filter, runtime_mode_filter)
 runtime_stats = runtime_summary(tr, eq)
+mode_table = runtime_mode_table(
+    filter_runtime_data(runtime_trades_all, runtime_strategy_filter, "All"),
+    filter_runtime_data(runtime_equity_all, runtime_strategy_filter, "All"),
+)
+pnl_curve = compute_cumulative_trade_pnl(tr)
 
 # ── Sidebar: regime & metrics ─────────────────────────────────────────────────
 regime = None
@@ -601,7 +620,7 @@ if not df.empty and len(df) >= 2:
         st.sidebar.markdown("### 📊 Current Regime")
         st.sidebar.markdown(f"**{_REGIME_EMOJI[regime]}**")
         st.sidebar.markdown(f"Strategy route: **{_REGIME_STRATEGY[regime]}**")
-        st.sidebar.caption(f"Selected strategy: {active_strategy['name']}")
+        st.sidebar.caption(f"Runtime view strategy: {runtime_strategy_filter}")
         st.sidebar.markdown("---")
 
         # Live price
@@ -815,33 +834,64 @@ for axis in ["xaxis", "xaxis2", "xaxis3", "xaxis4",
 st.plotly_chart(fig, use_container_width=True)
 
 # ── Runtime summary ───────────────────────────────────────────────────────────
-summary_cols = st.columns(6)
+overview_cols = st.columns(6)
+overview_cols[0].metric("Strategy View", runtime_strategy_filter)
+overview_cols[1].metric("Mode Filter", runtime_mode_filter)
+overview_cols[2].metric(
+    "Last Snapshot",
+    pd.to_datetime(runtime_stats["last_snapshot_ts"]).strftime("%Y-%m-%d %H:%M")
+    if runtime_stats.get("last_snapshot_ts") is not None else "—",
+)
+overview_cols[3].metric(
+    "Last Trade",
+    pd.to_datetime(runtime_stats["last_trade_ts"]).strftime("%Y-%m-%d %H:%M")
+    if runtime_stats.get("last_trade_ts") is not None else "—",
+)
+overview_cols[4].metric("Realized P&L", f"{runtime_stats['realized_pnl']:+,.2f}")
+overview_cols[5].metric("Trades", str(runtime_stats["trade_count"]))
+
+summary_cols = st.columns(5)
 summary_cols[0].metric("Equity", f"${runtime_stats['equity']:,.2f}")
 summary_cols[1].metric("Balance", f"${runtime_stats['balance']:,.2f}")
 summary_cols[2].metric("Unreal P&L", f"{runtime_stats['unreal_pnl']:+,.2f}")
-summary_cols[3].metric("Trades", str(runtime_stats["trade_count"]))
-summary_cols[4].metric("Last Side", str(runtime_stats["last_trade_side"]))
-summary_cols[5].metric("Last Regime", str(runtime_stats["last_trade_regime"]))
+summary_cols[3].metric("Last Side", str(runtime_stats["last_trade_side"]))
+summary_cols[4].metric("Last Regime", str(runtime_stats["last_trade_regime"]))
+
+if not mode_table.empty:
+    st.markdown("### Mode Comparison")
+    display_mode_table = mode_table.copy()
+    for ts_col in ["last_trade_ts", "last_snapshot_ts"]:
+        if ts_col in display_mode_table.columns:
+            display_mode_table[ts_col] = pd.to_datetime(display_mode_table[ts_col]).dt.strftime("%Y-%m-%d %H:%M:%S")
+            display_mode_table[ts_col] = display_mode_table[ts_col].fillna("—")
+    st.dataframe(display_mode_table, use_container_width=True, hide_index=True)
 
 # ── Equity and drawdown ───────────────────────────────────────────────────────
 if not eq.empty and "equity" in eq.columns:
-    runtime_equity = eq[["ts", "equity"]].dropna().copy()
-    runtime_equity["step"] = range(len(runtime_equity))
-    runtime_drawdown = compute_drawdown_curve(runtime_equity.rename(columns={"equity": "equity", "step": "step"}))
-
     eq_left, eq_right = st.columns(2)
     with eq_left:
         eq_fig = go.Figure()
-        eq_fig.add_trace(go.Scatter(
-            x=runtime_equity["ts"], y=runtime_equity["equity"], name="Equity",
-            line=dict(color="#2962ff", width=2),
-            fill="tozeroy", fillcolor="rgba(41,98,255,0.08)"
-        ))
-        start_line_x = [runtime_equity["ts"].min(), runtime_equity["ts"].max()]
-        eq_fig.add_trace(go.Scatter(
-            x=start_line_x, y=[STARTING_BALANCE_USD]*2,
-            name="Starting Balance", line=dict(color="gray", dash="dot", width=1)
-        ))
+        mode_palette = {"paper": "#2962ff", "live": "#00c853"}
+        grouped_equity = eq.groupby(eq["run_mode"].fillna("paper")) if "run_mode" in eq.columns else [("paper", eq)]
+        latest_x = []
+        for mode, mode_eq in grouped_equity:
+            if mode_eq.empty:
+                continue
+            latest_x.extend(mode_eq["ts"].tolist())
+            eq_fig.add_trace(go.Scatter(
+                x=mode_eq["ts"],
+                y=mode_eq["equity"],
+                name=f"{mode.title()} Equity",
+                line=dict(color=mode_palette.get(str(mode), "#2962ff"), width=2),
+                fill="tozeroy" if runtime_mode_filter != "All" else None,
+                fillcolor="rgba(41,98,255,0.08)" if str(mode) == "paper" else "rgba(0,200,83,0.08)",
+            ))
+        start_line_x = [min(latest_x), max(latest_x)] if latest_x else []
+        if start_line_x:
+            eq_fig.add_trace(go.Scatter(
+                x=start_line_x, y=[STARTING_BALANCE_USD]*2,
+                name="Starting Balance", line=dict(color="gray", dash="dot", width=1)
+            ))
         eq_fig.update_layout(
             title="Runtime Equity",
             height=240,
@@ -855,11 +905,21 @@ if not eq.empty and "equity" in eq.columns:
 
     with eq_right:
         dd_fig = go.Figure()
-        dd_fig.add_trace(go.Scatter(
-            x=runtime_equity["ts"], y=runtime_drawdown["drawdown"], name="Drawdown",
-            line=dict(color="#ff7043", width=2),
-            fill="tozeroy", fillcolor="rgba(255,112,67,0.12)",
-        ))
+        grouped_equity = eq.groupby(eq["run_mode"].fillna("paper")) if "run_mode" in eq.columns else [("paper", eq)]
+        for mode, mode_eq in grouped_equity:
+            if mode_eq.empty:
+                continue
+            runtime_equity = mode_eq[["ts", "equity"]].dropna().copy()
+            runtime_equity["step"] = range(len(runtime_equity))
+            runtime_drawdown = compute_drawdown_curve(runtime_equity.rename(columns={"equity": "equity", "step": "step"}))
+            dd_fig.add_trace(go.Scatter(
+                x=runtime_equity["ts"],
+                y=runtime_drawdown["drawdown"],
+                name=f"{str(mode).title()} Drawdown",
+                line=dict(color=mode_palette.get(str(mode), "#ff7043"), width=2),
+                fill="tozeroy" if runtime_mode_filter != "All" else None,
+                fillcolor="rgba(255,112,67,0.12)",
+            ))
         dd_fig.update_layout(
             title="Runtime Drawdown",
             height=240,
@@ -871,13 +931,39 @@ if not eq.empty and "equity" in eq.columns:
         )
         st.plotly_chart(dd_fig, use_container_width=True)
 
+if not pnl_curve.empty:
+    st.markdown("### Realized P&L Curve")
+    pnl_fig = go.Figure()
+    for mode, mode_curve in pnl_curve.groupby("run_mode"):
+        pnl_fig.add_trace(go.Scatter(
+            x=mode_curve["ts"],
+            y=mode_curve["cumulative_pnl"],
+            name=f"{str(mode).title()} P&L",
+            mode="lines+markers",
+            line=dict(width=2),
+        ))
+    pnl_fig.update_layout(
+        height=240,
+        paper_bgcolor="#0e1117",
+        plot_bgcolor="#0e1117",
+        font=dict(color="#d1d4dc"),
+        margin=dict(l=10, r=10, t=40, b=10),
+        xaxis=dict(gridcolor="#1e222d"),
+        yaxis=dict(gridcolor="#1e222d"),
+    )
+    st.plotly_chart(pnl_fig, use_container_width=True)
+
 # ── Recent execution context ──────────────────────────────────────────────────
 st.markdown("### Recent Execution Context")
 if not tr.empty:
     recent_trades = tr.sort_values("ts", ascending=False).head(12).copy()
     if "ts" in recent_trades.columns:
         recent_trades["ts"] = pd.to_datetime(recent_trades["ts"]).dt.strftime("%Y-%m-%d %H:%M:%S")
-    st.dataframe(recent_trades, use_container_width=True, hide_index=True)
+    ordered_cols = [
+        col for col in ["ts", "run_mode", "side", "qty", "price", "pnl", "regime", "strategy_version"]
+        if col in recent_trades.columns
+    ]
+    st.dataframe(recent_trades[ordered_cols], use_container_width=True, hide_index=True)
 else:
     st.info("No runtime trades recorded yet for the selected strategy/mode.")
 

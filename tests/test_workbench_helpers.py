@@ -6,12 +6,15 @@ import pandas as pd
 
 from dashboard.workbench import (
     build_strategy_catalog_frame,
+    compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
     filter_backtest_runs,
     filter_runtime_data,
     format_strategy_origin,
+    list_runtime_strategies,
     parse_metrics_json,
+    runtime_mode_table,
     runtime_summary,
 )
 
@@ -91,17 +94,58 @@ def test_filter_runtime_data_filters_strategy_and_mode():
     assert filtered["value"].tolist() == [1]
 
 
-def test_runtime_summary_extracts_latest_and_last_trade():
+def test_list_runtime_strategies_keeps_active_first():
+    trades = pd.DataFrame([{"strategy_name": "older_strategy_v1"}])
+    equity = pd.DataFrame([{"strategy_name": "regime_router_v1"}])
+    names = list_runtime_strategies(trades, equity, "regime_router_v1")
+    assert names[0] == "regime_router_v1"
+    assert "older_strategy_v1" in names
+
+
+def test_runtime_mode_table_summarises_each_mode():
     trades = pd.DataFrame(
         [
-            {"side": "BUY", "price": 100.0, "regime": "RANGING", "ts": pd.Timestamp("2026-01-01")},
-            {"side": "SELL", "price": 110.0, "regime": "TRENDING", "ts": pd.Timestamp("2026-01-02")},
+            {"run_mode": "paper", "side": "BUY", "price": 100.0, "pnl": 0.0, "regime": "RANGING", "ts": pd.Timestamp("2026-01-01"), "strategy_version": "1.0.0"},
+            {"run_mode": "live", "side": "SELL", "price": 110.0, "pnl": 5.0, "regime": "TRENDING", "ts": pd.Timestamp("2026-01-02"), "strategy_version": "1.1.0"},
         ]
     )
     equity = pd.DataFrame(
         [
-            {"equity": 100.0, "balance": 90.0, "unreal_pnl": 10.0},
-            {"equity": 105.0, "balance": 95.0, "unreal_pnl": 10.0},
+            {"run_mode": "paper", "equity": 101.0, "balance": 90.0, "unreal_pnl": 11.0, "ts": pd.Timestamp("2026-01-01"), "strategy_version": "1.0.0"},
+            {"run_mode": "live", "equity": 106.0, "balance": 96.0, "unreal_pnl": 10.0, "ts": pd.Timestamp("2026-01-02"), "strategy_version": "1.1.0"},
+        ]
+    )
+    table = runtime_mode_table(trades, equity, starting_balance=100.0)
+    assert set(table["run_mode"]) == {"paper", "live"}
+    live_row = table[table["run_mode"] == "live"].iloc[0]
+    assert live_row["realized_pnl"] == 5.0
+    assert live_row["strategy_version"] == "1.1.0"
+
+
+def test_compute_cumulative_trade_pnl_groups_by_mode():
+    trades = pd.DataFrame(
+        [
+            {"run_mode": "paper", "ts": pd.Timestamp("2026-01-01"), "pnl": 1.5},
+            {"run_mode": "paper", "ts": pd.Timestamp("2026-01-02"), "pnl": -0.5},
+            {"run_mode": "live", "ts": pd.Timestamp("2026-01-03"), "pnl": 3.0},
+        ]
+    )
+    curve = compute_cumulative_trade_pnl(trades)
+    assert curve[curve["run_mode"] == "paper"]["cumulative_pnl"].tolist() == [1.5, 1.0]
+    assert curve[curve["run_mode"] == "live"]["cumulative_pnl"].tolist() == [3.0]
+
+
+def test_runtime_summary_extracts_latest_and_last_trade():
+    trades = pd.DataFrame(
+        [
+            {"side": "BUY", "price": 100.0, "regime": "RANGING", "ts": pd.Timestamp("2026-01-01"), "pnl": 0.0},
+            {"side": "SELL", "price": 110.0, "regime": "TRENDING", "ts": pd.Timestamp("2026-01-02"), "pnl": 5.0},
+        ]
+    )
+    equity = pd.DataFrame(
+        [
+            {"equity": 100.0, "balance": 90.0, "unreal_pnl": 10.0, "ts": pd.Timestamp("2026-01-01")},
+            {"equity": 105.0, "balance": 95.0, "unreal_pnl": 10.0, "ts": pd.Timestamp("2026-01-02")},
         ]
     )
     summary = runtime_summary(trades, equity, starting_balance=100.0)
@@ -109,3 +153,5 @@ def test_runtime_summary_extracts_latest_and_last_trade():
     assert summary["trade_count"] == 2
     assert summary["last_trade_side"] == "SELL"
     assert summary["last_trade_regime"] == "TRENDING"
+    assert summary["realized_pnl"] == 5.0
+    assert summary["last_snapshot_ts"] == pd.Timestamp("2026-01-02")
