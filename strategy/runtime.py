@@ -65,13 +65,25 @@ def list_available_strategies() -> list[dict]:
                 **strategy.meta(),
                 "source": "builtin",
                 "path": "",
+                "file_name": "",
+                "is_generated": False,
+                "provenance": "builtin",
+                "generated_at": "",
+                "modified_at": "",
                 "load_status": "loaded",
+                "validation_status": "valid",
             }
         )
 
     load_all()
     plugins = list_plugin_strategies()
-    return sorted(builtins + plugins, key=lambda s: (s["source"], s["display_name"].lower()))
+    return sorted(
+        builtins + plugins,
+        key=lambda s: (
+            {"builtin": 0, "generated": 1, "plugin": 2}.get(s.get("provenance", s.get("source", "plugin")), 3),
+            s["display_name"].lower(),
+        ),
+    )
 
 
 def list_available_strategy_errors() -> list[dict]:

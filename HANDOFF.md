@@ -10,47 +10,49 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-17 (Sprint 17 closed) |
-| **Sprint completed** | Sprint 17 ✅ — committed + pushed to GitHub |
-| **Next sprint** | Sprint 18 — Strategy Generation & Evaluation Workflow |
+| **Last updated** | 2026-04-17 (Sprint 18 closed) |
+| **Sprint completed** | Sprint 18 ✅ — strategy generation/evaluation workflow committed and ready to push |
+| **Next sprint** | Sprint 19 — Paper/Live Strategy Monitoring |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 17 complete; GitHub issue closeout blocked by app permissions |
+| **Reason for handoff** | Sprint 18 complete; next agent should deepen paper/live strategy attribution and monitoring |
 
 ---
 
-## Resume Here — Sprint 18: Strategy Generation & Evaluation Workflow
+## Resume Here — Sprint 19: Paper/Live Strategy Monitoring
 
-**Sprint 17 complete.** The workbench now has denser backtest and runtime visualization. 400 tests passing.
+**Sprint 18 complete.** The workbench now supports dashboard-driven strategy generation/discovery and strategy-scoped evaluation history. 408 tests passing.
 
-### What was done in Sprint 17
-- `dashboard/workbench.py` — NEW: pure helper functions for trade-equity curves, drawdown, runtime summaries, and runtime filtering
-- `backtester/service.py` — MODIFIED: hardened saved-run querying, safe metrics parsing, bounded run history, and explicit run lookups
-- `dashboard/streamlit_app.py` — MODIFIED: richer saved-run inspection flow, run summary cards, acceptance-gate feedback, backtest equity + drawdown charts, runtime summary cards, runtime drawdown, and recent execution context
-- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED to ensure the dashboard still aligns with the Jesse-like workflow
-- **400 total passing** (+9 from Sprint 17)
+### What was done in Sprint 18
+- `strategies/loader.py` — MODIFIED: strategy plugins now expose richer provenance/validation metadata and emit explicit validation errors when a file does not define a usable `StrategyBase` subclass; added direct single-file reload helper
+- `strategy/runtime.py` — MODIFIED: built-ins now present the same provenance fields as plugins; catalog ordering favors built-ins first, then generated strategies, then normal plugins
+- `llm/generator.py` — MODIFIED: added `generate_and_discover_strategy()` so the dashboard can generate, save, reload, and inspect plugin strategies in one flow
+- `dashboard/workbench.py` — MODIFIED: added helpers for strategy origin labels, strategy catalog tables, and strategy-scoped saved-run filtering
+- `dashboard/streamlit_app.py` — MODIFIED: added a `Generate Strategy Draft` flow, surfaced provider/model/token metadata, highlighted generated-plugin provenance, and focused backtest history on the currently evaluated strategy by default
+- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED to confirm the new workflow still matches the Jesse-like workbench contract
+- **408 total passing** (+8 from Sprint 18)
 
-### Sprint 18 Goal — Strategy Generation & Evaluation Workflow
-The system can now select and visualize strategies, but the strategy creation loop is still manual and fragmented. Formalize the “agent creates strategy -> dashboard discovers it -> user backtests and evaluates it” workflow so the repo behaves more like a Jesse-style strategy lab before automated AI promotion is ready.
+### Sprint 19 Goal — Paper/Live Strategy Monitoring
+The dashboard now handles generation, discovery, and backtest evaluation more cleanly, but the runtime monitor still behaves mostly like a filtered observability view. Tighten the paper/live path so strategy attribution, mode attribution, and execution context feel like one continuous workbench from backtest into runtime.
 
 ### Scope
-- `strategies/loader.py` / `strategy/runtime.py` — surface richer plugin provenance and validation state for generated strategies
-- `llm/generator.py` + dashboard flow — formalize the manual-agent workflow so a generated/plugin strategy can be discovered, selected, and backtested immediately with minimal friction
-- `dashboard/streamlit_app.py` — add clearer “generated strategy” affordances, version/source visibility, and evaluation flow cues inside `Strategies` / `Backtest Lab`
-- Review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` again while implementing the generation-to-evaluation loop
+- `database/models.py` / runtime queries — ensure paper/live portfolio and trade history expose the fields needed for strategy-aware runtime views without ambiguity
+- `dashboard/streamlit_app.py` — deepen `Runtime Monitor` so paper/live mode, active strategy, runtime drawdown, and recent execution context are clearly attributable and easier to compare
+- `dashboard/workbench.py` — keep runtime calculations in pure helpers where possible; add any missing aggregation helpers needed for paper/live strategy views
+- Review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` again while refining runtime-monitor UX so it stays aligned with the workbench model rather than drifting back to a generic monitor
 
 ### Step 1 — Verify baseline
 ```bash
-pytest tests/ -q   # must show 400 passed
+pytest tests/ -q   # must show 408 passed
 ```
 
 ### Step 2 — Sprint close checklist
 - [ ] All CRITICAL and HIGH review findings fixed
-- [ ] `knowledge/sprint_log.md` updated with Sprint 18 entry
+- [ ] `knowledge/sprint_log.md` updated with Sprint 19 entry
 - [ ] `HANDOFF.md` Current State table updated
 - [ ] Committed and pushed to GitHub
-- [ ] GitHub issue created and closed for Sprint 18
+- [ ] GitHub issue created and closed for Sprint 19
 
 ---
 
@@ -76,6 +78,7 @@ pytest tests/ -q   # must show 400 passed
 | Sprint 15 — Order Fill Confirmation | ✅ CLOSED | Codex | 2026-04-17 |
 | Sprint 16 — Jesse Workbench Foundation | ✅ CLOSED | Codex | 2026-04-17 |
 | Sprint 17 — Backtest & Runtime Visualization Hardening | ✅ CLOSED | Codex | 2026-04-17 |
+| Sprint 18 — Strategy Generation & Evaluation Workflow | ✅ CLOSED | Codex | 2026-04-17 |
 
 ---
 

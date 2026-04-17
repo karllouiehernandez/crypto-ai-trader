@@ -22,6 +22,8 @@ from typing import Optional
 
 from llm.client import LLMResponse, call_llm
 from llm.prompts import STRATEGY_GENERATOR_SYSTEM
+from strategies.loader import list_strategies as list_plugin_strategies
+from strategies.loader import list_strategy_errors, load_strategy_path
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +47,73 @@ def generate_strategy(
     Returns:
         (python_code | None, LLMResponse)
     """
+    code, response = _generate_strategy_code(description, symbol=symbol, regime_hint=regime_hint)
+    if code is None:
+        return None, response
+
+    if save:
+        _save(code)
+
+    return code, response
+
+
+def generate_and_discover_strategy(
+    description: str,
+    symbol: str = "BTCUSDT",
+    regime_hint: str = "any",
+) -> dict:
+    """Generate a strategy file, load it immediately, and return discovery metadata."""
+    code, response = _generate_strategy_code(description, symbol=symbol, regime_hint=regime_hint)
+    if code is None:
+        return {
+            "code": None,
+            "path": "",
+            "file_name": "",
+            "strategy_names": [],
+            "strategies": [],
+            "errors": [],
+            "load_status": "generation_failed",
+            "response": {
+                "fallback": response.fallback,
+                "cached": response.cached,
+                "provider": response.provider,
+                "model": response.model,
+                "tokens_used": response.tokens_used,
+            },
+        }
+
+    path = _save(code)
+    load_strategy_path(path)
+    strategies = [item for item in list_plugin_strategies() if item.get("path") == str(path)]
+    errors = [
+        item for item in list_strategy_errors()
+        if item.get("path") == str(path) or item.get("file_name") == path.name
+    ]
+    load_status = "loaded" if strategies else "error" if errors else "pending"
+    return {
+        "code": code,
+        "path": str(path),
+        "file_name": path.name,
+        "strategy_names": [item["name"] for item in strategies],
+        "strategies": strategies,
+        "errors": errors,
+        "load_status": load_status,
+        "response": {
+            "fallback": response.fallback,
+            "cached": response.cached,
+            "provider": response.provider,
+            "model": response.model,
+            "tokens_used": response.tokens_used,
+        },
+    }
+
+
+def _generate_strategy_code(
+    description: str,
+    symbol: str = "BTCUSDT",
+    regime_hint: str = "any",
+) -> tuple[Optional[str], LLMResponse]:
+    """Generate and syntax-check strategy code without saving it."""
     user_prompt = textwrap.dedent(f"""
         Generate a Python strategy file for the crypto_ai_trader system.
 
@@ -71,10 +140,6 @@ def generate_strategy(
     if not _is_valid_python(code):
         log.error("generated strategy failed syntax validation")
         return None, response
-
-    if save:
-        _save(code)
-
     return code, response
 
 

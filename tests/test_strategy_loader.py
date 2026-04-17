@@ -9,7 +9,9 @@ from strategies.loader import (
     _load_file,
     clear_registry,
     get_strategy,
+    list_strategy_errors,
     list_strategies,
+    load_strategy_path,
     registry_snapshot,
 )
 
@@ -179,6 +181,16 @@ def test_list_strategies_returns_meta_dicts(tmp_path):
     assert result[0]["load_status"] == "loaded"
 
 
+def test_list_strategies_includes_generated_file_metadata(tmp_path):
+    path = _write_strategy(tmp_path, "generated_20260417_010203", VALID_STRATEGY)
+    _load_file(path)
+    result = list_strategies()
+    assert result[0]["is_generated"] is True
+    assert result[0]["provenance"] == "generated"
+    assert result[0]["file_name"] == "generated_20260417_010203.py"
+    assert result[0]["validation_status"] == "valid"
+
+
 def test_list_strategies_returns_all_registered(tmp_path):
     path = _write_strategy(tmp_path, "multi", MULTI_STRATEGY)
     _load_file(path)
@@ -212,3 +224,19 @@ def test_reload_replaces_existing_strategy(tmp_path):
     path.write_text(v2, encoding="utf-8")
     _load_file(path)
     assert get_strategy("reloadable").version == "2.0.0"
+
+
+def test_list_strategy_errors_reports_missing_strategy_subclass(tmp_path):
+    path = _write_strategy(tmp_path, "generated_20260417_010203", NON_STRATEGY_FILE)
+    _load_file(path)
+    errors = list_strategy_errors()
+    assert len(errors) == 1
+    assert errors[0]["is_generated"] is True
+    assert errors[0]["file_name"] == "generated_20260417_010203.py"
+    assert errors[0]["error_type"] == "StrategyValidationError"
+
+
+def test_load_strategy_path_loads_single_plugin_file(tmp_path):
+    path = _write_strategy(tmp_path, "test_momentum_v1", VALID_STRATEGY)
+    load_strategy_path(path)
+    assert get_strategy("test_momentum_v1") is not None

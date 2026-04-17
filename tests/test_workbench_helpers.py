@@ -5,9 +5,12 @@ from __future__ import annotations
 import pandas as pd
 
 from dashboard.workbench import (
+    build_strategy_catalog_frame,
     compute_drawdown_curve,
     compute_trade_equity_curve,
+    filter_backtest_runs,
     filter_runtime_data,
+    format_strategy_origin,
     parse_metrics_json,
     runtime_summary,
 )
@@ -39,6 +42,41 @@ def test_compute_drawdown_curve_tracks_peak_to_trough():
 def test_parse_metrics_json_bad_input_returns_empty():
     assert parse_metrics_json("{not-json}") == {}
     assert parse_metrics_json(None) == {}
+
+
+def test_format_strategy_origin_distinguishes_generated_plugins():
+    assert format_strategy_origin({"provenance": "generated"}) == "Generated Plugin"
+    assert format_strategy_origin({"source": "builtin"}) == "Built-in"
+
+
+def test_build_strategy_catalog_frame_formats_origin_and_regimes():
+    frame = build_strategy_catalog_frame(
+        [
+            {
+                "name": "generated_rsi_v1",
+                "display_name": "Generated RSI",
+                "provenance": "generated",
+                "version": "1.0.0",
+                "regimes": ["RANGING"],
+                "file_name": "generated_20260417_010203.py",
+                "load_status": "loaded",
+                "modified_at": "2026-04-17T01:02:03+00:00",
+            }
+        ]
+    )
+    assert frame.loc[0, "origin"] == "Generated Plugin"
+    assert frame.loc[0, "regimes"] == "RANGING"
+
+
+def test_filter_backtest_runs_filters_by_strategy_name():
+    frame = pd.DataFrame(
+        [
+            {"strategy_name": "a", "id": 1},
+            {"strategy_name": "b", "id": 2},
+        ]
+    )
+    filtered = filter_backtest_runs(frame, "a")
+    assert filtered["id"].tolist() == [1]
 
 
 def test_filter_runtime_data_filters_strategy_and_mode():

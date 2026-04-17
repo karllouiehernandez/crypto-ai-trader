@@ -19,6 +19,7 @@ import importlib.util
 import itertools
 import logging
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -32,11 +33,43 @@ from strategy.base import StrategyBase
 log = logging.getLogger(__name__)
 
 _registry: Dict[str, StrategyBase] = {}
-_errors: Dict[str, str] = {}
+_errors: Dict[str, dict] = {}
 _bootstrapped = False
 _lock = threading.Lock()
 
 STRATEGIES_DIR = Path(__file__).parent
+
+
+def _parse_generated_timestamp(path: Path) -> str:
+    stem = path.stem
+    if not stem.startswith("generated_"):
+        return ""
+
+    raw_ts = stem.removeprefix("generated_")
+    try:
+        generated_at = datetime.strptime(raw_ts, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return ""
+    return generated_at.isoformat()
+
+
+def _file_meta(path: Path, source: str = "plugin") -> dict:
+    try:
+        modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+    except OSError:
+        modified_at = ""
+
+    is_generated = path.stem.startswith("generated_")
+    provenance = "generated" if is_generated else source
+    return {
+        "source": source,
+        "path": str(path),
+        "file_name": path.name,
+        "is_generated": is_generated,
+        "provenance": provenance,
+        "generated_at": _parse_generated_timestamp(path),
+        "modified_at": modified_at,
+    }
 
 
 # ── File system event handler ──────────────────────────────────────────────
@@ -87,6 +120,8 @@ def _load_file(path: Path) -> None:
                 instance = obj()
                 instance._source_path = str(path)   # type: ignore[attr-defined]
                 instance._source_type = "plugin"    # type: ignore[attr-defined]
+                instance._file_name = path.name     # type: ignore[attr-defined]
+                instance._is_generated = path.stem.startswith("generated_")  # type: ignore[attr-defined]
                 with _lock:
                     _registry[instance.name] = instance
                 loaded.append(instance.name)
@@ -98,9 +133,26 @@ def _load_file(path: Path) -> None:
                 "strategies loaded",
                 extra={"file": path.name, "strategies": loaded},
             )
+        else:
+            with _lock:
+                _errors[path.name] = {
+                    **_file_meta(path),
+                    "error": "No StrategyBase subclass found in plugin file.",
+                    "error_type": "StrategyValidationError",
+                    "load_status": "error",
+                }
+            log.error(
+                "strategy load failed",
+                extra={"file": path.name, "error": "No StrategyBase subclass found in plugin file."},
+            )
     except Exception as exc:
         with _lock:
-            _errors[path.name] = str(exc)
+            _errors[path.name] = {
+                **_file_meta(path),
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "load_status": "error",
+            }
         log.error(
             "strategy load failed",
             extra={"file": path.name, "error": str(exc)},
@@ -142,26 +194,48 @@ def get_strategy(name: str) -> Optional[StrategyBase]:
         return _registry.get(name)
 
 
+def load_strategy_path(path: str | Path) -> None:
+    """Load or reload one plugin file directly."""
+    _load_file(Path(path))
+
+
 def list_strategies() -> list:
     """Return metadata dicts for all registered strategies (for dashboard display)."""
     with _lock:
-        return [
-            {
-                **s.meta(),
-                "source": getattr(s, "_source_type", "plugin"),
-                "path": getattr(s, "_source_path", ""),
-                "load_status": "loaded",
-            }
-            for s in _registry.values()
-        ]
+        items = []
+        for strategy in _registry.values():
+            source_path = getattr(strategy, "_source_path", "")
+            if source_path:
+                file_meta = _file_meta(Path(source_path), source=getattr(strategy, "_source_type", "plugin"))
+            else:
+                source_type = getattr(strategy, "_source_type", "plugin")
+                file_meta = {
+                    "source": source_type,
+                    "path": "",
+                    "file_name": getattr(strategy, "_file_name", ""),
+                    "is_generated": getattr(strategy, "_is_generated", False),
+                    "provenance": "builtin" if source_type == "builtin" else "plugin",
+                    "generated_at": "",
+                    "modified_at": "",
+                }
+
+            items.append(
+                {
+                    **strategy.meta(),
+                    **file_meta,
+                    "load_status": "loaded",
+                    "validation_status": "valid",
+                }
+            )
+        return items
 
 
 def list_strategy_errors() -> list[dict]:
     """Return plugin load errors for dashboard display."""
     with _lock:
         return [
-            {"file": file_name, "error": error, "load_status": "error"}
-            for file_name, error in sorted(_errors.items())
+            error
+            for _, error in sorted(_errors.items())
         ]
 
 

@@ -9,7 +9,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD, LIVE_TRADE_ENABLED
+from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD, LIVE_TRADE_ENABLED, LLM_ENABLED, LLM_MODEL, LLM_PROVIDER
 from strategy.ta_features import add_indicators
 from strategy.regime import detect_regime, Regime
 from strategy.runtime import (
@@ -25,13 +25,17 @@ from backtester.service import (
     run_and_persist_backtest,
 )
 from dashboard.workbench import (
+    build_strategy_catalog_frame,
     compute_drawdown_curve,
     compute_trade_equity_curve,
+    filter_backtest_runs,
     filter_runtime_data,
+    format_strategy_origin,
     runtime_summary,
 )
 from database.promotion_queries import query_promotions
 from database.models import init_db
+from llm.generator import generate_and_discover_strategy
 
 # ── Regime config ─────────────────────────────────────────────────────────────
 _REGIME_EMOJI = {
@@ -187,6 +191,7 @@ _DEFAULTS = {
     "show_trades":   True,
     "show_ema200":   False,
     "runtime_mode_filter": "All",
+    "show_all_backtest_runs": False,
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
@@ -208,7 +213,30 @@ active_strategy = get_active_strategy_config()
 strategy_catalog = load_strategy_catalog()
 strategy_errors = load_strategy_errors()
 strategy_names = [item["name"] for item in strategy_catalog]
-default_strategy_index = strategy_names.index(active_strategy["name"]) if active_strategy["name"] in strategy_names else 0
+strategy_lookup = {item["name"]: item for item in strategy_catalog}
+
+if strategy_names:
+    if "strategy_focus_name" not in st.session_state or st.session_state["strategy_focus_name"] not in strategy_names:
+        st.session_state["strategy_focus_name"] = (
+            active_strategy["name"] if active_strategy["name"] in strategy_names else strategy_names[0]
+        )
+
+    pending_focus = st.session_state.pop("strategy_focus_pending", None)
+    if pending_focus in strategy_names:
+        st.session_state["strategy_focus_name"] = pending_focus
+        st.session_state["active_strategy_selector"] = pending_focus
+        st.session_state["bt_strategy"] = pending_focus
+
+default_strategy_name = st.session_state.get("strategy_focus_name", active_strategy["name"])
+if strategy_names and default_strategy_name not in strategy_names:
+    default_strategy_name = strategy_names[0]
+default_strategy_index = strategy_names.index(default_strategy_name) if strategy_names else 0
+
+if strategy_names:
+    if st.session_state.get("active_strategy_selector") not in strategy_names:
+        st.session_state["active_strategy_selector"] = default_strategy_name
+    if st.session_state.get("bt_strategy") not in strategy_names:
+        st.session_state["bt_strategy"] = default_strategy_name
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Strategy")
@@ -221,6 +249,88 @@ workbench_col, backtest_col = st.columns([1.05, 1.35], gap="large")
 
 with workbench_col:
     st.markdown("### Strategies")
+    st.caption(
+        "Research loop: generate or add a plugin, confirm it loads here, backtest it in the lab, "
+        "then promote the same strategy into paper/live after restart."
+    )
+    with st.expander("Generate Strategy Draft", expanded=bool(st.session_state.get("last_generation_result"))):
+        if not LLM_ENABLED:
+            st.warning(
+                "LLM strategy generation is disabled. Add an LLM API key in `.env` or set `LLM_ENABLED=true` "
+                "to generate plugin drafts from the dashboard."
+            )
+        with st.form("generate_strategy_form", clear_on_submit=False):
+            gen_description = st.text_area(
+                "Strategy brief",
+                placeholder="Example: Trend-following pullback strategy that buys when EMA-9 stays above EMA-21 and RSI recovers from 45 in trending markets.",
+                disabled=not LLM_ENABLED,
+            )
+            gen_cols = st.columns(2)
+            gen_symbol = gen_cols[0].selectbox(
+                "Primary symbol",
+                SYMBOLS,
+                index=SYMBOLS.index(symbol),
+                key="gen_symbol",
+                disabled=not LLM_ENABLED,
+            )
+            gen_regime = gen_cols[1].selectbox(
+                "Target regime",
+                ["any", "RANGING", "TRENDING", "SQUEEZE", "HIGH_VOL"],
+                key="gen_regime",
+                disabled=not LLM_ENABLED,
+            )
+            generate_now = st.form_submit_button(
+                "Generate Plugin Draft",
+                type="primary",
+                use_container_width=True,
+                disabled=not LLM_ENABLED or not strategy_names,
+            )
+
+        if generate_now:
+            if not gen_description.strip():
+                st.error("Strategy brief is required before generating a plugin draft.")
+            else:
+                with st.spinner("Generating strategy draft and loading plugin metadata..."):
+                    generation_result = generate_and_discover_strategy(
+                        gen_description.strip(),
+                        symbol=gen_symbol,
+                        regime_hint=gen_regime.lower(),
+                    )
+                st.session_state["last_generation_result"] = generation_result
+                load_strategy_catalog.clear()
+                load_strategy_errors.clear()
+                st.cache_data.clear()
+                if generation_result["load_status"] == "loaded" and generation_result["strategy_names"]:
+                    st.session_state["strategy_focus_pending"] = generation_result["strategy_names"][0]
+                    st.rerun()
+
+        generation_result = st.session_state.get("last_generation_result")
+        if generation_result:
+            response_meta = generation_result.get("response", {})
+            provider_label = f"{response_meta.get('provider', LLM_PROVIDER)} / {response_meta.get('model', LLM_MODEL)}"
+            if generation_result["load_status"] == "loaded":
+                st.success(
+                    f"Generated `{', '.join(generation_result['strategy_names'])}` and loaded it into the strategy catalog."
+                )
+            elif generation_result["load_status"] == "generation_failed":
+                st.error("Strategy generation failed. Check your LLM provider configuration or refine the strategy brief.")
+            else:
+                st.error("Strategy code was saved, but the plugin failed validation or discovery.")
+
+            gen_meta_cols = st.columns(3)
+            gen_meta_cols[0].metric("Provider", provider_label)
+            gen_meta_cols[1].metric("Tokens", str(response_meta.get("tokens_used", 0)))
+            gen_meta_cols[2].metric("Status", generation_result["load_status"].replace("_", " ").title())
+
+            if generation_result.get("file_name"):
+                st.caption(f"Saved plugin file: `{generation_result['file_name']}`")
+            if generation_result.get("errors"):
+                st.dataframe(pd.DataFrame(generation_result["errors"]), use_container_width=True, hide_index=True)
+            if generation_result.get("strategies"):
+                st.dataframe(pd.DataFrame(generation_result["strategies"]), use_container_width=True, hide_index=True)
+            if generation_result.get("code"):
+                st.code(generation_result["code"], language="python")
+
     selected_strategy = st.selectbox(
         "Select active strategy",
         strategy_names,
@@ -228,13 +338,24 @@ with workbench_col:
         format_func=lambda name: next((item["display_name"] for item in strategy_catalog if item["name"] == name), name),
         key="active_strategy_selector",
     )
-    selected_meta = next((item for item in strategy_catalog if item["name"] == selected_strategy), None)
+    st.session_state["strategy_focus_name"] = selected_strategy
+    selected_meta = strategy_lookup.get(selected_strategy)
     if selected_meta:
         st.caption(selected_meta["description"])
         meta_cols = st.columns(3)
-        meta_cols[0].metric("Source", selected_meta["source"].title())
+        meta_cols[0].metric("Origin", format_strategy_origin(selected_meta))
         meta_cols[1].metric("Version", selected_meta["version"])
         meta_cols[2].metric("Regimes", ", ".join(selected_meta["regimes"]) or "All")
+        if selected_meta.get("file_name"):
+            st.caption(f"File: `{selected_meta['file_name']}`")
+        if selected_meta.get("path"):
+            st.caption(f"Path: `{selected_meta['path']}`")
+        if selected_meta.get("modified_at"):
+            st.caption(f"Last modified: {selected_meta['modified_at']}")
+        if selected_meta.get("is_generated"):
+            st.info("Generated plugin draft. Backtest it before setting it active for paper/live.")
+        if selected_meta.get("default_params"):
+            st.json(selected_meta["default_params"], expanded=False)
     if st.button("Set Active Strategy", type="primary", use_container_width=True):
         saved = set_active_strategy_config(selected_strategy)
         load_strategy_catalog.clear()
@@ -245,19 +366,7 @@ with workbench_col:
             "Restart paper/live processes to apply the change outside dashboard backtests."
         )
 
-    catalog_df = pd.DataFrame(
-        [
-            {
-                "name": item["name"],
-                "display_name": item["display_name"],
-                "source": item["source"],
-                "version": item["version"],
-                "regimes": ", ".join(item["regimes"]) or "All",
-                "status": item["load_status"],
-            }
-            for item in strategy_catalog
-        ]
-    )
+    catalog_df = build_strategy_catalog_frame(strategy_catalog)
     st.dataframe(catalog_df, use_container_width=True, hide_index=True)
 
     if strategy_errors:
@@ -279,6 +388,15 @@ with backtest_col:
         bt_end = date_cols[1].date_input("End", value=datetime.utcnow().date())
         run_backtest_now = st.form_submit_button("Run Backtest", type="primary", use_container_width=True)
 
+    selected_bt_meta = strategy_lookup.get(bt_strategy)
+    if selected_bt_meta:
+        st.caption(
+            f"Evaluating `{selected_bt_meta['name']}` · {format_strategy_origin(selected_bt_meta)} · "
+            f"v{selected_bt_meta['version']}"
+        )
+        if selected_bt_meta.get("is_generated"):
+            st.info("This is a generated plugin draft. Use the saved runs below to decide whether it is ready for paper trading.")
+
     if run_backtest_now:
         with st.spinner("Running backtest and persisting result..."):
             result = run_and_persist_backtest(
@@ -293,8 +411,10 @@ with backtest_col:
         st.success(f"Backtest run #{result['run_id']} saved.")
 
     runs_df = load_backtest_runs()
-    if not runs_df.empty:
-        display_runs = runs_df.copy()
+    st.checkbox("Show all saved runs", key="show_all_backtest_runs")
+    visible_runs_df = filter_backtest_runs(runs_df, bt_strategy, show_all=st.session_state["show_all_backtest_runs"])
+    if not visible_runs_df.empty:
+        display_runs = visible_runs_df.copy()
         if "created_at" in display_runs.columns:
             display_runs["created_at"] = pd.to_datetime(display_runs["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
         if "start_ts" in display_runs.columns:
@@ -307,7 +427,7 @@ with backtest_col:
             )
         st.markdown("#### Saved Runs")
         st.dataframe(display_runs, use_container_width=True, hide_index=True)
-        available_run_ids = runs_df["id"].astype(int).tolist()
+        available_run_ids = visible_runs_df["id"].astype(int).tolist()
         selected_run_id = st.selectbox(
             "Inspect saved run",
             available_run_ids,
@@ -316,11 +436,11 @@ with backtest_col:
             key="selected_backtest_run_id",
             format_func=lambda run_id: (
                 f"#{run_id} · "
-                f"{runs_df.loc[runs_df['id'] == run_id, 'strategy_name'].iloc[0]} · "
-                f"{runs_df.loc[runs_df['id'] == run_id, 'symbol'].iloc[0]}"
+                f"{visible_runs_df.loc[visible_runs_df['id'] == run_id, 'strategy_name'].iloc[0]} · "
+                f"{visible_runs_df.loc[visible_runs_df['id'] == run_id, 'symbol'].iloc[0]}"
             ),
         )
-        selected_run = load_backtest_run(int(selected_run_id)) or runs_df[runs_df["id"] == selected_run_id].iloc[0].to_dict()
+        selected_run = load_backtest_run(int(selected_run_id)) or visible_runs_df[visible_runs_df["id"] == selected_run_id].iloc[0].to_dict()
         selected_run_trades = load_backtest_trades(int(selected_run_id))
         selected_run_equity = compute_trade_equity_curve(selected_run_trades)
         selected_run_drawdown = compute_drawdown_curve(selected_run_equity)
@@ -432,6 +552,10 @@ with backtest_col:
 
             st.markdown("#### Trade Log")
             st.dataframe(selected_run_trades, use_container_width=True, hide_index=True)
+    elif not runs_df.empty:
+        st.info(f"No saved runs yet for `{bt_strategy}`. Run a backtest to start its evaluation history or enable 'Show all saved runs'.")
+    else:
+        st.info("No backtest runs have been saved yet. Run the selected strategy to start its evaluation history.")
 
 # ── Timeframe selector (horizontal buttons) ───────────────────────────────────
 st.markdown("## Runtime Monitor")

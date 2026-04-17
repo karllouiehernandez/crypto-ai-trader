@@ -6,7 +6,8 @@ import pytest
 
 from llm.cache import _default_cache
 from llm.client import LLMResponse, reset_clients
-from llm.generator import _is_valid_python, _strip_fences, generate_strategy
+from llm.generator import _is_valid_python, _strip_fences, generate_and_discover_strategy, generate_strategy
+from strategies.loader import clear_registry
 
 VALID_STRATEGY_CODE = '''
 import pandas as pd
@@ -30,8 +31,10 @@ class GeneratedRSI(StrategyBase):
 def clean():
     _default_cache.clear()
     reset_clients()
+    clear_registry()
     yield
     _default_cache.clear()
+    clear_registry()
 
 
 def _mock_llm(content: str, fallback: bool = False):
@@ -127,3 +130,22 @@ def test_generate_returns_none_on_empty_llm_content():
         code, _ = generate_strategy("empty response", save=False)
 
     assert code is None
+
+
+def test_generate_and_discover_strategy_returns_loaded_plugin_metadata(tmp_path):
+    with patch("llm.generator.call_llm", return_value=_mock_llm(VALID_STRATEGY_CODE)), \
+         patch("llm.generator.STRATEGIES_DIR", tmp_path):
+        result = generate_and_discover_strategy("RSI reversal")
+
+    assert result["load_status"] == "loaded"
+    assert result["strategy_names"] == ["generated_rsi_v1"]
+    assert result["strategies"][0]["is_generated"] is True
+    assert result["file_name"].startswith("generated_")
+
+
+def test_generate_and_discover_strategy_returns_generation_failed_on_fallback():
+    with patch("llm.generator.call_llm", return_value=_mock_llm("", fallback=True)):
+        result = generate_and_discover_strategy("RSI reversal")
+
+    assert result["load_status"] == "generation_failed"
+    assert result["code"] is None

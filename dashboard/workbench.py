@@ -52,6 +52,48 @@ def parse_metrics_json(raw: str | None) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def format_strategy_origin(meta: dict[str, Any] | None) -> str:
+    """Return a user-facing origin label for strategy metadata."""
+    if not meta:
+        return "Unknown"
+
+    provenance = str(meta.get("provenance") or meta.get("source") or "plugin").lower()
+    if provenance == "generated":
+        return "Generated Plugin"
+    if provenance == "builtin":
+        return "Built-in"
+    return "Plugin"
+
+
+def build_strategy_catalog_frame(catalog: list[dict[str, Any]]) -> pd.DataFrame:
+    """Return a dashboard-ready strategy catalog table."""
+    rows = [
+        {
+            "display_name": item.get("display_name", item.get("name", "")),
+            "name": item.get("name", ""),
+            "origin": format_strategy_origin(item),
+            "version": item.get("version", ""),
+            "regimes": ", ".join(item.get("regimes", [])) or "All",
+            "file": item.get("file_name", ""),
+            "status": item.get("load_status", ""),
+            "modified_at": item.get("modified_at", ""),
+        }
+        for item in catalog
+    ]
+    return pd.DataFrame(rows)
+
+
+def filter_backtest_runs(
+    frame: pd.DataFrame,
+    strategy_name: str,
+    show_all: bool = False,
+) -> pd.DataFrame:
+    """Filter persisted backtest runs to one strategy unless the user wants all history."""
+    if show_all or frame.empty or "strategy_name" not in frame.columns:
+        return frame.copy()
+    return frame[frame["strategy_name"] == strategy_name].copy()
+
+
 def filter_runtime_data(
     frame: pd.DataFrame,
     strategy_name: str,

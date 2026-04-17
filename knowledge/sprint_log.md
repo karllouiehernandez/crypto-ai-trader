@@ -128,6 +128,37 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
+## Sprint 18 — Strategy Generation & Evaluation Workflow
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Agent:** Codex
+**Goal:** Formalize the Jesse-like loop where a generated or hand-authored plugin strategy is immediately discoverable, attributable, and evaluable from the dashboard workbench.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `strategies/loader.py` — MODIFIED: added richer file provenance metadata (`file_name`, `modified_at`, `generated_at`, `provenance`, `is_generated`), per-file validation status, explicit validation errors for plugin files that do not expose a `StrategyBase` subclass, and a new `load_strategy_path()` helper for direct plugin rediscovery
+- [x] `strategy/runtime.py` — MODIFIED: built-in strategies now expose the same provenance/validation fields as plugins; workbench catalog ordering now groups built-ins, generated plugins, and regular plugins more intentionally
+- [x] `llm/generator.py` — MODIFIED: refactored generation into a reusable code-generation helper and added `generate_and_discover_strategy()` so the dashboard can save, reload, validate, and inspect a generated plugin in one step
+- [x] `dashboard/workbench.py` — MODIFIED: added pure helpers for strategy origin labels, strategy catalog tables, and strategy-scoped backtest history filtering
+- [x] `dashboard/streamlit_app.py` — MODIFIED: added a `Generate Strategy Draft` flow, surfaced provider/model/tokens + generation status, exposed plugin/generated provenance in the strategy catalog, added clearer selected-strategy metadata, and focused backtest history on the currently evaluated strategy by default
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the new generation-to-evaluation workflow still matches the repo-local Jesse-like UX rules; no content changes required
+- [x] `tests/test_strategy_loader.py`, `tests/test_llm_generator.py`, `tests/test_workbench_helpers.py` — MODIFIED: added coverage for generated-plugin provenance, validation errors, direct plugin reload, generation/discovery flow, and the new workbench helper functions
+
+### Test Results
+- Before: 400 tests passing
+- After: **408 tests passing** (+8 new) — 0 failures
+
+### Key Technical Decisions
+1. **Generation is now a dashboard-first workflow, not just a file write:** the new `generate_and_discover_strategy()` helper saves the plugin and reloads that exact file immediately so the workbench can show whether the strategy is actually usable.
+2. **Generated plugins are first-class catalog entries:** provenance and validation metadata now distinguish built-ins, generated plugins, and regular plugins, which makes the workflow traceable in the UI and safer to hand off across agents.
+3. **Plugin validation errors must surface in the workbench:** plugin files with no `StrategyBase` subclass now become visible loader errors instead of silent no-ops, which reduces confusion when generated code compiles but does not integrate with the strategy runtime.
+4. **Backtest history is strategy-scoped by default:** the workbench now behaves more like a strategy lab by centering saved-run history on the strategy currently under evaluation, with an explicit escape hatch to inspect all historical runs.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 408/408. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17
