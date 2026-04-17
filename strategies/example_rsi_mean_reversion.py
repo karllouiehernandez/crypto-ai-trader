@@ -35,6 +35,8 @@ class RSIMeanReversionStrategy(StrategyBase):
     """
 
     name = "rsi_mean_reversion_v1"
+    display_name = "RSI Mean Reversion Example"
+    description = "Reference plugin showing how to implement a range-bound RSI/Bollinger/MACD strategy as a reviewed StrategyBase subclass."
     version = "1.0.0"
     regimes = [Regime.RANGING]
 

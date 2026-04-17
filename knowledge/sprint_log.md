@@ -187,6 +187,38 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
+## Sprint 20 — Manual Agent Strategy Workflow
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Codex
+**Goal:** Formalize the “agent creates or edits a plugin strategy -> dashboard discovers it -> user evaluates it -> user knows whether it is ready for paper/live” workflow so strategy contributions stay consistent across agents.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `strategies/README.md` — NEW: added repo-local strategy plugin workflow, naming/versioning conventions, and the explicit draft-to-reviewed-plugin path for manual agent work
+- [x] `strategies/_strategy_template.py` — NEW: added a non-loadable template strategy file so agents have a stable starting point inside the plugin directory
+- [x] `strategies/example_rsi_mean_reversion.py` — MODIFIED: enriched the reference plugin with `display_name` and `description` so it reads like a reviewed example instead of a bare implementation
+- [x] `llm/generator.py` — MODIFIED: generated strategy files now include a draft-review header that explicitly describes the review/backtest/promote workflow before paper/live usage
+- [x] `dashboard/workbench.py` — MODIFIED: added `strategy_workflow_status()` and extended the catalog builder so strategies now have workflow stages such as `Draft`, `Evaluated Draft`, and `Reviewed Candidate`
+- [x] `dashboard/streamlit_app.py` — MODIFIED: added a `Manual Agent Workflow` guide, surfaced workflow-stage/backtest counters/next-step messaging for selected strategies, and clarified draft-vs-reviewed behavior in the generation and backtest flows
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — MODIFIED: updated the repo-local UI/UX skill so generated drafts vs reviewed plugins are now part of the explicit workbench contract
+- [x] `tests/test_llm_generator.py`, `tests/test_workbench_helpers.py` — MODIFIED: added coverage for generated draft headers and the new workflow-stage helper logic
+
+### Test Results
+- Before: 411 tests passing
+- After: **413 tests passing** (+2 new) — 0 failures
+
+### Key Technical Decisions
+1. **The manual workflow now lives in the repo, not in agent memory:** template files and `strategies/README.md` make the authoring contract visible to Codex, Claude Code, and Copilot Pro alike.
+2. **Generated strategies are explicitly drafts:** both saved files and dashboard messaging now treat generated output as draft material that must be reviewed and backtested before paper/live promotion.
+3. **Workflow state is derived from persisted backtests:** the workbench now uses passing/failed run history to show whether a strategy is still a draft, under review, or a reviewed candidate.
+4. **The UI/UX skill is part of the workflow contract:** the repo-local skill now encodes draft-versus-reviewed behavior so later dashboard changes do not regress the manual strategy process.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 413/413. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

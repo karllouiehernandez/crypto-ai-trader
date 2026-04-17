@@ -34,6 +34,7 @@ from dashboard.workbench import (
     format_strategy_origin,
     list_runtime_strategies,
     runtime_mode_table,
+    strategy_workflow_status,
     runtime_summary,
 )
 from database.promotion_queries import query_promotions
@@ -214,6 +215,7 @@ show_trades = st.sidebar.checkbox("Trade Markers",     key="show_trades")
 active_strategy = get_active_strategy_config()
 strategy_catalog = load_strategy_catalog()
 strategy_errors = load_strategy_errors()
+all_backtest_runs = load_backtest_runs()
 strategy_names = [item["name"] for item in strategy_catalog]
 strategy_lookup = {item["name"]: item for item in strategy_catalog}
 runtime_trades_all = load_trades(symbol)
@@ -267,6 +269,17 @@ with workbench_col:
         "Research loop: generate or add a plugin, confirm it loads here, backtest it in the lab, "
         "then promote the same strategy into paper/live after restart."
     )
+    with st.expander("Manual Agent Workflow", expanded=False):
+        st.markdown(
+            "1. Start from `strategies/_strategy_template.py` or revise a generated draft.\n"
+            "2. Backtest the strategy in `Backtest Lab` until it has a passing evaluation.\n"
+            "3. Save accepted drafts as reviewed plugins under a stable filename in `strategies/`.\n"
+            "4. Only then set the strategy active for paper trading and restart runtime processes."
+        )
+        st.caption(
+            "Reference files: `strategies/README.md`, `strategies/_strategy_template.py`, "
+            "`strategies/example_rsi_mean_reversion.py`"
+        )
     with st.expander("Generate Strategy Draft", expanded=bool(st.session_state.get("last_generation_result"))):
         if not LLM_ENABLED:
             st.warning(
@@ -335,6 +348,10 @@ with workbench_col:
             gen_meta_cols[0].metric("Provider", provider_label)
             gen_meta_cols[1].metric("Tokens", str(response_meta.get("tokens_used", 0)))
             gen_meta_cols[2].metric("Status", generation_result["load_status"].replace("_", " ").title())
+            st.info(
+                "Generated strategies are drafts by default. Review the file, run a backtest, and only promote "
+                "to paper/live after saving a reviewed plugin copy."
+            )
 
             if generation_result.get("file_name"):
                 st.caption(f"Saved plugin file: `{generation_result['file_name']}`")
@@ -355,19 +372,26 @@ with workbench_col:
     st.session_state["strategy_focus_name"] = selected_strategy
     selected_meta = strategy_lookup.get(selected_strategy)
     if selected_meta:
+        workflow_status = strategy_workflow_status(selected_meta, all_backtest_runs, active_strategy["name"])
         st.caption(selected_meta["description"])
-        meta_cols = st.columns(3)
+        meta_cols = st.columns(4)
         meta_cols[0].metric("Origin", format_strategy_origin(selected_meta))
         meta_cols[1].metric("Version", selected_meta["version"])
         meta_cols[2].metric("Regimes", ", ".join(selected_meta["regimes"]) or "All")
+        meta_cols[3].metric("Workflow Stage", workflow_status["stage"])
         if selected_meta.get("file_name"):
             st.caption(f"File: `{selected_meta['file_name']}`")
         if selected_meta.get("path"):
             st.caption(f"Path: `{selected_meta['path']}`")
         if selected_meta.get("modified_at"):
             st.caption(f"Last modified: {selected_meta['modified_at']}")
+        review_cols = st.columns(3)
+        review_cols[0].metric("Backtest Runs", str(workflow_status["run_count"]))
+        review_cols[1].metric("Passed Runs", str(workflow_status["passed_runs"]))
+        review_cols[2].metric("Failed Runs", str(workflow_status["failed_runs"]))
+        st.info(workflow_status["next_step"])
         if selected_meta.get("is_generated"):
-            st.info("Generated plugin draft. Backtest it before setting it active for paper/live.")
+            st.warning("Generated plugin draft. Keep it in draft status until it passes backtesting and is reviewed as a stable plugin.")
         if selected_meta.get("default_params"):
             st.json(selected_meta["default_params"], expanded=False)
     if st.button("Set Active Strategy", type="primary", use_container_width=True):
@@ -380,7 +404,7 @@ with workbench_col:
             "Restart paper/live processes to apply the change outside dashboard backtests."
         )
 
-    catalog_df = build_strategy_catalog_frame(strategy_catalog)
+    catalog_df = build_strategy_catalog_frame(strategy_catalog, all_backtest_runs, active_strategy["name"])
     st.dataframe(catalog_df, use_container_width=True, hide_index=True)
 
     if strategy_errors:
@@ -404,12 +428,16 @@ with backtest_col:
 
     selected_bt_meta = strategy_lookup.get(bt_strategy)
     if selected_bt_meta:
+        bt_workflow_status = strategy_workflow_status(selected_bt_meta, all_backtest_runs, active_strategy["name"])
         st.caption(
             f"Evaluating `{selected_bt_meta['name']}` · {format_strategy_origin(selected_bt_meta)} · "
             f"v{selected_bt_meta['version']}"
         )
+        st.caption(f"Workflow stage: **{bt_workflow_status['stage']}**")
         if selected_bt_meta.get("is_generated"):
-            st.info("This is a generated plugin draft. Use the saved runs below to decide whether it is ready for paper trading.")
+            st.info("This is a generated plugin draft. Use the saved runs below to decide whether it is ready to be reviewed into a stable plugin.")
+        else:
+            st.info(bt_workflow_status["next_step"])
 
     if run_backtest_now:
         with st.spinner("Running backtest and persisting result..."):
@@ -425,6 +453,7 @@ with backtest_col:
         st.success(f"Backtest run #{result['run_id']} saved.")
 
     runs_df = load_backtest_runs()
+    all_backtest_runs = runs_df
     st.checkbox("Show all saved runs", key="show_all_backtest_runs")
     visible_runs_df = filter_backtest_runs(runs_df, bt_strategy, show_all=st.session_state["show_all_backtest_runs"])
     if not visible_runs_df.empty:

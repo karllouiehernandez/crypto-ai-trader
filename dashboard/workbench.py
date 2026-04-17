@@ -65,13 +65,80 @@ def format_strategy_origin(meta: dict[str, Any] | None) -> str:
     return "Plugin"
 
 
-def build_strategy_catalog_frame(catalog: list[dict[str, Any]]) -> pd.DataFrame:
+def strategy_workflow_status(
+    meta: dict[str, Any] | None,
+    runs: pd.DataFrame | None = None,
+    active_strategy_name: str = "",
+) -> dict[str, Any]:
+    """Return workflow stage and next-step guidance for a strategy."""
+    if not meta:
+        return {
+            "stage": "Unknown",
+            "next_step": "Inspect the strategy metadata before backtesting or activation.",
+            "run_count": 0,
+            "passed_runs": 0,
+            "failed_runs": 0,
+        }
+
+    runs = runs if runs is not None else pd.DataFrame()
+    strategy_name = str(meta.get("name", ""))
+    strategy_runs = runs[runs["strategy_name"] == strategy_name].copy() if not runs.empty and "strategy_name" in runs.columns else pd.DataFrame()
+    statuses = strategy_runs["status"].fillna("").astype(str).str.lower() if not strategy_runs.empty and "status" in strategy_runs.columns else pd.Series(dtype=str)
+    passed_runs = int((statuses == "passed").sum())
+    failed_runs = int((statuses == "failed").sum())
+    run_count = int(len(strategy_runs))
+
+    provenance = str(meta.get("provenance") or meta.get("source") or "plugin").lower()
+    is_active = bool(active_strategy_name and strategy_name == active_strategy_name)
+
+    if provenance == "builtin":
+        stage = "Built-in"
+        next_step = "Backtest it against your current market window, then keep it active or compare it with plugin candidates."
+    elif provenance == "generated":
+        if passed_runs > 0:
+            stage = "Evaluated Draft"
+            next_step = "Review the generated file, refine it if needed, then promote it into paper trading only after saving it as a reviewed plugin."
+        elif run_count > 0:
+            stage = "Draft Under Review"
+            next_step = "Inspect the saved backtests, revise the draft if needed, and rerun until one passes the acceptance gate."
+        else:
+            stage = "Draft"
+            next_step = "Review the generated file, then run a backtest before considering paper trading."
+    else:
+        if passed_runs > 0:
+            stage = "Reviewed Candidate"
+            next_step = "This plugin has a passing backtest history. It is a candidate for paper trading if the strategy logic is reviewed."
+        elif run_count > 0:
+            stage = "Candidate"
+            next_step = "This plugin exists but has not passed a backtest yet. Iterate on the file and keep evaluating it in the workbench."
+        else:
+            stage = "Unreviewed Plugin"
+            next_step = "Run a backtest to establish a baseline before making it active for paper or live trading."
+
+    if is_active and provenance != "builtin":
+        next_step = "It is currently the active strategy. Restart paper/live after any file changes and keep monitoring runtime behavior."
+
+    return {
+        "stage": stage,
+        "next_step": next_step,
+        "run_count": run_count,
+        "passed_runs": passed_runs,
+        "failed_runs": failed_runs,
+    }
+
+
+def build_strategy_catalog_frame(
+    catalog: list[dict[str, Any]],
+    runs: pd.DataFrame | None = None,
+    active_strategy_name: str = "",
+) -> pd.DataFrame:
     """Return a dashboard-ready strategy catalog table."""
     rows = [
         {
             "display_name": item.get("display_name", item.get("name", "")),
             "name": item.get("name", ""),
             "origin": format_strategy_origin(item),
+            "workflow_stage": strategy_workflow_status(item, runs, active_strategy_name)["stage"],
             "version": item.get("version", ""),
             "regimes": ", ".join(item.get("regimes", [])) or "All",
             "file": item.get("file_name", ""),

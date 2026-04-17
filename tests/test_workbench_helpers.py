@@ -15,6 +15,7 @@ from dashboard.workbench import (
     list_runtime_strategies,
     parse_metrics_json,
     runtime_mode_table,
+    strategy_workflow_status,
     runtime_summary,
 )
 
@@ -53,6 +54,7 @@ def test_format_strategy_origin_distinguishes_generated_plugins():
 
 
 def test_build_strategy_catalog_frame_formats_origin_and_regimes():
+    runs = pd.DataFrame([{"strategy_name": "generated_rsi_v1", "status": "passed"}])
     frame = build_strategy_catalog_frame(
         [
             {
@@ -65,10 +67,34 @@ def test_build_strategy_catalog_frame_formats_origin_and_regimes():
                 "load_status": "loaded",
                 "modified_at": "2026-04-17T01:02:03+00:00",
             }
-        ]
+        ],
+        runs=runs,
+        active_strategy_name="regime_router_v1",
     )
     assert frame.loc[0, "origin"] == "Generated Plugin"
+    assert frame.loc[0, "workflow_stage"] == "Evaluated Draft"
     assert frame.loc[0, "regimes"] == "RANGING"
+
+
+def test_strategy_workflow_status_marks_generated_without_runs_as_draft():
+    status = strategy_workflow_status(
+        {"name": "generated_rsi_v1", "provenance": "generated"},
+        pd.DataFrame(),
+        active_strategy_name="regime_router_v1",
+    )
+    assert status["stage"] == "Draft"
+    assert status["run_count"] == 0
+
+
+def test_strategy_workflow_status_marks_reviewed_plugin_with_passing_run():
+    runs = pd.DataFrame([{"strategy_name": "ema_pullback_v1", "status": "passed"}])
+    status = strategy_workflow_status(
+        {"name": "ema_pullback_v1", "provenance": "plugin"},
+        runs,
+        active_strategy_name="regime_router_v1",
+    )
+    assert status["stage"] == "Reviewed Candidate"
+    assert status["passed_runs"] == 1
 
 
 def test_filter_backtest_runs_filters_by_strategy_name():

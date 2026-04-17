@@ -140,7 +140,7 @@ def _generate_strategy_code(
     if not _is_valid_python(code):
         log.error("generated strategy failed syntax validation")
         return None, response
-    return code, response
+    return _prepare_generated_source(code), response
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -160,6 +160,21 @@ def _is_valid_python(code: str) -> bool:
     except SyntaxError as exc:
         log.warning("generated code syntax error", extra={"error": str(exc)})
         return False
+
+
+def _prepare_generated_source(code: str) -> str:
+    """Prepend a draft-review header so generated plugins are easier to triage."""
+    header = textwrap.dedent(
+        """
+        # GENERATED STRATEGY DRAFT
+        # Review workflow:
+        # 1. Verify metadata (`name`, `display_name`, `description`, `version`, `regimes`)
+        # 2. Backtest the draft in the Strategy Workbench
+        # 3. If accepted, save a reviewed copy under a non-generated plugin filename before paper/live use
+
+        """
+    ).strip()
+    return f"{header}\n\n{code.strip()}\n"
 
 
 def _save(code: str) -> Path:

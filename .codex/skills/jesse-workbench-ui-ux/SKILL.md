@@ -69,8 +69,17 @@ Surface plugin and generated strategy state in the UI:
 - file/source provenance when available
 - load errors
 - generated/plugin distinction
+- generated drafts vs reviewed plugins
 
 Do not leave strategy load failures only in logs.
+
+Generated strategies should be treated as drafts until they have been reviewed and backtested. The UI should make the next step explicit:
+
+- generate draft
+- review/edit draft
+- backtest draft
+- save accepted draft as a reviewed plugin
+- only then set it active for paper/live
 
 ## Design direction
 

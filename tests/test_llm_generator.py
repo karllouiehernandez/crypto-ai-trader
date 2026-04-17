@@ -85,11 +85,13 @@ def test_generate_returns_code_when_llm_responds(tmp_path):
         code, resp = generate_strategy("RSI reversal", save=True)
 
     assert code is not None
+    assert code.startswith("# GENERATED STRATEGY DRAFT")
     assert "GeneratedRSI" in code
     assert resp.fallback is False
     # File should have been written to tmp_path
     files = list(tmp_path.glob("generated_*.py"))
     assert len(files) == 1
+    assert files[0].read_text(encoding="utf-8").startswith("# GENERATED STRATEGY DRAFT")
 
 
 def test_generate_returns_none_when_llm_unavailable():
@@ -138,6 +140,7 @@ def test_generate_and_discover_strategy_returns_loaded_plugin_metadata(tmp_path)
         result = generate_and_discover_strategy("RSI reversal")
 
     assert result["load_status"] == "loaded"
+    assert result["code"].startswith("# GENERATED STRATEGY DRAFT")
     assert result["strategy_names"] == ["generated_rsi_v1"]
     assert result["strategies"][0]["is_generated"] is True
     assert result["file_name"].startswith("generated_")
