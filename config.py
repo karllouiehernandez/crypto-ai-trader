@@ -147,6 +147,13 @@ LLM_AUTO_PROMOTE      = os.environ.get("LLM_AUTO_PROMOTE", "false").lower() == "
 # Plugin strategy directory
 STRATEGIES_DIR = BASE_DIR / "strategies"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  Live trade gate (Sprint 13)
+# Set LIVE_TRADE_ENABLED=true in .env ONLY after manual review of promotion event.
+# When False (default) the bot runs in paper-trading mode regardless of gate state.
+# ─────────────────────────────────────────────────────────────────────────────
+LIVE_TRADE_ENABLED = os.environ.get("LIVE_TRADE_ENABLED", "false").lower() == "true"
+
 # Provider base URLs (OpenAI-compatible endpoints for groq/openrouter)
 _LLM_BASE_URLS = {
     "groq":       "https://api.groq.com/openai/v1",

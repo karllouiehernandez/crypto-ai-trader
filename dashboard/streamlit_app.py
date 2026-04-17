@@ -9,9 +9,10 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD
+from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD, LIVE_TRADE_ENABLED
 from strategy.ta_features import add_indicators
 from strategy.regime import detect_regime, Regime
+from database.promotion_queries import query_promotions
 
 # ── Regime config ─────────────────────────────────────────────────────────────
 _REGIME_EMOJI = {
@@ -97,6 +98,11 @@ def load_equity() -> pd.DataFrame:
         return df
     except Exception:
         return pd.DataFrame()
+
+
+@st.cache_data(ttl=30)
+def load_promotions() -> pd.DataFrame:
+    return query_promotions(DB_PATH)
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -195,6 +201,28 @@ if not eq.empty:
                       delta=f"{eq.equity.iloc[-1] - STARTING_BALANCE_USD:+.2f}")
 else:
     st.sidebar.metric("Equity (USD)", f"${STARTING_BALANCE_USD:,.2f}")
+
+# ── Sidebar: AI Promotion Gate ────────────────────────────────────────────────
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🤖 AI Promotion Gate")
+try:
+    promo_df = load_promotions()
+    if not promo_df.empty:
+        latest = promo_df.iloc[0]
+        ts_str = pd.to_datetime(latest["ts"]).strftime("%Y-%m-%d")
+        st.sidebar.success(f"🚀 PROMOTED  ·  {ts_str}")
+        st.sidebar.metric("Sharpe",        f"{latest['sharpe']:.2f}")
+        st.sidebar.metric("Max Drawdown",  f"{latest['max_dd']:.1%}")
+        st.sidebar.metric("Profit Factor", f"{latest['profit_factor']:.2f}")
+        if LIVE_TRADE_ENABLED:
+            st.sidebar.warning("⚡ LIVE_TRADE_ENABLED=true")
+        else:
+            st.sidebar.caption("Set LIVE_TRADE_ENABLED=true in .env to enable real orders")
+    else:
+        st.sidebar.info("⏳ Not yet promoted")
+        st.sidebar.caption("Requires 3 consecutive PROMOTE_TO_LIVE evaluations")
+except Exception:
+    st.sidebar.caption("Promotion data unavailable")
 
 # ── Main chart: Price + Volume (subplots) ────────────────────────────────────
 fig = make_subplots(

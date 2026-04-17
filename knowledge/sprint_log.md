@@ -5,6 +5,38 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Agent:** Claude Code
+**Goal:** Surface promotion status in Streamlit dashboard; add manual confirmation gate before real-money trading.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `config.py` — MODIFIED: added `LIVE_TRADE_ENABLED` flag (default False); reads from `.env`; gating real order submission requires manual opt-in
+- [x] `dashboard/streamlit_app.py` — MODIFIED: added "🤖 AI Promotion Gate" sidebar section; loads `Promotion` table via `query_promotions`; shows metrics (Sharpe, Max DD, Profit Factor) on promotion; warns when `LIVE_TRADE_ENABLED=true`; falls back gracefully with `st.info` when no promotions yet
+- [x] `simulator/coordinator.py` — MODIFIED: added `promotion_status() -> dict` public method returning promoted state, eval_count, consecutive_promotes, gate_passed, learner_running; safe for dashboard polling
+- [x] `database/promotion_queries.py` — NEW: read-only SQLite query helper, returns all promotion records newest-first; no Streamlit imports (testable directly); connection leak fixed with `try/finally`
+- [x] `tests/test_dashboard_promotion.py` — NEW: 16 unit tests covering query_promotions (empty table, correct columns, single/multi rows, newest-first ordering, value accuracy, missing table, nonexistent file, bad path), Coordinator.promotion_status (initial state, all keys present, after _check_gate fires, gate reflects learner), config.LIVE_TRADE_ENABLED (bool type, default False, env override)
+
+### Test Results
+- Before: 355 tests passing
+- After: **371 tests passing** (+16 new) — 0 failures
+
+### Key Technical Decisions
+1. **`database/promotion_queries.py` separate module**: Kept Streamlit imports out so tests can import the query helper directly without requiring a running Streamlit server.
+2. **`try/finally` for connection close**: `con.close()` placed in `finally` block so connections are released even if `pd.read_sql` raises (e.g., schema mismatch, corrupt DB). Previous `con.close()` inside `try` would leak handles on the 30-second dashboard auto-refresh cycle.
+3. **LIVE_TRADE_ENABLED not yet enforced**: Flag exists in config and is surfaced in the dashboard, but PaperTrader→real order submission wiring is deferred to Sprint 14. Dashboard caption clarifies this.
+
+### Code Review Outcome
+**Pass 1 result:** APPROVED AFTER FIXES
+- HIGH-1: SQLite connection leak in `query_promotions` (`con.close()` not in `finally`) — **fixed**
+- MEDIUM-3: sprint_log.md not updated — **fixed** (this entry)
+- MEDIUM-1 (LIVE_TRADE_ENABLED not enforced): accepted — deferred to Sprint 14 by design
+- LOWs: accepted as non-blocking
+
+---
+
 ## Sprint 12 — Live Promotion Coordinator
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

@@ -40,6 +40,18 @@ class Coordinator:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
+    def promotion_status(self) -> dict:
+        """Return current promotion state — safe to call from any thread."""
+        return {
+            "promoted":             self._promoted,
+            "eval_count":           getattr(self._learner, "_eval_count", 0),
+            "consecutive_promotes": self._learner._consecutive_promotes(),
+            "gate_passed":          self._learner.confidence_gate_passed(),
+            "learner_running":      (
+                self._learner_task is not None and not self._learner_task.done()
+            ),
+        }
+
     async def run_loop(self) -> None:
         """Start SelfLearner as a background task then poll the promotion gate."""
         if LLM_ENABLED:

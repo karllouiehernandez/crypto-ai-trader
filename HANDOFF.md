@@ -10,9 +10,9 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-17 (Sprint 12 closed) |
-| **Sprint completed** | Sprint 12 ✅ — committed + pushed to GitHub |
-| **Next sprint** | Sprint 13 — Dashboard Promotion Panel + Live Trade Gate |
+| **Last updated** | 2026-04-17 (Sprint 13 closed) |
+| **Sprint completed** | Sprint 13 ✅ — committed + pushed to GitHub |
+| **Next sprint** | Sprint 14 — Live Trade Execution Gate (wire LIVE_TRADE_ENABLED into PaperTrader) |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -20,30 +20,31 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 ---
 
-## Resume Here — Sprint 13: Dashboard Promotion Panel + Live Trade Gate
+## Resume Here — Sprint 14: Live Trade Execution Gate
 
-**Sprint 12 complete.** Live Promotion Coordinator is wired. 355 tests passing.
+**Sprint 13 complete.** Dashboard Promotion Panel is live. 371 tests passing.
 
-### What was done in Sprint 12
-- `database/models.py` — added `Promotion` table (eval_number, consecutive_promotes, sharpe, max_dd, profit_factor, confidence_score, recommendation)
-- `simulator/coordinator.py` — NEW: `Coordinator` class; `run_loop()` starts SelfLearner via `create_task` (ref stored); polls gate hourly via `run_in_executor`; fires one-shot promotion (DB + KB + Telegram) when `confidence_gate_passed()` first returns True; cancels learner on shutdown
-- `run_live.py` — wires `SelfLearner` + `Coordinator` into `asyncio.gather()`
-- 21 new tests → **355 total passing**
+### What was done in Sprint 13
+- `config.py` — added `LIVE_TRADE_ENABLED` flag (default False, read from `.env`)
+- `dashboard/streamlit_app.py` — added "🤖 AI Promotion Gate" sidebar section; queries `Promotion` table; shows Sharpe/MaxDD/PF; warns when `LIVE_TRADE_ENABLED=true`
+- `simulator/coordinator.py` — added `promotion_status() -> dict` public method for dashboard polling
+- `database/promotion_queries.py` — NEW: read-only SQLite helper; connection-safe `try/finally`
+- `tests/test_dashboard_promotion.py` — NEW: 16 unit tests
+- **371 total passing** (+16 from Sprint 13)
 
-### Sprint 13 Goal — Dashboard Promotion Panel + Live Trade Gate
-Surface the promotion status in the Streamlit dashboard and add a manual confirmation gate before any real-money trading.
+### Sprint 14 Goal — Live Trade Execution Gate
+Wire `LIVE_TRADE_ENABLED` from config into `PaperTrader` so that when it is True and the promotion gate has passed, the bot submits real Binance orders instead of simulated ones.
 
 Suggested scope:
-- `dashboard/streamlit_app.py` — add a "Promotion Status" sidebar section: shows `confidence_gate_passed()` state, consecutive promotes count, last evaluation metrics; reads from `knowledge/promotions.md` and/or `Promotion` DB table
-- `simulator/coordinator.py` — expose `promotion_status() -> dict` method so dashboard can read state without importing SelfLearner
-- `database/models.py` — verify `Promotion` table is queryable from dashboard
-- `config.py` — add `LIVE_TRADE_ENABLED=False` flag: when True + gate passed, PaperTrader switches to real order submission (future sprint)
-- `tests/test_dashboard_promotion.py` — unit tests for promotion panel rendering logic
+- `simulator/paper_trader.py` — check `LIVE_TRADE_ENABLED` before order submission; if True, call real Binance `create_order`; if False, continue mock path
+- `config.py` — no changes needed (flag already exists)
+- `run_live.py` — log a prominent startup warning when `LIVE_TRADE_ENABLED=true`
+- `utils/telegram_utils.py` — send startup alert when real trading is enabled
+- `tests/test_live_trade_gate.py` — unit tests for gate logic: real order path, paper path, gate not passed → stays paper
 
 ### Step 1 — Verify baseline
 ```bash
-cd D:\trader\crypto_ai_trader
-pytest tests/ -q   # must show 355 passed
+pytest tests/ -q   # must show 371 passed
 ```
 
 ## Resume Here — Sprint 10: LLM Core Layer
@@ -154,6 +155,7 @@ docker attach hummingbot_crypto_ai
 | Sprint 10 — LLM Core Layer (multi-provider) | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 11 — Self-Learning Loop + KB Integration | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 | Sprint 12 — Live Promotion Coordinator | ✅ CLOSED | Claude Code | 2026-04-17 |
+| Sprint 13 — Dashboard Promotion Panel + Live Trade Gate | ✅ CLOSED | Claude Code | 2026-04-17 |
 
 ---
 
