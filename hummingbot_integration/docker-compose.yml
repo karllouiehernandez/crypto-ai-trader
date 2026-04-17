@@ -1,0 +1,37 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# crypto_ai_trader × Hummingbot Paper Trading
+#
+# Start:   docker compose up -d
+# Attach:  docker attach hummingbot_crypto_ai
+# Detach:  Ctrl-P  Ctrl-Q  (keeps running)
+# Stop:    docker compose down
+#
+# Inside Hummingbot CLI:
+#   connect binance_paper_trade          ← first time only
+#   start --script crypto_ai_trader_strategy.py
+#   status                               ← live dashboard
+#   history                              ← trade log
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  hummingbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hummingbot_crypto_ai
+    # Mount our scripts, conf, logs and data into the container
+    volumes:
+      - ./scripts:/home/hummingbot/scripts
+      - ./conf:/home/hummingbot/conf
+      - ./logs:/home/hummingbot/logs
+      - ./data:/home/hummingbot/data
+    environment:
+      # Password used to encrypt stored API keys.  Change before first run.
+      - CONFIG_PASSWORD=change_me_before_first_run
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    # Hummingbot needs access to the internet for market data
+    network_mode: bridge

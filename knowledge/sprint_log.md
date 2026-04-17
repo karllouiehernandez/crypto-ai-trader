@@ -241,11 +241,77 @@ Ready for Sprint 7.
 - [x] `simulator/paper_trader.py` — replaced module-level `logging.basicConfig` with `log = logging.getLogger(__name__)`; BUY log now includes qty, price, atr, cost, cash; SELL log includes qty, price, proceeds, pnl, cash; halt warnings include reason field
 - [x] `collectors/live_streamer.py` — removed `logging.basicConfig` (now configured centrally by entry point); added `log = logging.getLogger(__name__)`; stream error logs use structured extra fields (symbol, error, retry_in_s); Telegram error uses log.error; startup/stop use module logger
 - [x] `backtester/engine.py` — removed `logging.basicConfig`; added `log = logging.getLogger(__name__)`; backtest result log includes symbol, final_equity, pnl_pct as structured extra fields
+
+---
+
+## Hummingbot Paper Trading Integration
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Goal:** Wrap signal_engine.py as a Hummingbot ScriptStrategy for 30-day paper trading run
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `hummingbot_integration/scripts/crypto_ai_trader_strategy.py` — self-contained Hummingbot ScriptStrategy; inlines all pure-function logic (ta_features, regime detection, all 3 signal strategies, risk management); uses CandlesFactory for 1m OHLCV; trades BTC-USDT / ETH-USDT / BNB-USDT via `binance_paper_trade`; 60s signal evaluation interval; ATR sizing (1% equity risk); daily loss halt (3%); drawdown halt (15%); `format_status()` for Hummingbot `status` command
+- [x] `hummingbot_integration/Dockerfile` — extends `hummingbot/hummingbot:latest`; installs `ta==0.11.0` via conda pip
+- [x] `hummingbot_integration/docker-compose.yml` — mounts scripts/, conf/, logs/, data/ into container; restart=unless-stopped
+- [x] `hummingbot_integration/conf/connectors/binance_paper_trade.yml.template` — API key template
+- [x] `HANDOFF.md` — updated with Hummingbot start instructions and file references
+
+### Architecture Decision
+Signal logic is **inlined** (not imported) in the ScriptStrategy. This makes it fully portable inside Hummingbot's Docker container without any Python path setup. The original `strategy/` package remains unchanged — single source of truth for backtesting/live trading in the custom engine.
+
+### To Start Paper Trading
+```bash
+cd hummingbot_integration
+docker compose build && docker compose up -d
+docker attach hummingbot_crypto_ai
+# Inside CLI:
+connect binance_paper_trade
+start --script crypto_ai_trader_strategy.py
+status
+```
+
+### Code Review
+**Result:** APPROVED — no CRITICAL/HIGH issues. Logic mirrors original signal_engine.py exactly.
+  - Signal routing: HIGH_VOL > SQUEEZE > TRENDING > RANGING ✓
+  - ATR sizing formula matches risk.py ✓
+  - Daily loss / drawdown trackers match risk.py ✓
+  - No hardcoded credentials ✓
+  - No DB calls in strategy (pure Hummingbot connector API) ✓
 - [x] `run_live.py` — added `logging.basicConfig` as the single root logger configuration; format includes `%(name)s` for module-level filtering
 
 ### Code Review (1 pass)
 **Pass 1 result:** APPROVED AFTER FIXES — 1 CRITICAL, 1 MEDIUM found
 - CRITICAL: Dashboard crashed with empty DataFrame (fresh DB) — all chart sections now guarded with `if not df.empty:` checks; empty state shows "No data available" annotation
+
+---
+
+## Dashboard UX Fix — Overlay Toggles Reset on Auto-Refresh
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Goal:** Fix chart overlay settings (OHLC, BB, EMAs) resetting every auto-refresh cycle; make dashboard more intuitive
+**Status:** CLOSED ✓
+
+### Problem
+Plotly legend click-toggles are client-side state only — every `st.rerun()` (triggered by auto-refresh) rebuilds the chart from scratch, restoring all traces regardless of what the user had toggled off.
+
+### Changes Made
+- [x] `dashboard/streamlit_app.py`:
+  - Replaced Plotly legend toggles with **sidebar checkboxes backed by `st.session_state`** — all overlay preferences (Candlesticks, Bollinger Bands, EMA 9/21/55, EMA 200, Trade Markers) persist across every auto-refresh
+  - Added **EMA 200 toggle** (off by default) as a new overlay option
+  - Added **live countdown timer** `⏱ Auto-refresh in Ns` replacing the frozen 15s blank screen
+  - Added **line chart fallback** when Candlesticks unchecked (no blank chart)
+  - All sidebar controls (symbol, autoref, overlays) use `key=` parameter so Streamlit session_state manages persistence automatically
+  - `_DEFAULTS` dict initialises session_state on first load only — never overwrites user choices on rerun
+
+### Root Cause
+`st.checkbox(value=True)` without a `key` resets to `True` on every rerun. Fix: use `key=` and initialise defaults with `if k not in st.session_state` guard.
+
+### Code Review
+**Result:** APPROVED — no CRITICAL/HIGH issues.
+  - No new DB calls or async issues ✓
+  - session_state keys are unique and namespaced ✓
+  - Countdown timer uses `st.empty()` placeholder — no duplicate widgets ✓
 - MEDIUM: Multiple `logging.basicConfig()` calls in library modules — **fixed**: removed from `live_streamer.py`, `backtester/engine.py`; only `run_live.py` (entry point) configures root logger
 
 ### Outcome

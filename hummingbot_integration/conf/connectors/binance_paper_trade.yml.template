@@ -1,0 +1,15 @@
+# binance_paper_trade connector configuration template
+# ──────────────────────────────────────────────────────────────────────────────
+# Copy this file to conf/connectors/binance_paper_trade.yml
+# (Hummingbot auto-creates this when you run `connect binance_paper_trade`
+#  inside the CLI — you only need this template if you want to pre-configure.)
+#
+# For paper trading Hummingbot uses your REAL Binance API key as a read-only
+# price feed but NEVER executes real orders.  Use keys with no trading
+# permissions (read-only / IP-restricted) for safety.
+#
+# Get keys at: https://www.binance.com/en/my/settings/api-management
+# ──────────────────────────────────────────────────────────────────────────────
+
+binance_paper_trade_api_key: "YOUR_BINANCE_READ_ONLY_API_KEY"
+binance_paper_trade_api_secret: "YOUR_BINANCE_READ_ONLY_API_SECRET"

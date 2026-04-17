@@ -112,8 +112,31 @@ st.markdown("""
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 st.sidebar.title("⚙️ Controls")
-symbol  = st.sidebar.selectbox("Symbol", SYMBOLS)
-autoref = st.sidebar.checkbox("Auto-refresh (15 s)", value=True)
+
+# Persist all user preferences in session_state so auto-refresh never resets them
+_DEFAULTS = {
+    "symbol":        SYMBOLS[0],
+    "autoref":       True,
+    "show_ohlc":     True,
+    "show_bb":       True,
+    "show_ema":      True,
+    "show_trades":   True,
+    "show_ema200":   False,
+}
+for k, v in _DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+symbol  = st.sidebar.selectbox("Symbol", SYMBOLS, key="symbol")
+autoref = st.sidebar.checkbox("Auto-refresh (15 s)", key="autoref")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**📉 Chart Overlays**")
+show_ohlc   = st.sidebar.checkbox("Candlesticks",      key="show_ohlc")
+show_bb     = st.sidebar.checkbox("Bollinger Bands",   key="show_bb")
+show_ema    = st.sidebar.checkbox("EMA 9 / 21 / 55",   key="show_ema")
+show_ema200 = st.sidebar.checkbox("EMA 200",           key="show_ema200")
+show_trades = st.sidebar.checkbox("Trade Markers",     key="show_trades")
 
 # ── Timeframe selector (horizontal buttons) ───────────────────────────────────
 st.markdown("### 📈 " + symbol + " Chart")
@@ -184,15 +207,22 @@ fig = make_subplots(
 
 if not df.empty:
     # ── Row 1: Candlesticks ────────────────────────────────────────────────────
-    fig.add_trace(go.Candlestick(
-        x=df.open_time, open=df.open, high=df.high, low=df.low, close=df.close,
-        name="OHLC",
-        increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
-        increasing_fillcolor="#26a69a", decreasing_fillcolor="#ef5350",
-    ), row=1, col=1)
+    if show_ohlc:
+        fig.add_trace(go.Candlestick(
+            x=df.open_time, open=df.open, high=df.high, low=df.low, close=df.close,
+            name="OHLC",
+            increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
+            increasing_fillcolor="#26a69a", decreasing_fillcolor="#ef5350",
+        ), row=1, col=1)
+    else:
+        # Line chart fallback when OHLC hidden
+        fig.add_trace(go.Scatter(
+            x=df.open_time, y=df.close, name="Close",
+            line=dict(color="#2962ff", width=1.5)
+        ), row=1, col=1)
 
     # Bollinger Bands with fill
-    if "bb_hi" in df.columns and "bb_lo" in df.columns:
+    if show_bb and "bb_hi" in df.columns and "bb_lo" in df.columns:
         fig.add_trace(go.Scatter(
             x=df.open_time, y=df.bb_hi, name="BB Upper",
             line=dict(width=0.8, color="rgba(100,180,255,0.6)"), showlegend=False
@@ -204,20 +234,28 @@ if not df.empty:
         ), row=1, col=1)
 
     # EMAs
-    ema_styles = [
-        ("ema_9",  "EMA 9",  "#f6c90e", 1),
-        ("ema_21", "EMA 21", "#ff9800", 1.2),
-        ("ema_55", "EMA 55", "#e91e63", 1.4),
-    ]
-    for col_name, label, color, width in ema_styles:
-        if col_name in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df[col_name], name=label,
-                line=dict(width=width, color=color)
-            ), row=1, col=1)
+    if show_ema:
+        ema_styles = [
+            ("ema_9",  "EMA 9",  "#f6c90e", 1),
+            ("ema_21", "EMA 21", "#ff9800", 1.2),
+            ("ema_55", "EMA 55", "#e91e63", 1.4),
+        ]
+        for col_name, label, color, width in ema_styles:
+            if col_name in df.columns:
+                fig.add_trace(go.Scatter(
+                    x=df.open_time, y=df[col_name], name=label,
+                    line=dict(width=width, color=color)
+                ), row=1, col=1)
+
+    # EMA 200
+    if show_ema200 and "ema_200" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df.open_time, y=df["ema_200"], name="EMA 200",
+            line=dict(width=1.5, color="#7c4dff", dash="dot")
+        ), row=1, col=1)
 
     # Trade markers
-    if not tr.empty:
+    if show_trades and not tr.empty:
         tf_start = df.open_time.min()
         tf_end   = df.open_time.max()
         visible_tr = tr[(tr.ts >= tf_start) & (tr.ts <= tf_end)]
@@ -354,6 +392,10 @@ if not eq.empty:
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if autoref:
     import time
-    time.sleep(15)
+    placeholder = st.empty()
+    for remaining in range(15, 0, -1):
+        placeholder.caption(f"⏱ Auto-refresh in {remaining}s  •  Toggle off in sidebar to pause")
+        time.sleep(1)
+    placeholder.empty()
     st.rerun()
 

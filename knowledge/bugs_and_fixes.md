@@ -5,6 +5,16 @@ Add an entry here whenever a bug is found — even before it is fixed.
 
 ---
 
+## 2026-04-17 dashboard/streamlit_app.py — Chart overlay toggles reset on every auto-refresh
+**What happened:** User untoggled OHLC candlesticks (or BB/EMAs) via Plotly's legend. Every 15s auto-refresh called `st.rerun()`, rebuilding the chart from scratch and re-adding all traces — ignoring what the user had toggled off.
+**Why it happened:** Plotly legend toggles are client-side only. `st.checkbox(value=True)` without a `key=` also resets to the default on every rerun. Neither approach survives `st.rerun()`.
+**Impact:** Dashboard unusable for focused analysis — any overlay customisation is lost every 15 seconds.
+**What we changed:** Moved all overlay controls to sidebar `st.checkbox` widgets with `key=` parameter. Defaults initialised once via `if k not in st.session_state` guard. Added countdown timer and line-chart fallback.
+**What to try next:** N/A — resolved.
+**Status:** FIXED — 2026-04-17
+
+---
+
 ## 2026-04-16 simulator/backtester.py — Wrong argument order in compute_signal() call
 **What happened:** `simulator/backtester.py` calls `compute_signal(sym, sess)` but the actual function signature in `strategy/signal_engine.py` is `compute_signal(sess, candle)`. Running the backtester would raise a `TypeError` immediately.
 **Why it happened:** The backtester was written against a stale API — `compute_signal` was refactored to take `(sess, candle)` but the caller was not updated.

@@ -10,19 +10,19 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | GitHub Copilot |
-| **Last updated** | 2026-04-18 (Sprint 8) |
-| **Sprint completed** | Sprint 8 ✅ |
-| **Next sprint** | Sprint 9 (or production deployment) |
-| **Blocking issues** | None |
+| **Last updated** | 2026-04-17 (Dashboard UX fix) |
+| **Sprint completed** | Dashboard UX Fix ✅ |
+| **Next sprint** | Start 30-day paper trading run |
+| **Blocking issues** | None — bot is ready to run |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 8 complete |
+| **Reason for handoff** | Switching to Claude Code |
 
 ---
 
-## Resume Here — Post-Sprint 8
+## Resume Here — Start Paper Trading
 
-**Sprint 8 is complete.** All 8 planned sprints are now done. 213 tests passing.
+**All 8 sprints done. Hummingbot integration complete. Dashboard UX fixed.** The bot is ready to run.
 
 ### Pre-Live Checklist Status
 - [x] Credentials in `.env` (Sprint 0)
@@ -32,19 +32,46 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 - [x] Test suite passing — 213 tests (Sprint 2+8)
 - [x] Knowledge base initialized (Sprint 1+)
 - [x] Walk-forward validation with acceptance gates (Sprint 8)
+- [x] Hummingbot ScriptStrategy wrapping signal_engine (Hummingbot sprint)
+- [x] Dashboard overlay toggles persist across auto-refresh (UX fix)
 - [ ] **30+ days paper trading with positive Sharpe** — this is the remaining gate
 
-### Next action options
-1. **Deploy paper trading**: run `python run_live.py` and monitor for 30+ days
-2. **Sprint 9** (optional): multi-exchange support (ccxt), production deployment hardening
-3. **Backtest validation**: run `python run_backtest.py BTCUSDT 2023-01-01 2024-12-31` to validate strategy against 2 years of data
+### How to Start Paper Trading (no Docker needed)
 
-### Sprint 8 Files
-- `backtester/metrics.py` — pure metric functions
-- `backtester/walk_forward.py` — rolling walk-forward engine
-- `backtester/engine.py` — slippage-aware fills + `build_equity_curve()`
-- `run_backtest.py` — walk-forward CLI (default) + `--no-walk-forward` single mode
-- `tests/test_metrics.py` (24 tests), `tests/test_walk_forward.py` (14 tests)
+**Terminal 1 — the trading bot:**
+```bash
+cd D:\trader\crypto_ai_trader
+python run_live.py
+```
+
+**Terminal 2 — the live dashboard:**
+```bash
+cd D:\trader\crypto_ai_trader
+streamlit run dashboard/streamlit_app.py
+# Open browser: http://localhost:8501
+```
+
+### Dashboard Features (after UX fix)
+- Sidebar overlay checkboxes (Candlesticks, BB, EMA 9/21/55, EMA 200, Trade Markers) — all persist across auto-refresh
+- Live countdown timer `⏱ Auto-refresh in 14s` instead of frozen blank screen
+- Unchecking OHLC switches to a clean line chart (no blank chart)
+- Symbol selector, timeframe buttons, regime badge, RSI/ADX/BB metrics all persist
+
+### Hummingbot (optional — Docker required)
+Docker Desktop needs `HypervisorPlatform` Windows feature enabled + PC restart.
+After Docker works:
+```bash
+cd hummingbot_integration
+docker compose build && docker compose up -d
+docker attach hummingbot_crypto_ai
+# Inside CLI: connect binance_paper_trade → start --script crypto_ai_trader_strategy.py
+```
+
+### Files Changed This Session
+- `dashboard/streamlit_app.py` — overlay checkboxes backed by session_state; countdown timer; line chart fallback
+- `hummingbot_integration/scripts/crypto_ai_trader_strategy.py` — Hummingbot ScriptStrategy
+- `hummingbot_integration/Dockerfile` + `docker-compose.yml` — container setup
+- `hummingbot_integration/conf/connectors/binance_paper_trade.yml.template`
 
 ---
 
