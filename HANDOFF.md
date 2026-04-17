@@ -11,7 +11,7 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 |-------|-------|
 | **Last active agent** | Codex |
 | **Last updated** | 2026-04-18 (Sprint 21 closed) |
-| **Sprint completed** | Sprint 21 ✅ — Jesse-like workbench polish committed and ready to push |
+| **Sprint completed** | Sprint 21 ✅ — Jesse-like workbench polish committed + pushed to GitHub |
 | **Next sprint** | Sprint 22 — Strategy Comparison & Evaluation UX |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
