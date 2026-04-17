@@ -99,6 +99,35 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
+## Sprint 17 — Backtest & Runtime Visualization Hardening
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Agent:** Codex
+**Goal:** Make the first workbench slice feel closer to a Jesse-style research loop by improving backtest inspection, runtime monitoring, and workbench helper stability.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/workbench.py` — NEW: pure helper module for trade-equity curves, drawdown curves, runtime filtering, runtime summary cards, and safe metrics parsing
+- [x] `backtester/service.py` — MODIFIED: hardened saved-run querying with safe metrics JSON parsing, explicit run lookup, and a bounded run history query
+- [x] `dashboard/streamlit_app.py` — MODIFIED: upgraded `Backtest Lab` with clearer saved-run inspection, run summary cards, visible acceptance-gate feedback, equity and drawdown charts, and a denser trade log view; upgraded `Runtime Monitor` with strategy/mode-filtered summary cards, runtime drawdown, and recent execution context
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed Sprint 17 dashboard changes still match the Jesse-like workbench workflow and required surfaces/panels
+- [x] `tests/test_workbench_helpers.py` — NEW: coverage for pure dashboard helper calculations and runtime summaries
+- [x] `tests/test_backtester_service.py` — NEW: coverage for saved-run parsing and bounded run history queries
+
+### Test Results
+- Before: 391 tests passing
+- After: **400 tests passing** (+9 new) — 0 failures
+
+### Key Technical Decisions
+1. **Move dashboard math into pure helpers**: drawdown, runtime filtering, and runtime summaries now live in a testable module instead of being buried in Streamlit code.
+2. **Keep the dashboard dense but structured**: Sprint 17 favors Jesse-like quick inspection with run summary cards, saved-run selection, and recent execution context rather than introducing a heavier multi-page UI.
+3. **Harden saved-run querying before adding more UX layers**: parsing and bounded history reads were tightened first so a growing backtest history does not destabilize the workbench.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 400/400. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

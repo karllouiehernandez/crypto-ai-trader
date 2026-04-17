@@ -10,6 +10,7 @@ import pandas as pd
 from backtester.engine import build_equity_curve, run_backtest
 from backtester.metrics import acceptance_gate, compute_metrics
 from database.models import BacktestRun, BacktestTrade, SessionLocal, init_db
+from dashboard.workbench import parse_metrics_json
 
 
 def run_and_persist_backtest(
@@ -69,12 +70,13 @@ def run_and_persist_backtest(
     }
 
 
-def list_backtest_runs() -> pd.DataFrame:
+def list_backtest_runs(limit: int = 100) -> pd.DataFrame:
     init_db()
     with SessionLocal() as sess:
         rows = (
             sess.query(BacktestRun)
             .order_by(BacktestRun.created_at.desc())
+            .limit(limit)
             .all()
         )
 
@@ -88,11 +90,31 @@ def list_backtest_runs() -> pd.DataFrame:
             "strategy_name": row.strategy_name,
             "strategy_version": row.strategy_version,
             "status": row.status,
-            **json.loads(row.metrics_json or "{}"),
+            **parse_metrics_json(row.metrics_json),
         }
         for row in rows
     ]
     return pd.DataFrame(data)
+
+
+def get_backtest_run(run_id: int) -> dict | None:
+    init_db()
+    with SessionLocal() as sess:
+        row = sess.get(BacktestRun, run_id)
+
+    if row is None:
+        return None
+    return {
+        "id": row.id,
+        "created_at": row.created_at,
+        "symbol": row.symbol,
+        "start_ts": row.start_ts,
+        "end_ts": row.end_ts,
+        "strategy_name": row.strategy_name,
+        "strategy_version": row.strategy_version,
+        "status": row.status,
+        **parse_metrics_json(row.metrics_json),
+    }
 
 
 def get_backtest_trades(run_id: int) -> pd.DataFrame:

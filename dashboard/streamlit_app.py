@@ -19,9 +19,16 @@ from strategy.runtime import (
     set_active_strategy_config,
 )
 from backtester.service import (
+    get_backtest_run,
     get_backtest_trades,
     list_backtest_runs,
     run_and_persist_backtest,
+)
+from dashboard.workbench import (
+    compute_drawdown_curve,
+    compute_trade_equity_curve,
+    filter_runtime_data,
+    runtime_summary,
 )
 from database.promotion_queries import query_promotions
 from database.models import init_db
@@ -149,6 +156,11 @@ def load_backtest_runs() -> pd.DataFrame:
 @st.cache_data(ttl=10)
 def load_backtest_trades(run_id: int) -> pd.DataFrame:
     return get_backtest_trades(run_id)
+
+
+@st.cache_data(ttl=10)
+def load_backtest_run(run_id: int) -> dict | None:
+    return get_backtest_run(run_id)
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -283,10 +295,17 @@ with backtest_col:
     runs_df = load_backtest_runs()
     if not runs_df.empty:
         display_runs = runs_df.copy()
+        if "created_at" in display_runs.columns:
+            display_runs["created_at"] = pd.to_datetime(display_runs["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
+        if "start_ts" in display_runs.columns:
+            display_runs["start_ts"] = pd.to_datetime(display_runs["start_ts"]).dt.strftime("%Y-%m-%d")
+        if "end_ts" in display_runs.columns:
+            display_runs["end_ts"] = pd.to_datetime(display_runs["end_ts"]).dt.strftime("%Y-%m-%d")
         if "failures" in display_runs.columns:
             display_runs["failures"] = display_runs["failures"].apply(
                 lambda value: "; ".join(value) if isinstance(value, list) else value
             )
+        st.markdown("#### Saved Runs")
         st.dataframe(display_runs, use_container_width=True, hide_index=True)
         available_run_ids = runs_df["id"].astype(int).tolist()
         selected_run_id = st.selectbox(
@@ -295,9 +314,39 @@ with backtest_col:
             index=0 if "selected_backtest_run_id" not in st.session_state or st.session_state["selected_backtest_run_id"] not in available_run_ids
             else available_run_ids.index(st.session_state["selected_backtest_run_id"]),
             key="selected_backtest_run_id",
+            format_func=lambda run_id: (
+                f"#{run_id} · "
+                f"{runs_df.loc[runs_df['id'] == run_id, 'strategy_name'].iloc[0]} · "
+                f"{runs_df.loc[runs_df['id'] == run_id, 'symbol'].iloc[0]}"
+            ),
         )
-        selected_run = runs_df[runs_df["id"] == selected_run_id].iloc[0]
+        selected_run = load_backtest_run(int(selected_run_id)) or runs_df[runs_df["id"] == selected_run_id].iloc[0].to_dict()
         selected_run_trades = load_backtest_trades(int(selected_run_id))
+        selected_run_equity = compute_trade_equity_curve(selected_run_trades)
+        selected_run_drawdown = compute_drawdown_curve(selected_run_equity)
+
+        st.markdown("#### Run Summary")
+        metric_cols = st.columns(6)
+        metric_cols[0].metric("Strategy", selected_run.get("strategy_name", "—"))
+        metric_cols[1].metric("Version", selected_run.get("strategy_version") or "—")
+        metric_cols[2].metric("Sharpe", f"{float(selected_run.get('sharpe', 0.0)):.2f}")
+        metric_cols[3].metric("Max DD", f"{float(selected_run.get('max_drawdown', 0.0)):.1%}")
+        metric_cols[4].metric("PF", f"{float(selected_run.get('profit_factor', 0.0)):.2f}")
+        metric_cols[5].metric("Trades", f"{int(selected_run.get('n_trades', 0))}")
+
+        if selected_run.get("failures"):
+            failures = selected_run["failures"]
+            if isinstance(failures, list):
+                st.warning("Acceptance gate failures: " + "; ".join(failures))
+            else:
+                st.warning(f"Acceptance gate failures: {failures}")
+        else:
+            st.success(f"Acceptance gate: {str(selected_run.get('status', 'completed')).upper()}")
+
+        st.caption(
+            f"Window: {pd.to_datetime(selected_run.get('start_ts')).strftime('%Y-%m-%d')} "
+            f"→ {pd.to_datetime(selected_run.get('end_ts')).strftime('%Y-%m-%d')}"
+        )
 
         backtest_chart = go.Figure()
         candle_df = load_candles_raw(
@@ -339,30 +388,50 @@ with backtest_col:
         st.plotly_chart(backtest_chart, use_container_width=True)
 
         if not selected_run_trades.empty:
-            synthetic_equity = [STARTING_BALANCE_USD]
-            running_equity = STARTING_BALANCE_USD
-            running_position = 0.0
-            for _, row in selected_run_trades.iterrows():
-                if row["side"] == "BUY":
-                    running_equity -= float(row["qty"]) * float(row["price"])
-                    running_position += float(row["qty"])
-                else:
-                    running_equity += float(row["qty"]) * float(row["price"])
-                    running_position = 0.0
-                synthetic_equity.append(running_equity)
+            lower_left, lower_right = st.columns(2)
+            with lower_left:
+                eq_fig = go.Figure()
+                eq_fig.add_trace(go.Scatter(
+                    x=selected_run_equity["step"],
+                    y=selected_run_equity["equity"],
+                    mode="lines",
+                    name="Equity",
+                    line=dict(color="#2962ff", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(41,98,255,0.10)",
+                ))
+                eq_fig.update_layout(
+                    title="Backtest Equity Curve",
+                    height=240,
+                    paper_bgcolor="#0e1117",
+                    plot_bgcolor="#0e1117",
+                    font=dict(color="#d1d4dc"),
+                )
+                st.plotly_chart(eq_fig, use_container_width=True)
 
-            eq_fig = go.Figure()
-            eq_fig.add_trace(go.Scatter(y=synthetic_equity, mode="lines", name="Equity"))
-            eq_fig.update_layout(
-                title="Backtest Equity Curve",
-                height=220,
-                paper_bgcolor="#0e1117",
-                plot_bgcolor="#0e1117",
-                font=dict(color="#d1d4dc"),
-            )
-            st.plotly_chart(eq_fig, use_container_width=True)
+            with lower_right:
+                dd_fig = go.Figure()
+                dd_fig.add_trace(go.Scatter(
+                    x=selected_run_drawdown["step"],
+                    y=selected_run_drawdown["drawdown"],
+                    mode="lines",
+                    name="Drawdown",
+                    line=dict(color="#ff7043", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(255,112,67,0.12)",
+                ))
+                dd_fig.update_layout(
+                    title="Backtest Drawdown",
+                    height=240,
+                    paper_bgcolor="#0e1117",
+                    plot_bgcolor="#0e1117",
+                    font=dict(color="#d1d4dc"),
+                    yaxis_tickformat=".1%",
+                )
+                st.plotly_chart(dd_fig, use_container_width=True)
 
-        st.dataframe(selected_run_trades, use_container_width=True, hide_index=True)
+            st.markdown("#### Trade Log")
+            st.dataframe(selected_run_trades, use_container_width=True, hide_index=True)
 
 # ── Timeframe selector (horizontal buttons) ───────────────────────────────────
 st.markdown("## Runtime Monitor")
@@ -394,16 +463,9 @@ else:
     ohlcv = pd.DataFrame()
 
 df = add_indicators(ohlcv) if not ohlcv.empty else ohlcv
-tr = load_trades(symbol)
-eq = load_equity()
-if not tr.empty and "strategy_name" in tr.columns:
-    tr = tr[tr["strategy_name"].fillna(active_strategy["name"]) == active_strategy["name"]]
-if runtime_mode_filter != "All" and not tr.empty and "run_mode" in tr.columns:
-    tr = tr[tr["run_mode"].fillna("paper") == runtime_mode_filter]
-if not eq.empty and "strategy_name" in eq.columns:
-    eq = eq[eq["strategy_name"].fillna(active_strategy["name"]) == active_strategy["name"]]
-if runtime_mode_filter != "All" and not eq.empty and "run_mode" in eq.columns:
-    eq = eq[eq["run_mode"].fillna("paper") == runtime_mode_filter]
+tr = filter_runtime_data(load_trades(symbol), active_strategy["name"], runtime_mode_filter)
+eq = filter_runtime_data(load_equity(), active_strategy["name"], runtime_mode_filter)
+runtime_stats = runtime_summary(tr, eq)
 
 # ── Sidebar: regime & metrics ─────────────────────────────────────────────────
 regime = None
@@ -628,28 +690,72 @@ for axis in ["xaxis", "xaxis2", "xaxis3", "xaxis4",
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ── Equity curve ──────────────────────────────────────────────────────────────
-if not eq.empty:
-    eq_fig = go.Figure()
-    eq_fig.add_trace(go.Scatter(
-        x=eq.ts, y=eq.equity, name="Equity",
-        line=dict(color="#2962ff", width=2),
-        fill="tozeroy", fillcolor="rgba(41,98,255,0.08)"
-    ))
-    start_line_x = [eq.ts.min(), eq.ts.max()]
-    eq_fig.add_trace(go.Scatter(
-        x=start_line_x, y=[STARTING_BALANCE_USD]*2,
-        name="Starting Balance", line=dict(color="gray", dash="dot", width=1)
-    ))
-    eq_fig.update_layout(
-        title="Paper Equity (USD)", height=220,
-        paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
-        font=dict(color="#d1d4dc"),
-        margin=dict(l=10, r=10, t=40, b=10),
-        xaxis=dict(gridcolor="#1e222d"),
-        yaxis=dict(gridcolor="#1e222d"),
-    )
-    st.plotly_chart(eq_fig, use_container_width=True)
+# ── Runtime summary ───────────────────────────────────────────────────────────
+summary_cols = st.columns(6)
+summary_cols[0].metric("Equity", f"${runtime_stats['equity']:,.2f}")
+summary_cols[1].metric("Balance", f"${runtime_stats['balance']:,.2f}")
+summary_cols[2].metric("Unreal P&L", f"{runtime_stats['unreal_pnl']:+,.2f}")
+summary_cols[3].metric("Trades", str(runtime_stats["trade_count"]))
+summary_cols[4].metric("Last Side", str(runtime_stats["last_trade_side"]))
+summary_cols[5].metric("Last Regime", str(runtime_stats["last_trade_regime"]))
+
+# ── Equity and drawdown ───────────────────────────────────────────────────────
+if not eq.empty and "equity" in eq.columns:
+    runtime_equity = eq[["ts", "equity"]].dropna().copy()
+    runtime_equity["step"] = range(len(runtime_equity))
+    runtime_drawdown = compute_drawdown_curve(runtime_equity.rename(columns={"equity": "equity", "step": "step"}))
+
+    eq_left, eq_right = st.columns(2)
+    with eq_left:
+        eq_fig = go.Figure()
+        eq_fig.add_trace(go.Scatter(
+            x=runtime_equity["ts"], y=runtime_equity["equity"], name="Equity",
+            line=dict(color="#2962ff", width=2),
+            fill="tozeroy", fillcolor="rgba(41,98,255,0.08)"
+        ))
+        start_line_x = [runtime_equity["ts"].min(), runtime_equity["ts"].max()]
+        eq_fig.add_trace(go.Scatter(
+            x=start_line_x, y=[STARTING_BALANCE_USD]*2,
+            name="Starting Balance", line=dict(color="gray", dash="dot", width=1)
+        ))
+        eq_fig.update_layout(
+            title="Runtime Equity",
+            height=240,
+            paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+            font=dict(color="#d1d4dc"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            xaxis=dict(gridcolor="#1e222d"),
+            yaxis=dict(gridcolor="#1e222d"),
+        )
+        st.plotly_chart(eq_fig, use_container_width=True)
+
+    with eq_right:
+        dd_fig = go.Figure()
+        dd_fig.add_trace(go.Scatter(
+            x=runtime_equity["ts"], y=runtime_drawdown["drawdown"], name="Drawdown",
+            line=dict(color="#ff7043", width=2),
+            fill="tozeroy", fillcolor="rgba(255,112,67,0.12)",
+        ))
+        dd_fig.update_layout(
+            title="Runtime Drawdown",
+            height=240,
+            paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+            font=dict(color="#d1d4dc"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            xaxis=dict(gridcolor="#1e222d"),
+            yaxis=dict(gridcolor="#1e222d", tickformat=".1%"),
+        )
+        st.plotly_chart(dd_fig, use_container_width=True)
+
+# ── Recent execution context ──────────────────────────────────────────────────
+st.markdown("### Recent Execution Context")
+if not tr.empty:
+    recent_trades = tr.sort_values("ts", ascending=False).head(12).copy()
+    if "ts" in recent_trades.columns:
+        recent_trades["ts"] = pd.to_datetime(recent_trades["ts"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+    st.dataframe(recent_trades, use_container_width=True, hide_index=True)
+else:
+    st.info("No runtime trades recorded yet for the selected strategy/mode.")
 
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if autoref:
