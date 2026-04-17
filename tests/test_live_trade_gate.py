@@ -23,7 +23,8 @@ def test_submit_order_paper_path_does_not_call_binance(monkeypatch):
     monkeypatch.setattr("simulator.paper_trader.LIVE_TRADE_ENABLED", False)
     trader = _trader()
     trader._binance_client = AsyncMock()
-    _run(trader._submit_order("BTCUSDT", "BUY", 0.001))
+    result = _run(trader._submit_order("BTCUSDT", "BUY", 0.001))
+    assert result is True
     trader._binance_client.create_order.assert_not_called()
 
 
@@ -31,7 +32,7 @@ def test_submit_order_paper_path_no_client_no_error(monkeypatch):
     monkeypatch.setattr("simulator.paper_trader.LIVE_TRADE_ENABLED", False)
     trader = _trader()
     # Must not raise even with no client set
-    _run(trader._submit_order("BTCUSDT", "BUY", 0.001))
+    assert _run(trader._submit_order("BTCUSDT", "BUY", 0.001)) is True
 
 
 # ── live path (LIVE_TRADE_ENABLED=True) ───────────────────────────────────────
@@ -41,7 +42,7 @@ def test_submit_order_live_buy_calls_binance(monkeypatch):
     trader = _trader()
     trader._binance_client = AsyncMock()
     trader._binance_client.create_order = AsyncMock()
-    _run(trader._submit_order("BTCUSDT", "BUY", 0.001))
+    assert _run(trader._submit_order("BTCUSDT", "BUY", 0.001)) is True
     trader._binance_client.create_order.assert_called_once_with(
         symbol="BTCUSDT", side="BUY", type="MARKET", quantity=0.001
     )
@@ -52,7 +53,7 @@ def test_submit_order_live_sell_calls_binance(monkeypatch):
     trader = _trader()
     trader._binance_client = AsyncMock()
     trader._binance_client.create_order = AsyncMock()
-    _run(trader._submit_order("ETHUSDT", "SELL", 0.05))
+    assert _run(trader._submit_order("ETHUSDT", "SELL", 0.05)) is True
     trader._binance_client.create_order.assert_called_once_with(
         symbol="ETHUSDT", side="SELL", type="MARKET", quantity=0.05
     )
@@ -63,7 +64,7 @@ def test_submit_order_live_qty_rounded_to_6dp(monkeypatch):
     trader = _trader()
     trader._binance_client = AsyncMock()
     trader._binance_client.create_order = AsyncMock()
-    _run(trader._submit_order("BTCUSDT", "BUY", 0.123456789))
+    assert _run(trader._submit_order("BTCUSDT", "BUY", 0.123456789)) is True
     call_kwargs = trader._binance_client.create_order.call_args.kwargs
     assert call_kwargs["quantity"] == round(0.123456789, 6)
 
@@ -75,14 +76,14 @@ def test_submit_order_live_no_client_logs_error_not_raises(monkeypatch):
     trader = _trader()
     trader._binance_client = None
     # Must not raise
-    _run(trader._submit_order("BTCUSDT", "BUY", 0.001))
+    assert _run(trader._submit_order("BTCUSDT", "BUY", 0.001)) is False
 
 
 def test_submit_order_live_no_client_does_not_raise_on_sell(monkeypatch):
     monkeypatch.setattr("simulator.paper_trader.LIVE_TRADE_ENABLED", True)
     trader = _trader()
     trader._binance_client = None
-    _run(trader._submit_order("ETHUSDT", "SELL", 0.01))
+    assert _run(trader._submit_order("ETHUSDT", "SELL", 0.01)) is False
 
 
 # ── Binance exception handling ────────────────────────────────────────────────
@@ -94,7 +95,7 @@ def test_submit_order_binance_exception_does_not_propagate(monkeypatch):
     mock_client.create_order = AsyncMock(side_effect=Exception("Binance API error"))
     trader._binance_client = mock_client
     # Must not raise
-    _run(trader._submit_order("BTCUSDT", "BUY", 0.001))
+    assert _run(trader._submit_order("BTCUSDT", "BUY", 0.001)) is False
 
 
 def test_submit_order_binance_timeout_does_not_propagate(monkeypatch):
@@ -103,7 +104,7 @@ def test_submit_order_binance_timeout_does_not_propagate(monkeypatch):
     mock_client = AsyncMock()
     mock_client.create_order = AsyncMock(side_effect=TimeoutError("timeout"))
     trader._binance_client = mock_client
-    _run(trader._submit_order("ETHUSDT", "SELL", 0.1))
+    assert _run(trader._submit_order("ETHUSDT", "SELL", 0.1)) is False
 
 
 # ── integration: _auto_buy/_auto_sell call _submit_order ─────────────────────
@@ -151,3 +152,75 @@ async def test_auto_buy_paper_path_does_not_call_binance(monkeypatch):
         await trader._auto_buy("BTCUSDT", price=50000.0, atr=500.0)
 
     mock_client.create_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_auto_buy_aborts_fill_on_live_order_failure(monkeypatch):
+    monkeypatch.setattr("simulator.paper_trader.LIVE_TRADE_ENABLED", True)
+    trader = _trader()
+    trader._binance_client = AsyncMock()
+    trader._binance_client.create_order = AsyncMock(side_effect=Exception("boom"))
+    starting_cash = trader.cash
+
+    with patch("simulator.paper_trader.send_telegram_alert"):
+        await trader._auto_buy("BTCUSDT", price=50000.0, atr=500.0)
+
+    assert trader.cash == starting_cash
+    assert trader.positions == {}
+    assert trader.cost_basis == {}
+
+
+@pytest.mark.asyncio
+async def test_auto_buy_applies_fill_on_live_order_success(monkeypatch):
+    monkeypatch.setattr("simulator.paper_trader.LIVE_TRADE_ENABLED", True)
+    trader = _trader()
+    trader._binance_client = AsyncMock()
+    trader._binance_client.create_order = AsyncMock()
+    starting_cash = trader.cash
+
+    with patch("simulator.paper_trader.send_telegram_alert"):
+        await trader._auto_buy("BTCUSDT", price=50000.0, atr=500.0)
+
+    assert trader.positions["BTCUSDT"] > 0
+    assert trader.cost_basis["BTCUSDT"] > 0
+    assert trader.cash < starting_cash
+
+
+@pytest.mark.asyncio
+async def test_auto_sell_aborts_fill_on_live_order_failure(monkeypatch):
+    monkeypatch.setattr("simulator.paper_trader.LIVE_TRADE_ENABLED", True)
+    trader = _trader()
+    trader._binance_client = AsyncMock()
+    trader._binance_client.create_order = AsyncMock(side_effect=Exception("boom"))
+    trader.positions["BTCUSDT"] = 0.001
+    trader.cost_basis["BTCUSDT"] = 50.0
+    starting_cash = trader.cash
+
+    with patch("simulator.paper_trader.send_telegram_alert"), \
+         patch("simulator.paper_trader.LLM_ENABLED", False):
+        await trader._auto_sell("BTCUSDT", price=51000.0)
+
+    assert trader.cash == starting_cash
+    assert trader.positions["BTCUSDT"] == 0.001
+    assert trader.cost_basis["BTCUSDT"] == 50.0
+    assert trader.realised == 0.0
+
+
+@pytest.mark.asyncio
+async def test_auto_sell_applies_fill_on_live_order_success(monkeypatch):
+    monkeypatch.setattr("simulator.paper_trader.LIVE_TRADE_ENABLED", True)
+    trader = _trader()
+    trader._binance_client = AsyncMock()
+    trader._binance_client.create_order = AsyncMock()
+    trader.positions["BTCUSDT"] = 0.001
+    trader.cost_basis["BTCUSDT"] = 50.0
+    starting_cash = trader.cash
+
+    with patch("simulator.paper_trader.send_telegram_alert"), \
+         patch("simulator.paper_trader.LLM_ENABLED", False):
+        await trader._auto_sell("BTCUSDT", price=51000.0)
+
+    assert "BTCUSDT" not in trader.positions
+    assert "BTCUSDT" not in trader.cost_basis
+    assert trader.cash > starting_cash
+    assert trader.realised > 0.0

@@ -149,14 +149,14 @@ class PaperTrader:
 
     # ── live order submission ──────────────────────────────────────────────────
 
-    async def _submit_order(self, sym: str, side: str, qty: float) -> None:
+    async def _submit_order(self, sym: str, side: str, qty: float) -> bool:
         """Submit a real Binance market order when LIVE_TRADE_ENABLED=True, else no-op."""
         if not LIVE_TRADE_ENABLED:
-            return
+            return True
         if self._binance_client is None:
             log.error("LIVE_TRADE_ENABLED=True but _binance_client not set — skipping real order",
                       extra={"symbol": sym, "side": side})
-            return
+            return False
         try:
             await asyncio.wait_for(
                 self._binance_client.create_order(
@@ -168,8 +168,10 @@ class PaperTrader:
                 timeout=10.0,
             )
             log.info("LIVE ORDER submitted", extra={"symbol": sym, "side": side, "qty": qty})
+            return True
         except Exception as exc:  # noqa: BLE001
             log.error("LIVE ORDER failed: %s", exc, extra={"symbol": sym, "side": side})
+            return False
 
     # ── order execution ────────────────────────────────────────────────────────
 
@@ -193,10 +195,14 @@ class PaperTrader:
         cost = qty * price * (1 + FEE_RATE)
         if cost > self.cash:
             return
+        submitted = await self._submit_order(sym, "BUY", qty)
+        if not submitted:
+            log.warning("AUTO BUY aborted: live order submission failed.",
+                        extra={"symbol": sym, "qty": round(qty, 6), "price": round(price, 4)})
+            return
         self.cash -= cost
         self.positions[sym] = self.positions.get(sym, 0) + qty
         self.cost_basis[sym] = self.cost_basis.get(sym, 0) + cost
-        await self._submit_order(sym, "BUY", qty)
         log.info("AUTO BUY", extra={
             "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
             "atr": round(atr, 4), "cost": round(cost, 4), "cash": round(self.cash, 4),
@@ -207,14 +213,20 @@ class PaperTrader:
     async def _auto_sell(self, sym: str, price: float):
         if price <= 0:
             return
-        qty = self.positions.pop(sym, 0)
+        qty = self.positions.get(sym, 0)
         if qty == 0:
             return
+        cost = self.cost_basis.get(sym, 0)
+        submitted = await self._submit_order(sym, "SELL", qty)
+        if not submitted:
+            log.warning("AUTO SELL aborted: live order submission failed.",
+                        extra={"symbol": sym, "qty": round(qty, 6), "price": round(price, 4)})
+            return
+        self.positions.pop(sym, None)
         proceeds = qty * price * (1 - FEE_RATE)
-        self.cash     += proceeds
-        cost           = self.cost_basis.pop(sym, 0)
+        self.cash += proceeds
+        self.cost_basis.pop(sym, None)
         self.realised += proceeds - cost
-        await self._submit_order(sym, "SELL", qty)
         log.info("AUTO SELL", extra={
             "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
             "proceeds": round(proceeds, 4), "pnl": round(proceeds - cost, 4),
