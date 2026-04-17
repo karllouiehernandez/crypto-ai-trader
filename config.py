@@ -17,29 +17,46 @@ DB_PATH   = DATA_DIR / "market_data.db"
 # ─────────────────────────────────────────────────────────────────────────────
 # ▓▓  Credentials — loaded from .env (see .env.example)
 # ─────────────────────────────────────────────────────────────────────────────
+# Live trading keys (BINANCE_API_KEY / BINANCE_API_SECRET)
 BINANCE_API_KEY    = os.environ.get("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.environ.get("BINANCE_API_SECRET", "")
 BINANCE_TESTNET    = True        # keep True for paper trading
+
+# Backtesting keys (separate testnet account — bkBINANCE_API_KEY / bkBINANCE_API_SECRET)
+BK_BINANCE_API_KEY    = os.environ.get("bkBINANCE_API_KEY", "")
+BK_BINANCE_API_SECRET = os.environ.get("bkBINANCE_API_SECRET", "")
 
 TELEGRAM_TOKEN      = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID", "")
 ENABLE_TG_ALERTS    = True
 ENABLE_TG_STREAM_ALERTS = False  # per-price pings
 
-_REQUIRED_ENV_VARS = {
-    "BINANCE_API_KEY": BINANCE_API_KEY,
-    "BINANCE_API_SECRET": BINANCE_API_SECRET,
-    "TELEGRAM_TOKEN": TELEGRAM_TOKEN,
-    "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
-}
-
 def validate_env():
-    """Call at process startup to fail fast with a clear error if .env is missing."""
-    missing = [k for k, v in _REQUIRED_ENV_VARS.items() if not v]
+    """Validate credentials required for live trading (Binance + Telegram)."""
+    required = {
+        "BINANCE_API_KEY": BINANCE_API_KEY,
+        "BINANCE_API_SECRET": BINANCE_API_SECRET,
+        "TELEGRAM_TOKEN": TELEGRAM_TOKEN,
+        "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
+    }
+    missing = [k for k, v in required.items() if not v]
     if missing:
         raise RuntimeError(
             f"Missing required environment variables: {', '.join(missing)}\n"
             "Copy .env.example to .env and fill in your credentials."
+        )
+
+def validate_env_backtest():
+    """Validate credentials required for backtesting (bkBINANCE_API_KEY only, no Telegram needed)."""
+    required = {
+        "bkBINANCE_API_KEY": BK_BINANCE_API_KEY,
+        "bkBINANCE_API_SECRET": BK_BINANCE_API_SECRET,
+    }
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        raise RuntimeError(
+            f"Missing backtest API credentials: {', '.join(missing)}\n"
+            "Add bkBINANCE_API_KEY and bkBINANCE_API_SECRET to your .env file."
         )
 
 # ─────────────────────────────────────────────────────────────────────────────

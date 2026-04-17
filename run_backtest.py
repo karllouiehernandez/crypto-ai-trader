@@ -12,7 +12,7 @@ import argparse
 import sys
 from datetime import datetime
 
-from config import validate_env
+from config import validate_env_backtest
 from backtester.engine import run_backtest, build_equity_curve
 from backtester.metrics import compute_metrics, acceptance_gate
 from backtester.walk_forward import walk_forward, aggregate_results
@@ -111,7 +111,7 @@ def _run_single(args) -> int:
 
 
 if __name__ == "__main__":
-    validate_env()
+    validate_env_backtest()
 
     p = argparse.ArgumentParser(description="Backtest a symbol with walk-forward validation")
     p.add_argument("symbol")
