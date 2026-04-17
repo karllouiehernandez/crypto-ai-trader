@@ -9,58 +9,45 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-17 (Sprint 10 — LLM Core Layer) |
-| **Sprint completed** | Sprint 10 ✅ |
-| **Next sprint** | Sprint 11 — Self-Learning Loop + KB Integration |
-| **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` |
+| **Last active agent** | GitHub Copilot |
+| **Last updated** | 2026-04-17 (Sprint 11 closed) |
+| **Sprint completed** | Sprint 11 ✅ — committed + pushed to GitHub |
+| **Next sprint** | Sprint 12 — Live Promotion Coordinator |
+| **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 9 complete; continuing to Sprint 10 |
+| **Reason for handoff** | Sprint 11 complete |
 
 ---
 
-## Resume Here — Sprint 11: Self-Learning Loop + KB Integration
+## Resume Here — Sprint 12: Live Promotion Coordinator
 
-**Sprint 10 complete.** LLM layer is live with Anthropic/Groq/OpenRouter support. 295 tests passing.
+**Sprint 11 complete.** Self-learning loop is live. 334 tests passing.
 
-### What was done in Sprint 10
-- `llm/__init__.py` — package marker
-- `llm/cache.py` — thread-safe TTL cache, SHA-256 keyed, 5-min minimum
-- `llm/client.py` — multi-provider wrapper (anthropic SDK + openai SDK for groq/openrouter), prompt caching for Anthropic, graceful fallback on all errors
-- `llm/prompts.py` — 4 system prompt templates: STRATEGY_GENERATOR, BACKTEST_ANALYZER, TRADE_CRITIQUER, SELF_LEARNING
-- `llm/generator.py` — NL → Python strategy, AST validate, writes to `strategies/`
-- `llm/analyzer.py` — backtest metrics → JSON (confidence score, param suggestions, recommendation)
-- `llm/critiquer.py` — trade critique after SELL (GOOD/MEDIOCRE/BAD, 5-min cache)
-- `config.py` — multi-provider config (`LLM_PROVIDER`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `LLM_BASE_URL`)
-- `requirements.txt` — added `openai>=1.30.0`
-- 50 new tests → **295 total passing**
+### What was done in Sprint 11
+- `llm/confidence_gate.py` — five-gate evaluator (Sharpe, max DD, profit factor, LLM confidence, trailing trend); returns `GateResult` dataclass
+- `llm/self_learner.py` — `SelfLearner` class: `run_loop()` async task, `evaluate()` cycle, `confidence_gate_passed()`, `_write_kb_entry()`; pure metric helpers `_metrics_from_pnls`, `_zero_metrics`
+- `simulator/paper_trader.py` — added `_coordinator`, `_last_regime`; fires `_fire_critique` via `asyncio.create_task()` after every SELL when `LLM_ENABLED=True`; module-level `_fire_critique` coroutine (never raises)
+- 39 new tests → **334 total passing**
 
-### Sprint 11 Goal — Self-Learning Loop + KB Integration
-Close the feedback loop: paper metrics → LLM analysis → KB write → confidence gate.
+### Sprint 12 Goal — Live Promotion Coordinator
+Wire `SelfLearner` into `run_live.py` as a background asyncio task.
+Add a `Coordinator` class that:
+- Starts `SelfLearner.run_loop()` on bot startup
+- Watches `SelfLearner.confidence_gate_passed()` and logs a promotion event
+- Writes a promotion record to a new `promotions` table (or KB file)
+- Sends a Telegram alert when the gate first flips True
 
-**Key files to create:**
-- `llm/self_learner.py` — `SelfLearner` class: 24h asyncio loop, `evaluate()`, `_write_kb_entry()`
-- `llm/confidence_gate.py` — 5-gate composite check → `GateResult`
-- Modify `simulator/paper_trader.py` — add coordinator hook + LLM trade critique after SELL
+### Key files for Sprint 12
+- `run_live.py` — add `SelfLearner` task to the asyncio gather
+- `simulator/coordinator.py` (new) — wraps `SelfLearner`, watches gate, logs promotion
+- `database/models.py` — optional: add `Promotion` table to record promotion events
+- `tests/test_coordinator.py` — unit tests for coordinator logic
 
-**Provider setup (.env)** — pick one:
-```
-LLM_PROVIDER=groq
-GROQ_API_KEY=gsk_...
-LLM_MODEL=llama-3.3-70b-versatile
-```
-or
-```
-LLM_PROVIDER=openrouter
-OPENROUTER_API_KEY=sk-or-...
-LLM_MODEL=anthropic/claude-sonnet-4-6
-```
-or
-```
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-LLM_MODEL=claude-sonnet-4-6
+### Step 1 — Verify baseline
+```bash
+cd D:\trader\crypto_ai_trader
+pytest tests/ -q   # must show 334 passed
 ```
 
 ## Resume Here — Sprint 10: LLM Core Layer
@@ -169,6 +156,7 @@ docker attach hummingbot_crypto_ai
 | Sprint 8 — Backtesting rigor | ✅ CLOSED | GitHub Copilot | 2026-04-18 |
 | Sprint 9 — Strategy Plugin System + StrategyBase ABC | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 10 — LLM Core Layer (multi-provider) | ✅ CLOSED | Claude Code | 2026-04-17 |
+| Sprint 11 — Self-Learning Loop + KB Integration | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 
 ---
 

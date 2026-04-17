@@ -418,3 +418,30 @@ All modules now use `logging.getLogger(__name__)` for consistent structured logg
 - `run_backtest.py` exits with code 1 if any window fails acceptance gate
 Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 
+
+---
+
+## Sprint 11 - Self-Learning Loop + KB Integration
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Goal:** Close the feedback loop: paper metrics -> LLM analysis -> KB write -> confidence gate
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `llm/confidence_gate.py` -- five-gate evaluator (Sharpe >= 1.5, max_DD <= 20%, profit_factor >= 1.5, LLM confidence >= 0.80, last 3 evals all PROMOTE_TO_LIVE); GateResult dataclass with per-gate boolean fields and failures list
+- [x] `llm/self_learner.py` -- SelfLearner class: run_loop() background asyncio task, evaluate() one-cycle method, confidence_gate_passed() (flips True after 3 consecutive PROMOTE_TO_LIVE), _write_kb_entry() appends structured entry to knowledge/experiment_log.md; pure helpers _metrics_from_pnls (Sharpe + max_DD + profit_factor from trade PnL list) and _zero_metrics
+- [x] `simulator/paper_trader.py` -- added _coordinator (None placeholder for Sprint 12) and _last_regime (sym -> regime string) to __init__; fires _fire_critique via asyncio.create_task() after every SELL when LLM_ENABLED=True; module-level _fire_critique coroutine (never raises, imports critiquer lazily)
+- [x] `tests/test_confidence_gate.py` -- 20 tests: each gate passes/fails individually, exactly-at-threshold cases, all-pass, single-failure-blocks, multiple-failures-all-reported
+- [x] `tests/test_self_learner.py` -- 12 tests: _metrics_from_pnls (positive/mixed/empty), _zero_metrics, consecutive_promotes, confidence_gate_passed, evaluate() writes KB entry + returns gate fields + falls back when LLM unavailable, 3-consecutive-promote cycle test
+- [x] `tests/test_paper_trader_llm.py` -- 7 tests: _coordinator/_last_regime attrs, _fire_critique calls critique_trade, never raises on exception/import error, auto_sell fires critique when LLM_ENABLED=True, skips when False, skips when no position
+
+### Test count
+39 new tests: 295 -> 334 total passing
+
+### Code Review
+**Result:** APPROVED -- no CRITICAL/HIGH issues.
+  - All five gates independently tested with pass/fail cases ✓
+  - _fire_critique is truly fire-and-forget (create_task + except Exception swallows all) ✓
+  - SelfLearner never raises in run_loop (outer except catches all) ✓
+  - No DB writes in confidence_gate (pure function) ✓
+  - _write_kb_entry uses append mode -- no data loss on repeated calls ✓
