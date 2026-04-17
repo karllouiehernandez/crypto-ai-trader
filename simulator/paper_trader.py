@@ -11,7 +11,7 @@ from strategy.risk import atr_position_size, DailyLossTracker, DrawdownCircuitBr
 from utils.telegram_utils import CALLBACK_QUEUE, send_telegram_alert, _token, _chat_id
 from config import (
     SYMBOLS, POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD,
-    DAILY_LOSS_LIMIT_PCT, DRAWDOWN_HALT_PCT,
+    DAILY_LOSS_LIMIT_PCT, DRAWDOWN_HALT_PCT, LLM_ENABLED,
 )
 
 TICK_SECONDS = 1
@@ -30,6 +30,9 @@ class PaperTrader:
         equity = STARTING_BALANCE_USD
         self._daily_tracker = DailyLossTracker(start_equity=equity)
         self._drawdown_cb   = DrawdownCircuitBreaker(initial_equity=equity)
+
+        self._coordinator = None          # optional; set externally before run()
+        self._last_regime: Dict[str, str] = {}   # sym → regime string for critique context
 
     # ── equity helpers ─────────────────────────────────────────────────────────
 
@@ -191,6 +194,14 @@ class PaperTrader:
         })
         send_telegram_alert(_token(), _chat_id(),
                             f"🤖 Auto-SELL {sym} qty={qty:.4f} @ {price:.2f}")
+        # Fire-and-forget trade critique — non-blocking, never raises
+        if LLM_ENABLED:
+            pnl_pct = (proceeds - cost) / cost * 100 if cost else 0.0
+            entry_price = cost / qty if qty else 0.0
+            asyncio.create_task(
+                _fire_critique(sym, price, entry_price, pnl_pct,
+                               self._last_regime.get(sym, "UNKNOWN"))
+            )
 
     async def _manual_buy(self, sym: str):
         with SessionLocal() as sess:
@@ -218,3 +229,20 @@ class PaperTrader:
                     .first()
             )
             return candle.close if candle else 0.0
+
+
+# ── Module-level fire-and-forget critique ─────────────────────────────────────
+
+async def _fire_critique(
+    sym: str,
+    exit_price: float,
+    entry_price: float,
+    pnl_pct: float,
+    regime: str,
+) -> None:
+    """Non-blocking trade critique — called via asyncio.create_task(), never raises."""
+    try:
+        from llm.critiquer import critique_trade
+        critique_trade(sym, "SELL", entry_price, exit_price, pnl_pct, regime, {})
+    except Exception:   # noqa: BLE001
+        pass
