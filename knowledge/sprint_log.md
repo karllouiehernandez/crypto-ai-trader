@@ -219,6 +219,31 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
+## Sprint 21 — Jesse-Like Workbench Polish
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Codex
+**Goal:** Refine the dashboard so `Strategies`, `Backtest Lab`, and `Runtime Monitor` feel like one coherent Jesse-like workbench instead of multiple adjacent tools.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/streamlit_app.py` — MODIFIED: added a shared workbench status strip with active/focus/runtime context, converted the main experience into `Strategies`, `Backtest Lab`, and `Runtime Monitor` tabs, and kept the existing functionality grouped under a clearer research-to-runtime flow
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the tabbed navigation and status-strip approach still matches the repo-local workbench UX contract; no further rule changes were required for this pass
+
+### Test Results
+- Before: 413 tests passing
+- After: **413 tests passing** — 0 failures
+
+### Key Technical Decisions
+1. **Polish focused on navigation and grouping, not new features:** Sprint 21 leaves the strategy runtime and persisted data model intact while making the existing workbench easier to traverse.
+2. **Tabs are the primary IA improvement:** `Strategies`, `Backtest Lab`, and `Runtime Monitor` now read like deliberate workbench surfaces instead of one long dashboard page.
+3. **Status should stay visible across surfaces:** the shared top-level status strip keeps active strategy, focus strategy, workflow stage, and runtime view visible while switching between tabs.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 413/413. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

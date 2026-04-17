@@ -10,38 +10,33 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 20 closed) |
-| **Sprint completed** | Sprint 20 ✅ — manual agent strategy workflow committed + pushed to GitHub |
-| **Next sprint** | Sprint 21 — Jesse-Like Workbench Polish |
+| **Last updated** | 2026-04-18 (Sprint 21 closed) |
+| **Sprint completed** | Sprint 21 ✅ — Jesse-like workbench polish committed and ready to push |
+| **Next sprint** | Sprint 22 — Strategy Comparison & Evaluation UX |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 20 complete; next agent should unify and polish the full Jesse-like workbench flow |
+| **Reason for handoff** | Sprint 21 complete; next agent should improve strategy comparison and evaluation ergonomics inside the workbench |
 
 ---
 
-## Resume Here — Sprint 21: Jesse-Like Workbench Polish
+## Resume Here — Sprint 22: Strategy Comparison & Evaluation UX
 
-**Sprint 20 complete.** The workbench now has an explicit manual agent strategy workflow with draft-vs-reviewed cues in the repo and dashboard. 413 tests passing.
+**Sprint 21 complete.** The dashboard now has tabbed workbench navigation and a shared status strip, so the main workflow is more coherent. 413 tests passing.
 
-### What was done in Sprint 20
-- `strategies/README.md` — NEW: documented the manual plugin workflow, naming conventions, and draft-to-reviewed promotion path
-- `strategies/_strategy_template.py` — NEW: added a non-loadable template strategy for agents to start from safely
-- `strategies/example_rsi_mean_reversion.py` — MODIFIED: enriched the example plugin metadata so it behaves like a reviewed reference
-- `llm/generator.py` — MODIFIED: generated strategy files now carry an explicit draft-review header
-- `dashboard/workbench.py` — MODIFIED: added workflow-stage derivation from strategy metadata and persisted backtest history
-- `dashboard/streamlit_app.py` — MODIFIED: added manual workflow guidance plus draft/review/evaluation messaging in the `Strategies` and `Backtest Lab` surfaces
-- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — MODIFIED: updated the repo-local skill to encode generated-draft vs reviewed-plugin behavior
-- **413 total passing** (+2 from Sprint 20)
+### What was done in Sprint 21
+- `dashboard/streamlit_app.py` — MODIFIED: replaced the top-level split layout with tabbed `Strategies`, `Backtest Lab`, and `Runtime Monitor` surfaces and added a shared workbench status strip for active/focus/runtime context
+- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the new tabbed information architecture still matches the Jesse-like workflow guidance
+- **413 total passing** (unchanged from Sprint 20)
 
-### Sprint 21 Goal — Jesse-Like Workbench Polish
-The workflow pieces now exist end-to-end, but the overall dashboard still feels like multiple adjacent tools instead of one polished Jesse-like workbench. Refine navigation, status clarity, and evaluation flow so the path from strategy discovery to backtest to runtime feels more coherent and deliberate.
+### Sprint 22 Goal — Strategy Comparison & Evaluation UX
+The main workbench flow is now coherent, but comparing strategies and reading evaluation outcomes is still heavier than it should be. Improve the UX for comparing candidates, scanning saved-run history, and understanding which strategy is actually strongest without leaving the dashboard.
 
 ### Scope
-- `dashboard/streamlit_app.py` — tighten visual grouping and navigation so `Strategies`, `Backtest Lab`, and `Runtime Monitor` feel like one continuous workbench rather than separate blocks
-- `dashboard/workbench.py` — keep pushing derived workflow/status logic into pure helpers where possible
-- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — review against the final workbench polish pass and update if the information architecture shifts
-- maintain compatibility with the existing strategy runtime, persisted backtests, and runtime attribution already in place
+- `dashboard/streamlit_app.py` — improve comparison affordances for strategy candidates and saved backtest runs
+- `dashboard/workbench.py` — add any pure helper logic needed for ranking, comparing, or summarizing strategy evaluations
+- keep the tabbed workbench structure from Sprint 21 intact while making evaluation faster to scan
+- review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` if the comparison UX requires additional workflow rules
 
 ### Step 1 — Verify baseline
 ```bash
@@ -50,10 +45,10 @@ pytest tests/ -q   # must show 413 passed
 
 ### Step 2 — Sprint close checklist
 - [ ] All CRITICAL and HIGH review findings fixed
-- [ ] `knowledge/sprint_log.md` updated with Sprint 21 entry
+- [ ] `knowledge/sprint_log.md` updated with Sprint 22 entry
 - [ ] `HANDOFF.md` Current State table updated
 - [ ] Committed and pushed to GitHub
-- [ ] GitHub issue created and closed for Sprint 21
+- [ ] GitHub issue created and closed for Sprint 22
 
 ---
 
@@ -82,6 +77,7 @@ pytest tests/ -q   # must show 413 passed
 | Sprint 18 — Strategy Generation & Evaluation Workflow | ✅ CLOSED | Codex | 2026-04-17 |
 | Sprint 19 — Paper/Live Strategy Monitoring | ✅ CLOSED | Codex | 2026-04-17 |
 | Sprint 20 — Manual Agent Strategy Workflow | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 21 — Jesse-Like Workbench Polish | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 
