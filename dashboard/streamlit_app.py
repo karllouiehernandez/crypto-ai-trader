@@ -12,7 +12,19 @@ from plotly.subplots import make_subplots
 from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD, LIVE_TRADE_ENABLED
 from strategy.ta_features import add_indicators
 from strategy.regime import detect_regime, Regime
+from strategy.runtime import (
+    get_active_strategy_config,
+    list_available_strategies,
+    list_available_strategy_errors,
+    set_active_strategy_config,
+)
+from backtester.service import (
+    get_backtest_trades,
+    list_backtest_runs,
+    run_and_persist_backtest,
+)
 from database.promotion_queries import query_promotions
+from database.models import init_db
 
 # ── Regime config ─────────────────────────────────────────────────────────────
 _REGIME_EMOJI = {
@@ -50,6 +62,8 @@ _TF_LOOKBACK_DAYS = {
     "1w":  730,
 }
 
+init_db()
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=10)
 def load_candles_raw(sym: str, days: int) -> pd.DataFrame:
@@ -80,7 +94,8 @@ def load_trades(sym: str) -> pd.DataFrame:
     try:
         con = sqlite3.connect(DB_PATH)
         df = pd.read_sql(
-            "SELECT ts, side, price FROM trades WHERE symbol = ? ORDER BY ts",
+            "SELECT ts, side, price, strategy_name, strategy_version, run_mode, regime "
+            "FROM trades WHERE symbol = ? ORDER BY ts",
             con, params=[sym], parse_dates=["ts"]
         )
         con.close()
@@ -93,16 +108,47 @@ def load_trades(sym: str) -> pd.DataFrame:
 def load_equity() -> pd.DataFrame:
     try:
         con = sqlite3.connect(DB_PATH)
-        df = pd.read_sql("SELECT ts, equity FROM portfolio ORDER BY ts", con, parse_dates=["ts"])
+        df = pd.read_sql(
+            "SELECT ts, equity, balance, unreal_pnl, strategy_name, strategy_version, run_mode "
+            "FROM portfolio_snapshots ORDER BY ts",
+            con,
+            parse_dates=["ts"],
+        )
         con.close()
         return df
     except Exception:
-        return pd.DataFrame()
+        try:
+            con = sqlite3.connect(DB_PATH)
+            df = pd.read_sql("SELECT ts, equity FROM portfolio ORDER BY ts", con, parse_dates=["ts"])
+            con.close()
+            return df
+        except Exception:
+            return pd.DataFrame()
 
 
 @st.cache_data(ttl=30)
 def load_promotions() -> pd.DataFrame:
     return query_promotions(DB_PATH)
+
+
+@st.cache_data(ttl=10)
+def load_strategy_catalog() -> list[dict]:
+    return list_available_strategies()
+
+
+@st.cache_data(ttl=10)
+def load_strategy_errors() -> list[dict]:
+    return list_available_strategy_errors()
+
+
+@st.cache_data(ttl=10)
+def load_backtest_runs() -> pd.DataFrame:
+    return list_backtest_runs()
+
+
+@st.cache_data(ttl=10)
+def load_backtest_trades(run_id: int) -> pd.DataFrame:
+    return get_backtest_trades(run_id)
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -128,6 +174,7 @@ _DEFAULTS = {
     "show_ema":      True,
     "show_trades":   True,
     "show_ema200":   False,
+    "runtime_mode_filter": "All",
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
@@ -143,8 +190,186 @@ show_bb     = st.sidebar.checkbox("Bollinger Bands",   key="show_bb")
 show_ema    = st.sidebar.checkbox("EMA 9 / 21 / 55",   key="show_ema")
 show_ema200 = st.sidebar.checkbox("EMA 200",           key="show_ema200")
 show_trades = st.sidebar.checkbox("Trade Markers",     key="show_trades")
+runtime_mode_filter = st.sidebar.selectbox("Runtime Mode", ["All", "paper", "live"], key="runtime_mode_filter")
+
+active_strategy = get_active_strategy_config()
+strategy_catalog = load_strategy_catalog()
+strategy_errors = load_strategy_errors()
+strategy_names = [item["name"] for item in strategy_catalog]
+default_strategy_index = strategy_names.index(active_strategy["name"]) if active_strategy["name"] in strategy_names else 0
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Strategy")
+st.sidebar.markdown(f"Active: **{active_strategy['name']}**")
+if active_strategy.get("version"):
+    st.sidebar.caption(f"Version: {active_strategy['version']}")
+
+st.markdown("## Strategy Workbench")
+workbench_col, backtest_col = st.columns([1.05, 1.35], gap="large")
+
+with workbench_col:
+    st.markdown("### Strategies")
+    selected_strategy = st.selectbox(
+        "Select active strategy",
+        strategy_names,
+        index=default_strategy_index,
+        format_func=lambda name: next((item["display_name"] for item in strategy_catalog if item["name"] == name), name),
+        key="active_strategy_selector",
+    )
+    selected_meta = next((item for item in strategy_catalog if item["name"] == selected_strategy), None)
+    if selected_meta:
+        st.caption(selected_meta["description"])
+        meta_cols = st.columns(3)
+        meta_cols[0].metric("Source", selected_meta["source"].title())
+        meta_cols[1].metric("Version", selected_meta["version"])
+        meta_cols[2].metric("Regimes", ", ".join(selected_meta["regimes"]) or "All")
+    if st.button("Set Active Strategy", type="primary", use_container_width=True):
+        saved = set_active_strategy_config(selected_strategy)
+        load_strategy_catalog.clear()
+        load_strategy_errors.clear()
+        st.cache_data.clear()
+        st.success(
+            f"Active strategy saved: {saved['name']} ({saved['version']}). "
+            "Restart paper/live processes to apply the change outside dashboard backtests."
+        )
+
+    catalog_df = pd.DataFrame(
+        [
+            {
+                "name": item["name"],
+                "display_name": item["display_name"],
+                "source": item["source"],
+                "version": item["version"],
+                "regimes": ", ".join(item["regimes"]) or "All",
+                "status": item["load_status"],
+            }
+            for item in strategy_catalog
+        ]
+    )
+    st.dataframe(catalog_df, use_container_width=True, hide_index=True)
+
+    if strategy_errors:
+        st.warning("Plugin load issues detected")
+        st.dataframe(pd.DataFrame(strategy_errors), use_container_width=True, hide_index=True)
+
+with backtest_col:
+    st.markdown("### Backtest Lab")
+    with st.form("backtest_lab_form", clear_on_submit=False):
+        bt_symbol = st.selectbox("Symbol", SYMBOLS, index=SYMBOLS.index(symbol), key="bt_symbol")
+        bt_strategy = st.selectbox(
+            "Strategy",
+            strategy_names,
+            index=default_strategy_index,
+            key="bt_strategy",
+        )
+        date_cols = st.columns(2)
+        bt_start = date_cols[0].date_input("Start", value=datetime.utcnow().date() - timedelta(days=30))
+        bt_end = date_cols[1].date_input("End", value=datetime.utcnow().date())
+        run_backtest_now = st.form_submit_button("Run Backtest", type="primary", use_container_width=True)
+
+    if run_backtest_now:
+        with st.spinner("Running backtest and persisting result..."):
+            result = run_and_persist_backtest(
+                bt_symbol,
+                datetime.combine(bt_start, datetime.min.time()),
+                datetime.combine(bt_end, datetime.min.time()),
+                bt_strategy,
+            )
+        st.session_state["selected_backtest_run_id"] = result["run_id"]
+        load_backtest_runs.clear()
+        load_backtest_trades.clear()
+        st.success(f"Backtest run #{result['run_id']} saved.")
+
+    runs_df = load_backtest_runs()
+    if not runs_df.empty:
+        display_runs = runs_df.copy()
+        if "failures" in display_runs.columns:
+            display_runs["failures"] = display_runs["failures"].apply(
+                lambda value: "; ".join(value) if isinstance(value, list) else value
+            )
+        st.dataframe(display_runs, use_container_width=True, hide_index=True)
+        available_run_ids = runs_df["id"].astype(int).tolist()
+        selected_run_id = st.selectbox(
+            "Inspect saved run",
+            available_run_ids,
+            index=0 if "selected_backtest_run_id" not in st.session_state or st.session_state["selected_backtest_run_id"] not in available_run_ids
+            else available_run_ids.index(st.session_state["selected_backtest_run_id"]),
+            key="selected_backtest_run_id",
+        )
+        selected_run = runs_df[runs_df["id"] == selected_run_id].iloc[0]
+        selected_run_trades = load_backtest_trades(int(selected_run_id))
+
+        backtest_chart = go.Figure()
+        candle_df = load_candles_raw(
+            str(selected_run["symbol"]),
+            max((pd.Timestamp.utcnow() - pd.Timestamp(selected_run["start_ts"])).days + 2, 2),
+        )
+        filtered_candles = candle_df[
+            (candle_df["open_time"] >= pd.Timestamp(selected_run["start_ts"]))
+            & (candle_df["open_time"] <= pd.Timestamp(selected_run["end_ts"]))
+        ] if not candle_df.empty else pd.DataFrame()
+        if not filtered_candles.empty:
+            backtest_chart.add_trace(go.Candlestick(
+                x=filtered_candles["open_time"],
+                open=filtered_candles["open"],
+                high=filtered_candles["high"],
+                low=filtered_candles["low"],
+                close=filtered_candles["close"],
+                name="OHLC",
+            ))
+        if not selected_run_trades.empty:
+            for side, color, marker in [("BUY", "#00e676", "triangle-up"), ("SELL", "#ff1744", "triangle-down")]:
+                side_df = selected_run_trades[selected_run_trades["side"] == side]
+                if not side_df.empty:
+                    backtest_chart.add_trace(go.Scatter(
+                        x=side_df["ts"],
+                        y=side_df["price"],
+                        mode="markers",
+                        name=side,
+                        marker=dict(color=color, size=11, symbol=marker),
+                    ))
+        backtest_chart.update_layout(
+            title=f"Backtest #{selected_run_id} · {selected_run['strategy_name']} · {selected_run['symbol']}",
+            height=380,
+            paper_bgcolor="#0e1117",
+            plot_bgcolor="#0e1117",
+            font=dict(color="#d1d4dc"),
+            xaxis_rangeslider_visible=False,
+        )
+        st.plotly_chart(backtest_chart, use_container_width=True)
+
+        if not selected_run_trades.empty:
+            synthetic_equity = [STARTING_BALANCE_USD]
+            running_equity = STARTING_BALANCE_USD
+            running_position = 0.0
+            for _, row in selected_run_trades.iterrows():
+                if row["side"] == "BUY":
+                    running_equity -= float(row["qty"]) * float(row["price"])
+                    running_position += float(row["qty"])
+                else:
+                    running_equity += float(row["qty"]) * float(row["price"])
+                    running_position = 0.0
+                synthetic_equity.append(running_equity)
+
+            eq_fig = go.Figure()
+            eq_fig.add_trace(go.Scatter(y=synthetic_equity, mode="lines", name="Equity"))
+            eq_fig.update_layout(
+                title="Backtest Equity Curve",
+                height=220,
+                paper_bgcolor="#0e1117",
+                plot_bgcolor="#0e1117",
+                font=dict(color="#d1d4dc"),
+            )
+            st.plotly_chart(eq_fig, use_container_width=True)
+
+        st.dataframe(selected_run_trades, use_container_width=True, hide_index=True)
 
 # ── Timeframe selector (horizontal buttons) ───────────────────────────────────
+st.markdown("## Runtime Monitor")
+st.caption(
+    f"Viewing {runtime_mode_filter} runtime data for active strategy `{active_strategy['name']}`. "
+    "Changing the active strategy affects dashboard backtests immediately and paper/live after restart."
+)
 st.markdown("### 📈 " + symbol + " Chart")
 tf_cols = st.columns(len(_TF_OPTIONS))
 if "timeframe" not in st.session_state:
@@ -171,6 +396,14 @@ else:
 df = add_indicators(ohlcv) if not ohlcv.empty else ohlcv
 tr = load_trades(symbol)
 eq = load_equity()
+if not tr.empty and "strategy_name" in tr.columns:
+    tr = tr[tr["strategy_name"].fillna(active_strategy["name"]) == active_strategy["name"]]
+if runtime_mode_filter != "All" and not tr.empty and "run_mode" in tr.columns:
+    tr = tr[tr["run_mode"].fillna("paper") == runtime_mode_filter]
+if not eq.empty and "strategy_name" in eq.columns:
+    eq = eq[eq["strategy_name"].fillna(active_strategy["name"]) == active_strategy["name"]]
+if runtime_mode_filter != "All" and not eq.empty and "run_mode" in eq.columns:
+    eq = eq[eq["run_mode"].fillna("paper") == runtime_mode_filter]
 
 # ── Sidebar: regime & metrics ─────────────────────────────────────────────────
 regime = None
@@ -181,7 +414,8 @@ if not df.empty and len(df) >= 2:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 📊 Current Regime")
         st.sidebar.markdown(f"**{_REGIME_EMOJI[regime]}**")
-        st.sidebar.markdown(f"Active strategy: **{_REGIME_STRATEGY[regime]}**")
+        st.sidebar.markdown(f"Strategy route: **{_REGIME_STRATEGY[regime]}**")
+        st.sidebar.caption(f"Selected strategy: {active_strategy['name']}")
         st.sidebar.markdown("---")
 
         # Live price

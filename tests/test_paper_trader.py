@@ -13,7 +13,9 @@ from datetime import datetime, timezone
 import pytest
 
 from simulator.paper_trader import PaperTrader
-from strategy.signal_engine import Signal
+from strategy.regime import Regime
+from strategy.runtime import StrategyDecision
+from strategy.signals import Signal
 from config import POSITION_SIZE_PCT, FEE_RATE
 
 
@@ -38,6 +40,15 @@ def _session_returning(candle):
     mock_sess.__enter__ = MagicMock(return_value=mock_sess)
     mock_sess.__exit__ = MagicMock(return_value=False)
     return mock_sess
+
+
+def _decision(signal: Signal) -> StrategyDecision:
+    return StrategyDecision(
+        signal=signal,
+        regime=Regime.RANGING,
+        strategy_name="regime_router_v1",
+        strategy_version="1.0.0",
+    )
 
 
 # ── _auto_buy ──────────────────────────────────────────────────────────────────
@@ -217,7 +228,7 @@ class TestStep:
         session = _session_returning(candle)
 
         with patch("simulator.paper_trader.SessionLocal", return_value=session), \
-             patch("simulator.paper_trader.compute_signal", return_value=Signal.BUY), \
+             patch("simulator.paper_trader.compute_strategy_decision", return_value=_decision(Signal.BUY)), \
              patch("simulator.paper_trader.SYMBOLS", ["BTCUSDT"]), \
              patch("simulator.paper_trader.send_telegram_alert"):
             await trader.step()
@@ -234,7 +245,7 @@ class TestStep:
         initial_cash = trader.cash
 
         with patch("simulator.paper_trader.SessionLocal", return_value=session), \
-             patch("simulator.paper_trader.compute_signal", return_value=Signal.SELL), \
+             patch("simulator.paper_trader.compute_strategy_decision", return_value=_decision(Signal.SELL)), \
              patch("simulator.paper_trader.SYMBOLS", ["BTCUSDT"]), \
              patch("simulator.paper_trader.send_telegram_alert"):
             await trader.step()
@@ -249,7 +260,7 @@ class TestStep:
         session = _session_returning(candle)
 
         with patch("simulator.paper_trader.SessionLocal", return_value=session), \
-             patch("simulator.paper_trader.compute_signal", return_value=Signal.HOLD), \
+             patch("simulator.paper_trader.compute_strategy_decision", return_value=_decision(Signal.HOLD)), \
              patch("simulator.paper_trader.SYMBOLS", ["BTCUSDT"]), \
              patch("simulator.paper_trader.send_telegram_alert"):
             await trader.step()
@@ -315,7 +326,7 @@ class TestRiskIntegration:
 
         initial_cash = trader.cash
         with patch("simulator.paper_trader.SessionLocal", return_value=session), \
-             patch("simulator.paper_trader.compute_signal", return_value=Signal.BUY), \
+             patch("simulator.paper_trader.compute_strategy_decision", return_value=_decision(Signal.BUY)), \
              patch("simulator.paper_trader.SYMBOLS", ["BTCUSDT"]), \
              patch("simulator.paper_trader.send_telegram_alert"):
             await trader.step()
@@ -334,7 +345,7 @@ class TestRiskIntegration:
 
         initial_cash = trader.cash
         with patch("simulator.paper_trader.SessionLocal", return_value=session), \
-             patch("simulator.paper_trader.compute_signal", return_value=Signal.BUY), \
+             patch("simulator.paper_trader.compute_strategy_decision", return_value=_decision(Signal.BUY)), \
              patch("simulator.paper_trader.SYMBOLS", ["BTCUSDT"]), \
              patch("simulator.paper_trader.send_telegram_alert"):
             await trader.step()

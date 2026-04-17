@@ -175,6 +175,8 @@ def test_list_strategies_returns_meta_dicts(tmp_path):
     result = list_strategies()
     assert len(result) == 1
     assert result[0]["name"] == "test_momentum_v1"
+    assert result[0]["source"] == "plugin"
+    assert result[0]["load_status"] == "loaded"
 
 
 def test_list_strategies_returns_all_registered(tmp_path):

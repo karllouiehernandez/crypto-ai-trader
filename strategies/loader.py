@@ -32,6 +32,8 @@ from strategy.base import StrategyBase
 log = logging.getLogger(__name__)
 
 _registry: Dict[str, StrategyBase] = {}
+_errors: Dict[str, str] = {}
+_bootstrapped = False
 _lock = threading.Lock()
 
 STRATEGIES_DIR = Path(__file__).parent
@@ -83,16 +85,22 @@ def _load_file(path: Path) -> None:
                 and obj is not StrategyBase
             ):
                 instance = obj()
+                instance._source_path = str(path)   # type: ignore[attr-defined]
+                instance._source_type = "plugin"    # type: ignore[attr-defined]
                 with _lock:
                     _registry[instance.name] = instance
                 loaded.append(instance.name)
 
         if loaded:
+            with _lock:
+                _errors.pop(path.name, None)
             log.info(
                 "strategies loaded",
                 extra={"file": path.name, "strategies": loaded},
             )
     except Exception as exc:
+        with _lock:
+            _errors[path.name] = str(exc)
         log.error(
             "strategy load failed",
             extra={"file": path.name, "error": str(exc)},
@@ -101,8 +109,16 @@ def _load_file(path: Path) -> None:
 
 def _boot_load() -> None:
     """Import all existing .py files in strategies/ at startup."""
+    global _bootstrapped
     for path in sorted(STRATEGIES_DIR.glob("*.py")):
         _load_file(path)
+    _bootstrapped = True
+
+
+def load_all(force: bool = False) -> None:
+    """Load all plugin strategy files into the in-memory registry."""
+    if force or not _bootstrapped:
+        _boot_load()
 
 
 # ── Public API ─────────────────────────────────────────────────────────────
@@ -129,7 +145,24 @@ def get_strategy(name: str) -> Optional[StrategyBase]:
 def list_strategies() -> list:
     """Return metadata dicts for all registered strategies (for dashboard display)."""
     with _lock:
-        return [s.meta() for s in _registry.values()]
+        return [
+            {
+                **s.meta(),
+                "source": getattr(s, "_source_type", "plugin"),
+                "path": getattr(s, "_source_path", ""),
+                "load_status": "loaded",
+            }
+            for s in _registry.values()
+        ]
+
+
+def list_strategy_errors() -> list[dict]:
+    """Return plugin load errors for dashboard display."""
+    with _lock:
+        return [
+            {"file": file_name, "error": error, "load_status": "error"}
+            for file_name, error in sorted(_errors.items())
+        ]
 
 
 def registry_snapshot() -> Dict[str, StrategyBase]:
@@ -140,5 +173,8 @@ def registry_snapshot() -> Dict[str, StrategyBase]:
 
 def clear_registry() -> None:
     """Clear all registered strategies. Used in tests only."""
+    global _bootstrapped
     with _lock:
         _registry.clear()
+        _errors.clear()
+    _bootstrapped = False

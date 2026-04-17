@@ -4,15 +4,23 @@ import asyncio, logging
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
-from database.models import Candle, SessionLocal
-from strategy.signal_engine import compute_signal, Signal
-from strategy.ta_features import add_indicators
+from database.models import (
+    Candle,
+    SessionLocal,
+    Trade,
+    init_db,
+    snapshot_portfolio,
+    upsert_portfolio,
+)
+from strategy.runtime import compute_strategy_decision, get_active_strategy_config
+from strategy.signals import Signal
 from strategy.risk import atr_position_size, DailyLossTracker, DrawdownCircuitBreaker
 from utils.telegram_utils import CALLBACK_QUEUE, send_telegram_alert, _token, _chat_id
 from config import (
     SYMBOLS, POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD,
     DAILY_LOSS_LIMIT_PCT, DRAWDOWN_HALT_PCT, LLM_ENABLED,
     LIVE_TRADE_ENABLED,
+    PORTFOLIO_SNAP_MIN,
 )
 
 TICK_SECONDS = 1
@@ -23,6 +31,7 @@ log = logging.getLogger(__name__)
 
 class PaperTrader:
     def __init__(self):
+        init_db()
         self.cash: float = STARTING_BALANCE_USD
         self.positions: Dict[str, float] = {}
         self.cost_basis: Dict[str, float] = {}  # tracks buy cost per symbol for P&L
@@ -35,6 +44,10 @@ class PaperTrader:
         self._coordinator = None          # optional; set externally before run()
         self._binance_client = None       # set by run_live.py when LIVE_TRADE_ENABLED=True
         self._last_regime: Dict[str, str] = {}   # sym → regime string for critique context
+        active = get_active_strategy_config()
+        self._strategy_name = active["name"]
+        self._strategy_version = active["version"]
+        self._last_snapshot_minute: Optional[datetime] = None
 
     # ── equity helpers ─────────────────────────────────────────────────────────
 
@@ -104,17 +117,19 @@ class PaperTrader:
 
             prices = {sym: c.close for sym, c in candles.items()}
             self._update_risk_state(prices)
+            self._persist_portfolio_state(prices)
 
             if self._trading_halted():
                 return
 
             for sym, candle in candles.items():
-                sig: Signal = compute_signal(sess, candle)
-                if sig == Signal.BUY:
+                decision = compute_strategy_decision(sess, candle, strategy_name=self._strategy_name)
+                self._last_regime[sym] = decision.regime.value
+                if decision.signal == Signal.BUY:
                     atr = self._compute_atr(sess, sym)
-                    await self._auto_buy(sym, candle.close, atr, prices)
-                elif sig == Signal.SELL:
-                    await self._auto_sell(sym, candle.close)
+                    await self._auto_buy(sym, candle.close, atr, prices, decision.regime.value)
+                elif decision.signal == Signal.SELL:
+                    await self._auto_sell(sym, candle.close, decision.regime.value)
 
     # ── ATR helper ─────────────────────────────────────────────────────────────
 
@@ -176,7 +191,7 @@ class PaperTrader:
     # ── order execution ────────────────────────────────────────────────────────
 
     async def _auto_buy(self, sym: str, price: float, atr: float = 0.0,
-                        prices: Optional[Dict[str, float]] = None):
+                        prices: Optional[Dict[str, float]] = None, regime: str = "UNKNOWN"):
         if price <= 0:
             return
 
@@ -203,6 +218,7 @@ class PaperTrader:
         self.cash -= cost
         self.positions[sym] = self.positions.get(sym, 0) + qty
         self.cost_basis[sym] = self.cost_basis.get(sym, 0) + cost
+        self._record_trade(sym, "BUY", qty, price, qty * price * FEE_RATE, 0.0, regime)
         log.info("AUTO BUY", extra={
             "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
             "atr": round(atr, 4), "cost": round(cost, 4), "cash": round(self.cash, 4),
@@ -210,7 +226,7 @@ class PaperTrader:
         send_telegram_alert(_token(), _chat_id(),
                             f"🤖 Auto-BUY {sym} qty={qty:.4f} @ {price:.2f}")
 
-    async def _auto_sell(self, sym: str, price: float):
+    async def _auto_sell(self, sym: str, price: float, regime: str = "UNKNOWN"):
         if price <= 0:
             return
         qty = self.positions.get(sym, 0)
@@ -226,10 +242,12 @@ class PaperTrader:
         proceeds = qty * price * (1 - FEE_RATE)
         self.cash += proceeds
         self.cost_basis.pop(sym, None)
-        self.realised += proceeds - cost
+        pnl = proceeds - cost
+        self.realised += pnl
+        self._record_trade(sym, "SELL", qty, price, qty * price * FEE_RATE, pnl, regime)
         log.info("AUTO SELL", extra={
             "symbol": sym, "qty": round(qty, 6), "price": round(price, 4),
-            "proceeds": round(proceeds, 4), "pnl": round(proceeds - cost, 4),
+            "proceeds": round(proceeds, 4), "pnl": round(pnl, 4),
             "cash": round(self.cash, 4),
         })
         send_telegram_alert(_token(), _chat_id(),
@@ -254,11 +272,11 @@ class PaperTrader:
             if not candle or candle.close <= 0:
                 return
             atr = self._compute_atr(sess, sym)
-            await self._auto_buy(sym, candle.close, atr)
+            await self._auto_buy(sym, candle.close, atr, regime="MANUAL")
 
     async def _manual_sell(self, sym: str):
         price = await self._latest_price(sym)
-        await self._auto_sell(sym, price)
+        await self._auto_sell(sym, price, regime="MANUAL")
 
     async def _latest_price(self, sym: str) -> float:
         with SessionLocal() as sess:
@@ -269,6 +287,59 @@ class PaperTrader:
                     .first()
             )
             return candle.close if candle else 0.0
+
+    def _persist_portfolio_state(self, prices: Optional[Dict[str, float]] = None) -> None:
+        equity = self._equity(prices)
+        unreal_pnl = equity - self.cash - self.realised
+
+        with SessionLocal() as sess:
+            upsert_portfolio(sess, self.cash, equity, unreal_pnl)
+            now = datetime.now(tz=timezone.utc)
+            minute_bucket = now.replace(second=0, microsecond=0)
+            should_snapshot = (
+                self._last_snapshot_minute is None
+                or (minute_bucket - self._last_snapshot_minute).total_seconds() >= PORTFOLIO_SNAP_MIN * 60
+            )
+            if should_snapshot:
+                snapshot_portfolio(
+                    sess,
+                    run_mode="live" if LIVE_TRADE_ENABLED else "paper",
+                    strategy_name=self._strategy_name,
+                    strategy_version=self._strategy_version,
+                    balance=self.cash,
+                    equity=equity,
+                    unreal_pnl=unreal_pnl,
+                )
+                self._last_snapshot_minute = minute_bucket
+            sess.commit()
+
+    def _record_trade(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float,
+        fee: float,
+        pnl: float,
+        regime: str,
+    ) -> None:
+        with SessionLocal() as sess:
+            sess.add(
+                Trade(
+                    ts=datetime.now(tz=timezone.utc),
+                    symbol=symbol,
+                    side=side,
+                    qty=qty,
+                    price=price,
+                    fee=fee,
+                    pnl=pnl,
+                    strategy_name=self._strategy_name,
+                    strategy_version=self._strategy_version,
+                    run_mode="live" if LIVE_TRADE_ENABLED else "paper",
+                    regime=regime,
+                )
+            )
+            sess.commit()
 
 
 # ── Module-level fire-and-forget critique ─────────────────────────────────────

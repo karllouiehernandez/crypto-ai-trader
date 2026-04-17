@@ -10,44 +10,49 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-17 (Sprint 15 closed) |
-| **Sprint completed** | Sprint 15 ✅ — committed + pushed to GitHub |
-| **Next sprint** | Sprint 16 — Exchange Fill Reconciliation (use Binance executed qty / avg fill price instead of requested qty / signal price) |
+| **Last updated** | 2026-04-17 (Sprint 16 closed) |
+| **Sprint completed** | Sprint 16 ✅ — Jesse Workbench Foundation |
+| **Next sprint** | Sprint 17 — Backtest & Runtime Visualization Hardening |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 15 complete; GitHub issue closeout blocked by app permissions |
+| **Reason for handoff** | Sprint 16 complete; continue Jesse-like workbench roadmap |
 
 ---
 
-## Resume Here — Sprint 16: Exchange Fill Reconciliation
+## Resume Here — Sprint 17: Backtest & Runtime Visualization Hardening
 
-**Sprint 15 complete.** Order fill confirmation is now wired. 387 tests passing.
+**Sprint 16 complete.** Jesse-style workbench foundation is now wired. 391 tests passing.
 
-### What was done in Sprint 15
-- `simulator/paper_trader.py` — `_submit_order()` now returns `bool`; buy/sell paths submit first and only mutate paper state on success; failed live sells preserve position + cost basis unchanged
-- `tests/test_live_trade_gate.py` — assertions updated for boolean submit contract; added regressions for aborted fills on submission failure and applied fills on success
-- **387 total passing** (+4 from Sprint 15)
+### What was done in Sprint 16
+- `strategy/builtin.py` — NEW: first-class selectable built-in strategies (`regime_router_v1`, `mean_reversion_v1`, `momentum_v1`, `breakout_v1`)
+- `strategy/runtime.py` — NEW: persisted active-strategy runtime used by backtest, paper, and live
+- `database/models.py` — MODIFIED: added `AppSetting`, `BacktestRun`, `BacktestTrade`, `PortfolioSnapshot`; added backward-compatible trade attribution columns
+- `simulator/paper_trader.py` — MODIFIED: active strategy loaded at startup; trade and portfolio snapshots are now persisted with strategy/mode metadata
+- `dashboard/streamlit_app.py` — MODIFIED: first `Strategy Workbench` slice is live with strategy selection, plugin load/error visibility, `Backtest Lab`, saved backtest runs, and runtime filtering by strategy/mode
+- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — NEW: repo-local Jesse-like UI/UX skill for future agents
+- **391 total passing** (+4 from Sprint 16)
 
-### Sprint 16 Goal — Exchange Fill Reconciliation
-Current live-trading state now waits for order submission success, but paper fills still use the **requested qty** and **signal price** rather than Binance's actual executed quantity / fill price. This can still drift from exchange reality when partial fills, step-size rounding, or slippage differ from the signal assumptions. Fix this by reading the Binance order response and applying internal state from the confirmed execution data.
+### Sprint 17 Goal — Backtest & Runtime Visualization Hardening
+The first workbench slice is functional, but it still needs to feel more like a Jesse-style research loop. Complete the visual analysis layer and tighten the runtime monitor so backtests, paper trading, and live trading all surface richer, strategy-attributed information.
 
 ### Scope
-- `simulator/paper_trader.py` — change `_submit_order` to return structured execution data for live orders (executed qty, average fill price, maybe order id/status), while preserving paper-mode behavior
-- `simulator/paper_trader.py` — update `_auto_buy` / `_auto_sell` to apply cash, position, cost basis, and realised P&L from the confirmed execution values instead of assumed `qty` and `price`
-- `tests/test_live_trade_gate.py` or a new focused test file — add cases for partial fills, response-based price slippage, and failure/non-filled statuses
+- `dashboard/streamlit_app.py` — add a proper drawdown chart, richer backtest metrics display, and a clearer saved-run inspection flow; keep strategy identity visible in every panel
+- `dashboard/streamlit_app.py` — improve runtime monitor for paper/live by showing tagged trade history, recent execution context, and clearer restart-required messaging after strategy changes
+- `backtester/service.py` / dashboard helpers — harden backtest persistence and run querying so the workbench remains stable with repeated runs and larger histories
+- Review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` for drift while refining the UX
 
 ### Step 1 — Verify baseline
 ```bash
-pytest tests/ -q   # must show 387 passed
+pytest tests/ -q   # must show 391 passed
 ```
 
 ### Step 2 — Sprint close checklist
 - [ ] All CRITICAL and HIGH review findings fixed
-- [ ] `knowledge/sprint_log.md` updated with Sprint 16 entry
+- [ ] `knowledge/sprint_log.md` updated with Sprint 17 entry
 - [ ] `HANDOFF.md` Current State table updated
 - [ ] Committed and pushed to GitHub
-- [ ] GitHub issue created and closed for Sprint 16
+- [ ] GitHub issue created and closed for Sprint 17
 
 ---
 
@@ -71,6 +76,7 @@ pytest tests/ -q   # must show 387 passed
 | Sprint 13 — Dashboard Promotion Panel + Live Trade Gate | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 14 — Live Trade Execution Gate | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 15 — Order Fill Confirmation | ✅ CLOSED | Codex | 2026-04-17 |
+| Sprint 16 — Jesse Workbench Foundation | ✅ CLOSED | Codex | 2026-04-17 |
 
 ---
 

@@ -16,7 +16,8 @@ import logging
 import pandas as pd
 
 from database.models import Candle, SessionLocal
-from strategy.signal_engine import compute_signal, Signal
+from strategy.runtime import compute_strategy_decision, get_active_strategy_config
+from strategy.signals import Signal
 from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD, SLIPPAGE_PCT
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ def run_backtest(
     start: datetime,
     end: datetime,
     slippage_pct: float = SLIPPAGE_PCT,
+    strategy_name: str | None = None,
 ) -> BacktestResult:
     """Back-test `symbol` between *start* and *end* (inclusive).
 
@@ -42,6 +44,7 @@ def run_backtest(
     cash      = STARTING_BALANCE_USD
     position  = 0.0
     trades: list[dict] = []
+    selected_strategy = strategy_name or get_active_strategy_config()["name"]
 
     with SessionLocal() as sess:
         candles: List[Candle] = (
@@ -59,7 +62,8 @@ def run_backtest(
             raise ValueError("No candles in the requested date range")
 
         for c in candles:
-            sig   = compute_signal(sess, c)
+            decision = compute_strategy_decision(sess, c, strategy_name=selected_strategy)
+            sig   = decision.signal
             price = c.close
 
             if sig == Signal.BUY and cash > 0:
@@ -72,7 +76,10 @@ def run_backtest(
                 cash      -= cost
                 position  += qty
                 trades.append(dict(time=c.open_time, side="BUY",
-                                   price=fill_price, qty=qty))
+                                   price=fill_price, qty=qty,
+                                   strategy_name=decision.strategy_name,
+                                   strategy_version=decision.strategy_version,
+                                   regime=decision.regime.value))
 
             elif sig == Signal.SELL and position > 0:
                 fill_price = price * (1 - slippage_pct)
@@ -80,7 +87,10 @@ def run_backtest(
                 cash      += qty * fill_price * (1 - FEE_RATE)
                 position   = 0.0
                 trades.append(dict(time=c.open_time, side="SELL",
-                                   price=fill_price, qty=qty))
+                                   price=fill_price, qty=qty,
+                                   strategy_name=decision.strategy_name,
+                                   strategy_version=decision.strategy_version,
+                                   regime=decision.regime.value))
 
         final_equity = cash + position * candles[-1].close
         pnl_pct      = (final_equity / STARTING_BALANCE_USD - 1) * 100
@@ -122,4 +132,3 @@ def build_equity_curve(
         equity.append(cash + position * row["price"])
 
     return pd.Series(equity, dtype=float)
-

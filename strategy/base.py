@@ -36,6 +36,8 @@ class StrategyBase(ABC):
     """
 
     name: str = "unnamed"
+    display_name: str = "Unnamed Strategy"
+    description: str = "No strategy description provided."
     version: str = "0.1.0"
     regimes: list = []  # empty = active in all regimes
 
@@ -57,6 +59,16 @@ class StrategyBase(ABC):
         """Override to define a custom short exit condition. Default: False (hold)."""
         return False
 
+    def decide(self, df: pd.DataFrame, regime: Regime | None = None) -> Signal:
+        """Return a trading decision after base guards are applied."""
+        if self.should_long(df):
+            return Signal.BUY
+
+        if self.should_short(df):
+            return Signal.SELL
+
+        return Signal.HOLD
+
     def evaluate(self, df: pd.DataFrame, regime: Regime | None = None) -> Signal:
         """Called by the plugin loader and AgentCoordinator. Not overridable.
 
@@ -72,19 +84,25 @@ class StrategyBase(ABC):
         if len(df) < 2:
             return Signal.HOLD
 
-        if self.should_long(df):
-            return Signal.BUY
+        return self.decide(df, regime)
 
-        if self.should_short(df):
-            return Signal.SELL
+    def default_params(self) -> dict:
+        """Return default parameter values for UI forms and persisted settings."""
+        return {}
 
-        return Signal.HOLD
+    def param_schema(self) -> list[dict]:
+        """Return serialisable parameter metadata for dashboard rendering."""
+        return []
 
     def meta(self) -> dict:
         """Return strategy metadata for the dashboard, KB logging, and registry."""
         return {
             "name": self.name,
+            "display_name": self.display_name,
+            "description": self.description,
             "version": self.version,
             "regimes": [r.value for r in self.regimes],
             "class": self.__class__.__name__,
+            "default_params": self.default_params(),
+            "param_schema": self.param_schema(),
         }

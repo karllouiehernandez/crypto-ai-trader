@@ -64,6 +64,41 @@ Self-reviewed — no CRITICAL or HIGH issues found in the Sprint 15 scope. Full 
 
 ---
 
+## Sprint 16 — Jesse Workbench Foundation
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Agent:** Codex
+**Goal:** Start the Jesse-like strategy workbench roadmap by making strategy choice persistent and shared across backtest, paper, and live, while adding the first dashboard workbench surfaces and a repo-local UI/UX skill for future agent alignment.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `strategy/base.py` — MODIFIED: added `display_name`, `description`, `default_params()`, `param_schema()`, and `decide()` so built-in and plugin strategies expose one dashboard-friendly metadata contract without overriding the base `evaluate()` guards
+- [x] `strategy/builtin.py` — NEW: added first-class selectable built-in strategies: `regime_router_v1`, `mean_reversion_v1`, `momentum_v1`, and `breakout_v1`
+- [x] `strategy/runtime.py` — NEW: unified runtime service for listing strategies, persisting active strategy selection, and computing strategy decisions for backtest/paper/live from one entrypoint
+- [x] `start_trader.ps1`, `run_all.ps1` — NEW: repo-local PowerShell launchers for activating the venv in the current shell or starting trader + dashboard together
+- [x] `strategies/loader.py` — MODIFIED: added lazy boot-load, source/path/load status metadata, and plugin error reporting for dashboard display
+- [x] `database/models.py` — MODIFIED: added `AppSetting`, `BacktestRun`, `BacktestTrade`, `PortfolioSnapshot`; added backward-compatible schema upgrades for new nullable trade attribution columns
+- [x] `simulator/paper_trader.py` — MODIFIED: paper/live now load the active strategy at startup, use the unified strategy runtime, persist trades with strategy/mode/regime tags, and write portfolio snapshots for runtime visualization
+- [x] `backtester/engine.py`, `backtester/walk_forward.py`, `run_backtest.py`, `backtester/service.py` — MODIFIED/NEW: backtests now honor selected strategy overrides, persist saved runs for dashboard inspection, and remove the old hard dependency on backtest API credentials for CLI execution
+- [x] `dashboard/streamlit_app.py` — MODIFIED: added a `Strategy Workbench` section, active strategy selection UI, strategy catalog + plugin error display, persisted `Backtest Lab`, saved-run inspection, and runtime filtering by strategy/mode
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — NEW: repo-local skill defining the Jesse-like workflow, required dashboard surfaces, result panels, and strategy identity UX rules for future agents
+- [x] `tests/test_builtin_strategies.py` — NEW; `tests/test_backtester.py`, `tests/test_paper_trader.py`, `tests/test_strategy_loader.py` — MODIFIED to cover the new strategy runtime seam and metadata contract
+
+### Test Results
+- Before: 387 tests passing
+- After: **391 tests passing** (+4 new) — 0 failures
+
+### Key Technical Decisions
+1. **Single active strategy is persisted in SQLite settings**: backtests can override it explicitly, but paper/live cache the selected strategy at startup so dashboard changes do not hot-swap a running trader.
+2. **Keep the current regime router as a selectable built-in**: existing production behavior remains available as `regime_router_v1` instead of being hidden inside `signal_engine.py`.
+3. **Repo-local UI/UX skill is versioned with the codebase**: future Codex, Claude Code, or Copilot Pro sessions can follow the same Jesse-like workflow guidance directly from the repo instead of relying on one agent's memory.
+4. **Dashboard workbench lands before AI promotion**: manual agent-created strategies are now the intended path for rapid iteration while automated promotion remains unfinished.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 391/391. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

@@ -49,6 +49,7 @@ def walk_forward(
     end: datetime,
     window_months: int = WALK_FORWARD_MONTHS,
     train_pct: float = WALK_FORWARD_TRAIN,
+    strategy_name: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Run rolling walk-forward validation on `symbol` from `start` to `end`.
@@ -82,7 +83,7 @@ def walk_forward(
         oos_end   = w_end
 
         try:
-            trades = run_backtest(symbol, oos_start, oos_end)
+            trades = run_backtest(symbol, oos_start, oos_end, strategy_name=strategy_name)
         except ValueError:
             # No candles in this OOS window — record as zero-trades result
             results.append({

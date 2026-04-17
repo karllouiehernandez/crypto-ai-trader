@@ -14,6 +14,7 @@ from collectors.live_streamer     import main as live_stream
 from simulator.paper_trader       import PaperTrader
 from simulator.coordinator        import Coordinator
 from llm.self_learner             import SelfLearner
+from strategy.runtime             import get_active_strategy_config
 from utils.telegram_utils         import send_telegram_alert, _token, _chat_id
 
 logging.basicConfig(
@@ -30,6 +31,11 @@ async def boot():
     learner     = SelfLearner()
     coordinator = Coordinator(learner)
     trader._coordinator = coordinator
+    active_strategy = get_active_strategy_config()
+    log.info(
+        "Active strategy loaded",
+        extra={"strategy": active_strategy["name"], "version": active_strategy["version"]},
+    )
 
     binance_client = None
     if LIVE_TRADE_ENABLED:

@@ -15,7 +15,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backtester.engine import run_backtest, BacktestResult
-from strategy.signal_engine import Signal
+from strategy.regime import Regime
+from strategy.runtime import StrategyDecision
+from strategy.signals import Signal
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -46,6 +48,15 @@ START = datetime(2024, 1, 1, tzinfo=timezone.utc)
 END   = datetime(2024, 1, 2, tzinfo=timezone.utc)
 
 
+def _decision(signal: Signal) -> StrategyDecision:
+    return StrategyDecision(
+        signal=signal,
+        regime=Regime.RANGING,
+        strategy_name="regime_router_v1",
+        strategy_version="1.0.0",
+    )
+
+
 # ── no candles ────────────────────────────────────────────────────────────────
 
 class TestNoCandlesRaisesError:
@@ -63,7 +74,7 @@ class TestReturnType:
         candles = [_make_candle("BTCUSDT", i, 100.0) for i in range(5)]
         session = _session_with_candles(candles)
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", return_value=Signal.HOLD):
+             patch("backtester.engine.compute_strategy_decision", return_value=_decision(Signal.HOLD)):
             result = run_backtest("BTCUSDT", START, END)
         assert isinstance(result, BacktestResult)
 
@@ -71,7 +82,7 @@ class TestReturnType:
         candles = [_make_candle("BTCUSDT", i, 100.0) for i in range(10)]
         session = _session_with_candles(candles)
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", return_value=Signal.HOLD):
+             patch("backtester.engine.compute_strategy_decision", return_value=_decision(Signal.HOLD)):
             result = run_backtest("BTCUSDT", START, END)
         assert len(result) == 0
 
@@ -83,8 +94,9 @@ class TestSingleBuy:
         prices  = [100.0 + i for i in range(len(signals))]
         candles = [_make_candle("BTCUSDT", i, p) for i, p in enumerate(prices)]
         session = _session_with_candles(candles)
+        decisions = [_decision(signal) for signal in signals]
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", side_effect=signals):
+             patch("backtester.engine.compute_strategy_decision", side_effect=decisions):
             return run_backtest("BTCUSDT", START, END), candles
 
     def test_single_buy_produces_one_trade(self):
@@ -115,8 +127,9 @@ class TestBuySell:
         ]
         signals = [Signal.BUY, Signal.SELL]
         session = _session_with_candles(candles)
+        decisions = [_decision(signal) for signal in signals]
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", side_effect=signals):
+             patch("backtester.engine.compute_strategy_decision", side_effect=decisions):
             return run_backtest("BTCUSDT", START, END)
 
     def test_buy_then_sell_produces_two_trades(self):
@@ -130,8 +143,9 @@ class TestBuySell:
         candles = [_make_candle("BTCUSDT", i, 100.0) for i in range(3)]
         signals = [Signal.BUY, Signal.BUY, Signal.HOLD]
         session = _session_with_candles(candles)
+        decisions = [_decision(signal) for signal in signals]
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", side_effect=signals):
+             patch("backtester.engine.compute_strategy_decision", side_effect=decisions):
             result = run_backtest("BTCUSDT", START, END)
         # Both BUY signals execute because partial sizing leaves cash remaining
         assert len(result[result["side"] == "BUY"]) == 2
@@ -141,8 +155,9 @@ class TestBuySell:
         candles = [_make_candle("BTCUSDT", i, 100.0) for i in range(3)]
         signals = [Signal.SELL, Signal.SELL, Signal.HOLD]
         session = _session_with_candles(candles)
+        decisions = [_decision(signal) for signal in signals]
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", side_effect=signals):
+             patch("backtester.engine.compute_strategy_decision", side_effect=decisions):
             result = run_backtest("BTCUSDT", START, END)
         assert len(result) == 0
 
@@ -161,9 +176,10 @@ class TestFeeApplication:
         ]
         signals = [Signal.BUY, Signal.HOLD]
         session = _session_with_candles(candles)
+        decisions = [_decision(signal) for signal in signals]
 
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", side_effect=signals):
+             patch("backtester.engine.compute_strategy_decision", side_effect=decisions):
             result = run_backtest("BTCUSDT", START, END)
 
         fill_price = buy_price * (1 + SLIPPAGE_PCT)
@@ -179,9 +195,10 @@ class TestMultipleRoundTrips:
         signals = [Signal.BUY, Signal.SELL, Signal.BUY, Signal.SELL]
         candles = [_make_candle("BTCUSDT", i, 100.0 + i) for i in range(4)]
         session = _session_with_candles(candles)
+        decisions = [_decision(signal) for signal in signals]
 
         with patch("backtester.engine.SessionLocal", return_value=session), \
-             patch("backtester.engine.compute_signal", side_effect=signals):
+             patch("backtester.engine.compute_strategy_decision", side_effect=decisions):
             result = run_backtest("BTCUSDT", START, END)
 
         # BUY → SELL → (no cash for BUY? depends on math) — at minimum 2 trades

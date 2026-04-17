@@ -12,10 +12,10 @@ import argparse
 import sys
 from datetime import datetime
 
-from config import validate_env_backtest
 from backtester.engine import run_backtest, build_equity_curve
 from backtester.metrics import compute_metrics, acceptance_gate
 from backtester.walk_forward import walk_forward, aggregate_results
+from strategy.runtime import get_active_strategy_config
 
 
 def _print_window_table(results: list) -> None:
@@ -44,9 +44,10 @@ def _run_walk_forward(args) -> int:
 
     print(f"\n{'='*60}")
     print(f"Walk-forward: {args.symbol.upper()}  {args.start} → {args.end}")
+    print(f"Strategy:     {args.strategy or get_active_strategy_config()['name']}")
     print(f"{'='*60}\n")
 
-    results = walk_forward(args.symbol.upper(), start, end)
+    results = walk_forward(args.symbol.upper(), start, end, strategy_name=args.strategy)
 
     if not results:
         print("No complete windows found in the given date range.")
@@ -77,7 +78,7 @@ def _run_single(args) -> int:
     start = datetime.fromisoformat(args.start)
     end   = datetime.fromisoformat(args.end)
 
-    trades = run_backtest(args.symbol.upper(), start, end)
+    trades = run_backtest(args.symbol.upper(), start, end, strategy_name=args.strategy)
     if not trades:
         print("No trades generated.")
         return 0
@@ -111,12 +112,11 @@ def _run_single(args) -> int:
 
 
 if __name__ == "__main__":
-    validate_env_backtest()
-
     p = argparse.ArgumentParser(description="Backtest a symbol with walk-forward validation")
     p.add_argument("symbol")
     p.add_argument("start", help="YYYY-MM-DD")
     p.add_argument("end",   help="YYYY-MM-DD")
+    p.add_argument("--strategy", help="Override the active strategy name for this run")
     p.add_argument(
         "--no-walk-forward",
         action="store_true",
