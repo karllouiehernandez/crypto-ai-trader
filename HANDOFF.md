@@ -10,34 +10,41 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | GitHub Copilot |
-| **Last updated** | 2026-04-17 (Sprint 7) |
-| **Sprint completed** | Sprint 7 ✅ |
-| **Next sprint** | Sprint 8 |
+| **Last updated** | 2026-04-18 (Sprint 8) |
+| **Sprint completed** | Sprint 8 ✅ |
+| **Next sprint** | Sprint 9 (or production deployment) |
 | **Blocking issues** | None |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 7 complete |
+| **Reason for handoff** | Sprint 8 complete |
 
 ---
 
-## Resume Here — Sprint 8
+## Resume Here — Post-Sprint 8
 
-**GitHub issue:** https://github.com/karllouiehernandez/crypto-ai-trader/issues/9
+**Sprint 8 is complete.** All 8 planned sprints are now done. 213 tests passing.
 
-**Goal:** Backtesting rigor — walk-forward validation; slippage modeling; Sharpe/DD/profit-factor acceptance gates.
+### Pre-Live Checklist Status
+- [x] Credentials in `.env` (Sprint 0)
+- [x] Backtester fixed and validated (Sprint 0)
+- [x] ATR-based position sizing (Sprint 3)
+- [x] Daily loss limit + drawdown circuit breaker (Sprint 3)
+- [x] Test suite passing — 213 tests (Sprint 2+8)
+- [x] Knowledge base initialized (Sprint 1+)
+- [x] Walk-forward validation with acceptance gates (Sprint 8)
+- [ ] **30+ days paper trading with positive Sharpe** — this is the remaining gate
 
-**Acceptance criteria:**
-- `backtester/engine.py` — add slippage (0.05–0.1% per fill) alongside `FEE_RATE`; add `SLIPPAGE_PCT` to `config.py`
-- `backtester/walk_forward.py` — new module: rolling 3-month windows (70% train / 30% OOS); returns per-window metrics
-- `backtester/metrics.py` — new module: `sharpe_ratio()`, `max_drawdown()`, `profit_factor()`, `acceptance_gate()` (Sharpe > 1.5, max_dd < 20%, PF > 1.5, min 200 trades)
-- `run_backtest.py` — run walk-forward by default; print summary table; fail with exit code 1 if acceptance gate not met
-- `tests/test_metrics.py`, `tests/test_walk_forward.py` — unit tests
-- `knowledge/sprint_log.md`, `HANDOFF.md`
+### Next action options
+1. **Deploy paper trading**: run `python run_live.py` and monitor for 30+ days
+2. **Sprint 9** (optional): multi-exchange support (ccxt), production deployment hardening
+3. **Backtest validation**: run `python run_backtest.py BTCUSDT 2023-01-01 2024-12-31` to validate strategy against 2 years of data
 
-**Context from prior sprints:**
-- `backtester/engine.py` now has module-level `log = logging.getLogger(__name__)` (Sprint 7)
-- `config.py` has `FEE_RATE=0.001`; add `SLIPPAGE_PCT` alongside it
-- `run_backtest.py` currently calls `run_backtest()` from `backtester.engine` directly
+### Sprint 8 Files
+- `backtester/metrics.py` — pure metric functions
+- `backtester/walk_forward.py` — rolling walk-forward engine
+- `backtester/engine.py` — slippage-aware fills + `build_equity_curve()`
+- `run_backtest.py` — walk-forward CLI (default) + `--no-walk-forward` single mode
+- `tests/test_metrics.py` (24 tests), `tests/test_walk_forward.py` (14 tests)
 
 ---
 
@@ -53,6 +60,7 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Sprint 5 — Regime detection | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 6 — Multi-strategy portfolio | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 | Sprint 7 — Dashboard fixes + observability | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
+| Sprint 8 — Backtesting rigor | ✅ CLOSED | GitHub Copilot | 2026-04-18 |
 
 ---
 

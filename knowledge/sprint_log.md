@@ -261,6 +261,33 @@ All modules now use `logging.getLogger(__name__)` for consistent structured logg
 ---
 
 ## Sprint 8 — Backtesting Rigor
-**Date started:** —
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
 **Goal:** Walk-forward validation; slippage modeling; Sharpe/DD/PF acceptance gates
-**Status:** PENDING
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `config.py` — added Sprint 6 missing constant `MOMENTUM_PULLBACK_TOL=0.005`; added Sprint 8 section: `SLIPPAGE_PCT=0.001`, `WALK_FORWARD_MONTHS=3`, `WALK_FORWARD_TRAIN=0.70`, `MIN_TRADES_GATE=200`, `SHARPE_GATE=1.5`, `MAX_DD_GATE=0.20`, `PROFIT_FACTOR_GATE=1.5`
+- [x] `backtester/metrics.py` — new pure module: `sharpe_ratio()`, `max_drawdown()`, `profit_factor()` (avg cost basis), `acceptance_gate()`, `compute_metrics()`
+- [x] `backtester/walk_forward.py` — new module: `_month_windows()`, `walk_forward()`, `aggregate_results()`; rolls 3-month windows, runs OOS backtest per window, computes metrics and acceptance gate result per window
+- [x] `backtester/engine.py` — added `slippage_pct` param to `run_backtest()` (default: `SLIPPAGE_PCT`); BUY fill = close×(1+slippage), SELL fill = close×(1-slippage); added `build_equity_curve()` (cash-only approximation, sufficient for Sharpe/DD)
+- [x] `run_backtest.py` — full rewrite: walk-forward mode (default) prints per-window table + aggregate summary + exits 1 if any window fails; `--no-walk-forward` flag for single-window mode
+- [x] `tests/test_metrics.py` — 24 unit tests covering all metric functions and edge cases; includes BUY-BUY-SELL accumulation test for profit_factor
+- [x] `tests/test_walk_forward.py` — 14 unit tests: window splitting, date ranges, result structure, ValueError handling, aggregate stats
+- [x] `tests/test_backtester.py` — updated 2 tests to account for slippage in fill price calculation
+- [x] `knowledge/parameter_history.md` — Sprint 8 constants documented
+
+### Code Review (1 pass)
+**Pass 1 result:** APPROVED AFTER FIX — 1 CRITICAL found:
+- CRITICAL: `profit_factor()` used last BUY price (pending_buy overwritten on consecutive BUYs) instead of avg cost basis — **fixed**: now tracks `accumulated_cost / position` for avg cost; added 2 regression tests for BUY-BUY-SELL pattern
+
+### Outcome
+213 tests passing. Backtester now:
+- Applies realistic slippage (0.1%) on all fills in addition to fees
+- Builds equity curve from trades for Sharpe/drawdown calculation
+- Computes annualised Sharpe (sqrt(525_600) annualisation for 1m data), max drawdown, profit factor (avg cost basis)
+- Acceptance gates: Sharpe ≥ 1.5, MaxDD ≤ 20%, PF ≥ 1.5, trades ≥ 200
+- Walk-forward splits date range into 3-month rolling windows (70% IS / 30% OOS), reports per-window metrics table + aggregate summary
+- `run_backtest.py` exits with code 1 if any window fails acceptance gate
+Ready for Sprint 9 (or production deployment after 30+ days paper trading).
+

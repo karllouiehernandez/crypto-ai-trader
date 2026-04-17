@@ -135,6 +135,72 @@ Initial parameter snapshot from `config.py` at project start. No changes have be
 
 ---
 
+## 2026-04-18 — SLIPPAGE_PCT (new parameter)
+**Old value:** N/A (fills were executed at exact candle close price)
+**New value:** 0.001 (via `config.SLIPPAGE_PCT`)
+**Reason:** Realistic fills include market impact. BUY fills at close×(1+slippage), SELL fills at close×(1-slippage). Combined with FEE_RATE=0.001, total round-trip cost is ~0.4%.
+**Expected effect:** More conservative equity curves; acceptance gate results better predict live performance.
+**Sprint:** Sprint 8
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-18 — WALK_FORWARD_MONTHS (new parameter)
+**Old value:** N/A
+**New value:** 3 (via `config.WALK_FORWARD_MONTHS`)
+**Reason:** 3-month rolling windows on 1m data provide sufficient trades per OOS period while still allowing multiple windows across a 1-year dataset.
+**Expected effect:** Each window has ~130k candles; OOS (30% of 3 months ≈ 27 days) targets ~200 trades for significance.
+**Sprint:** Sprint 8
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-18 — WALK_FORWARD_TRAIN (new parameter)
+**Old value:** N/A
+**New value:** 0.70 (via `config.WALK_FORWARD_TRAIN`)
+**Reason:** Standard 70/30 IS/OOS split. In-sample reserved for future parameter tuning; OOS is the reported metric window.
+**Expected effect:** OOS window = 27 days per 3-month block.
+**Sprint:** Sprint 8
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-18 — SHARPE_GATE (new parameter)
+**Old value:** N/A
+**New value:** 1.5 (via `config.SHARPE_GATE`)
+**Reason:** Annualised Sharpe ≥ 1.5 is the industry standard for an acceptable systematic strategy. Below 1.0 is considered poor; 1.5 is conservative for a 24/7 crypto strategy.
+**Sprint:** Sprint 8
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-18 — MAX_DD_GATE (new parameter)
+**Old value:** N/A
+**New value:** 0.20 (via `config.MAX_DD_GATE`)
+**Reason:** Maximum acceptable peak-to-trough drawdown is 20%. This aligns with the DRAWDOWN_HALT_PCT live circuit breaker (15%), giving a buffer before live halt is triggered.
+**Sprint:** Sprint 8
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-18 — PROFIT_FACTOR_GATE (new parameter)
+**Old value:** N/A
+**New value:** 1.5 (via `config.PROFIT_FACTOR_GATE`)
+**Reason:** Gross profit / gross loss ≥ 1.5 is the minimum for a viable strategy. Below 1.0 is net losing; 1.5 means 50% more gross profit than gross loss.
+**Sprint:** Sprint 8
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-18 — MIN_TRADES_GATE (new parameter)
+**Old value:** N/A
+**New value:** 200 (via `config.MIN_TRADES_GATE`)
+**Reason:** Minimum 200 trades required for statistical significance per CLAUDE.md standards. A strategy with <200 trades could pass Sharpe/DD/PF gates by luck.
+**Sprint:** Sprint 8
+**Result:** Pending backtest validation.
+
+---
+
 ### Entry Format
 ```markdown
 ## [DATE] — [PARAMETER NAME]

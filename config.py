@@ -83,6 +83,17 @@ HIGH_VOL_SHORT_WINDOW       = 10    # candles for recent-vol window (prototype u
 # ─────────────────────────────────────────────────────────────────────────────
 # ▓▓  Multi-strategy portfolio (Sprint 6)
 # ─────────────────────────────────────────────────────────────────────────────
-MOMENTUM_PULLBACK_TOL = 0.005  # close within 0.5% above EMA-21 counts as pullback entry
+MOMENTUM_PULLBACK_TOL = 0.005  # momentum entry: close must be within 0.5% of EMA-21
 BREAKOUT_LOOKBACK     = 20     # periods to scan for prior high/low in breakout strategy
 BREAKOUT_VOLUME_MULT  = 2.0    # breakout entry volume must be >= this × volume_ma_20
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  Backtesting rigor (Sprint 8)
+# ─────────────────────────────────────────────────────────────────────────────
+SLIPPAGE_PCT        = 0.001   # 0.1% slippage per fill (in addition to fee)
+WALK_FORWARD_MONTHS = 3       # window size for walk-forward (months)
+WALK_FORWARD_TRAIN  = 0.70    # fraction of each window used as in-sample
+MIN_TRADES_GATE     = 200     # minimum trades for acceptance gate
+SHARPE_GATE         = 1.5     # minimum annualised Sharpe ratio
+MAX_DD_GATE         = 0.20    # maximum peak-to-trough drawdown (fraction)
+PROFIT_FACTOR_GATE  = 1.5     # minimum profit factor (gross profit / gross loss)

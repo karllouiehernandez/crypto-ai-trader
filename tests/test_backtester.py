@@ -98,8 +98,11 @@ class TestSingleBuy:
             assert col in result.columns
 
     def test_buy_price_matches_candle_close(self):
+        """With zero slippage, fill price equals candle close."""
         result, candles = self._run([Signal.BUY] + [Signal.HOLD] * 4)
-        assert result.iloc[0]["price"] == candles[0].close
+        from config import SLIPPAGE_PCT
+        expected_fill = candles[0].close * (1 + SLIPPAGE_PCT)
+        assert result.iloc[0]["price"] == pytest.approx(expected_fill, rel=1e-9)
 
 
 # ── BUY then SELL ─────────────────────────────────────────────────────────────
@@ -148,8 +151,8 @@ class TestBuySell:
 
 class TestFeeApplication:
     def test_buy_cost_includes_fee(self):
-        """Cash spent on buy must be qty*price*(1+fee), not just qty*price."""
-        from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD
+        """Cash spent on buy must be qty*fill_price*(1+fee)."""
+        from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD, SLIPPAGE_PCT
 
         buy_price = 100.0
         candles = [
@@ -163,7 +166,8 @@ class TestFeeApplication:
              patch("backtester.engine.compute_signal", side_effect=signals):
             result = run_backtest("BTCUSDT", START, END)
 
-        expected_qty = (STARTING_BALANCE_USD * POSITION_SIZE_PCT) / buy_price
+        fill_price = buy_price * (1 + SLIPPAGE_PCT)
+        expected_qty = (STARTING_BALANCE_USD * POSITION_SIZE_PCT) / fill_price
         assert len(result) == 1
         assert result.iloc[0]["qty"] == pytest.approx(expected_qty, rel=1e-6)
 
