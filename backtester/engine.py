@@ -17,7 +17,7 @@ import pandas as pd
 
 from database.models import Candle, SessionLocal
 from strategy.signal_engine import compute_signal, Signal
-from config import FEE_RATE
+from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
@@ -28,7 +28,7 @@ class BacktestResult(pd.DataFrame):
 
 def run_backtest(symbol: str, start: datetime, end: datetime) -> BacktestResult:
     """Back-test `symbol` between *start* and *end* (inclusive)."""
-    cash      = 10_000.0
+    cash      = STARTING_BALANCE_USD
     position  = 0.0
     trades: list[dict] = []
 
@@ -52,7 +52,7 @@ def run_backtest(symbol: str, start: datetime, end: datetime) -> BacktestResult:
             price = c.close
 
             if sig == Signal.BUY and cash > 0:
-                qty   = cash / price
+                qty   = (cash * POSITION_SIZE_PCT) / price
                 cash -= qty * price * (1 + FEE_RATE)
                 position += qty
                 trades.append(dict(time=c.open_time, side="BUY", price=price, qty=qty))
@@ -64,7 +64,7 @@ def run_backtest(symbol: str, start: datetime, end: datetime) -> BacktestResult:
                 trades.append(dict(time=c.open_time, side="SELL", price=price, qty=qty))
 
         final_equity = cash + position * candles[-1].close
-        pnl_pct      = (final_equity / 10_000.0 - 1) * 100
+        pnl_pct      = (final_equity / STARTING_BALANCE_USD - 1) * 100
         logging.info(f"{symbol} back-test finished – final equity ${final_equity:,.2f} (PnL {pnl_pct:.2f}%)")
 
     return BacktestResult(trades)

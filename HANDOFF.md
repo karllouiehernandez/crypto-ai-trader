@@ -10,39 +10,42 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-16 |
-| **Sprint completed** | Sprint 0 ✅ |
-| **Next sprint** | Sprint 1 |
+| **Last updated** | 2026-04-17 |
+| **Sprint completed** | Sprint 4 ✅ |
+| **Next sprint** | Sprint 5 |
 | **Blocking issues** | None |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Claude Code at 93% usage limit — switching to Copilot |
+| **Reason for handoff** | Sprint 4 complete |
 
 ---
 
-## Resume Here — Sprint 1
+## Resume Here — Sprint 5
 
-**GitHub issue:** https://github.com/karllouiehernandez/crypto-ai-trader/issues/2
+**GitHub issue:** https://github.com/karllouiehernandez/crypto-ai-trader/issues/6 (create if not exists)
 
-**Goal:** Create `knowledge/kb_update.py` — a script any agent can run after a trading session to append a structured entry to the knowledge base.
+**Goal:** Regime detection — ADX + BB-width classifier; gate strategies by active regime.
 
 **Acceptance criteria:**
-- `python knowledge/kb_update.py` runs without error
-- Supports entry types: bug, strategy, experiment, parameter, regime
-- Prompts for all KB fields (what happened, why, impact, what changed, next steps)
-- Appends a correctly-formatted KB entry to the right `knowledge/` file
-- Prints confirmation of what was written and where
+- `strategy/regime.py` new module: `detect_regime(df) -> Regime` returning `TRENDING | RANGING | SQUEEZE | HIGH_VOL`
+- Regime rules from `config.py` constants: ADX > 25 → TRENDING, ADX < 20 → RANGING, BB width < 20th percentile (90d) → SQUEEZE, realized vol > 2× 30d avg → HIGH_VOL
+- `strategy/signal_engine.py` gates mean-reversion BUY/SELL to RANGING regime only (ADX < 20)
+- HIGH_VOL regime halts all signal generation (return HOLD)
+- `tests/test_regime.py` — unit tests for each regime branch
+- `tests/test_signal_engine.py` — tests verifying signal is gated by regime
+- `knowledge/sprint_log.md` — update Sprint 5 section on close
 
-**Files to create/modify:**
-- `knowledge/kb_update.py` — new interactive CLI script
-- `knowledge/sprint_log.md` — update Sprint 1 section on close
-- `HANDOFF.md` — update this file when Sprint 1 closes
+**Files to modify:**
+- `strategy/regime.py` — new file
+- `strategy/signal_engine.py` — import and gate on regime
+- `strategy/ta_features.py` — add `adx_14` column (using `ta.trend.ADXIndicator`)
+- `config.py` — add `ADX_TREND_THRESHOLD=25`, `ADX_RANGE_THRESHOLD=20`, `HIGH_VOL_MULTIPLIER=2.0`
+- `tests/test_regime.py` — new file
+- `knowledge/sprint_log.md`, `HANDOFF.md`
 
-**After Sprint 1 is done:**
-1. Run the code review checklist (see `.github/copilot-instructions.md`)
-2. Close GitHub issue #2 with: `gh issue close 2 --comment "Sprint 1 complete"`
-3. Update this file with Sprint 2 as the next sprint
-4. Do NOT start Sprint 2 until Sprint 1 is reviewed and approved
+**Note on deferred Sprint 4 items:**
+- Multi-timeframe confirmation (1m+5m+15m) — deferred to Sprint 6 when multi-strategy portfolio adds 5m/15m feeds
+- 1h EMA-200 — same deferral; see `knowledge/parameter_history.md` for design rationale
 
 ---
 
@@ -51,6 +54,10 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Sprint | Status | Closed by | Date |
 |--------|--------|-----------|------|
 | Sprint 0 — Foundation fixes + credentials | ✅ CLOSED | Claude Code | 2026-04-16 |
+| Sprint 1 — Knowledge base kb_update.py | ✅ CLOSED | GitHub Copilot | 2026-04-16 |
+| Sprint 2 — Testing infrastructure | ✅ CLOSED | GitHub Copilot | 2026-04-16 |
+| Sprint 3 — Risk management overhaul | ✅ CLOSED | GitHub Copilot | 2026-04-16 |
+| Sprint 4 — Signal quality improvements | ✅ CLOSED | Claude Code | 2026-04-17 |
 
 ---
 

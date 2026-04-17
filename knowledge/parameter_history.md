@@ -31,7 +31,37 @@ Initial parameter snapshot from `config.py` at project start. No changes have be
 
 ## Change Log
 
-_(No changes yet — add entries below as parameters are modified)_
+---
+
+## 2026-04-17 — MIN_CANDLES (signal_engine.py guard)
+**Old value:** 60
+**New value:** 210 (via `config.MIN_CANDLES_EMA200`)
+**Reason:** EMA-200 requires 200 rows of warmup before producing a non-NaN value. With the previous guard of 60, `add_indicators` would return an empty DataFrame (all rows NaN-dropped) and the engine would crash on `iloc[-2]`.
+**Expected effect:** Signals only fire when sufficient history exists for EMA-200; eliminates empty-DataFrame crash.
+**Sprint:** Sprint 4
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-17 — EMA_LOOKBACK (new parameter)
+**Old value:** N/A (hardcoded 120 in `_fetch_recent_candles`)
+**New value:** 220 (via `config.EMA_LOOKBACK`)
+**Reason:** 220 raw 1m candles → ~20 post-warmup rows after EMA-200 dropna. Provides enough rows for both `iloc[-1]` and `iloc[-2]` with comfortable margin.
+**Expected effect:** Stable EMA-200 computation on every signal call.
+**Sprint:** Sprint 4
+**Result:** Pending backtest validation.
+
+**Design note — 1m vs 1h EMA-200:** The spec calls for a 200-period EMA on the 1h chart (8.3 days of context). The current implementation computes it on 1m candles (3.3 hours). This is a deliberate Sprint 4 simplification — the system only collects 1m data. A proper 1h EMA-200 requires ~12,000 1m candles or a separate 1h data feed. Multi-timeframe data support is deferred to Sprint 5/6. The 1m EMA-200 still provides trend context but at a much shorter horizon; it will suppress fewer trades than the intended 1h version.
+
+---
+
+## 2026-04-17 — VOLUME_CONFIRMATION_MULT (new parameter)
+**Old value:** N/A (no volume gate existed)
+**New value:** 1.5 (via `config.VOLUME_CONFIRMATION_MULT`)
+**Reason:** Filters low-conviction entries where entry volume is below 1.5× the 20-period volume average. Aligns with CLAUDE.md signal quality spec.
+**Expected effect:** Reduces false breakout entries; may reduce overall trade frequency.
+**Sprint:** Sprint 4
+**Result:** Pending backtest validation.
 
 ### Entry Format
 ```markdown

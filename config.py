@@ -53,6 +53,21 @@ LIVE_POLL_SECONDS  = 1      # real-time ticker poll
 # ▓▓  Paper-trading parameters
 # ─────────────────────────────────────────────────────────────────────────────
 STARTING_BALANCE_USD = 100.0
-POSITION_SIZE_PCT    = 0.20   # fraction of free cash per trade (Sprint 3 replaces with ATR sizing)
+POSITION_SIZE_PCT    = 0.20   # fallback flat fraction (overridden by ATR sizing in Sprint 3+)
 FEE_RATE             = 0.001  # 0.1% trading fee
 PORTFOLIO_SNAP_MIN   = 1      # write equity snapshot every minute
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  Risk management (Sprint 3)
+# ─────────────────────────────────────────────────────────────────────────────
+RISK_PCT_PER_TRADE   = 0.01   # max 1% of equity risked per trade (ATR sizing)
+ATR_STOP_MULTIPLIER  = 1.5    # stop distance = ATR * this multiplier
+DAILY_LOSS_LIMIT_PCT = 0.03   # halt trading if daily P&L < -3% of start-of-day equity
+DRAWDOWN_HALT_PCT    = 0.15   # halt if equity drops 15% from peak
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  Signal quality (Sprint 4)
+# ─────────────────────────────────────────────────────────────────────────────
+EMA_LOOKBACK            = 220   # candles fetched; gives ~20 post-warmup rows for EMA-200
+MIN_CANDLES_EMA200      = 210   # minimum raw candles required before computing a signal
+VOLUME_CONFIRMATION_MULT = 1.5  # entry volume must be >= this × volume_ma_20

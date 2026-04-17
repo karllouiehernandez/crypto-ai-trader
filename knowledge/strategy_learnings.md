@@ -5,7 +5,7 @@ Update this file after every backtest and after every paper trading session.
 
 ---
 
-## Current Strategy — Baseline (2026-04-16)
+## Current Strategy — Sprint 4 (2026-04-17)
 
 **Name:** 3-condition mean reversion
 **Location:** `strategy/signal_engine.py`
@@ -15,21 +15,24 @@ Update this file after every backtest and after every paper trading session.
 - RSI-14 < 35 (oversold — note: standard threshold is 30, ours is slightly loose)
 - Close price < Bollinger Band lower band (BB-20)
 - MACD line crosses above signal line (bullish crossover on current vs prior candle)
+- Close price > EMA-200 (trend filter — uptrend required for long entries)
+- Entry candle volume >= 1.5× 20-period volume average (volume confirmation)
 
 **Sell signal:**
 - RSI-14 > 70 (overbought)
 - Close price > Bollinger Band upper band
 - MACD line crosses below signal line (bearish crossover)
+- Close price < EMA-200 (trend filter — downtrend required for short entries)
+- Entry candle volume >= 1.5× 20-period volume average (volume confirmation)
 
 **Otherwise:** HOLD
 
 **Known weaknesses:**
-1. All three conditions must fire simultaneously — very rare, may miss many valid entries
-2. No trend filter — will trade counter to strong trends, increasing losing trades
-3. No volume confirmation — false breakouts not filtered
-4. No ATR stop-loss — open-ended risk on each trade
-5. No regime gate — runs the same logic in trending and ranging markets
-6. Minimum 60 candles (1 hour) — cannot trade in the first hour after data loads
+1. All conditions must fire simultaneously — very rare, may miss many valid entries
+2. EMA-200 runs on 1m candles (3.3h context) not 1h candles (8.3d context) as specified — see `parameter_history.md` 2026-04-17 for design rationale; proper 1h EMA-200 deferred to Sprint 5/6
+3. No multi-timeframe confirmation (1m+5m+15m) — deferred from Sprint 4; requires separate data feeds; target Sprint 5/6
+4. No regime gate — mean reversion runs in trending markets (ADX gate is Sprint 5)
+5. Minimum 210 candles required — ~3.5h wait before any signal can fire
 
 **Backtest results:** None yet (backtester was broken at project start — fixed in Sprint 0)
 
