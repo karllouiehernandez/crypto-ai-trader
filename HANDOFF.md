@@ -89,15 +89,22 @@ pytest tests/ -q   # must show 415 passed
 
 ### When you START a session:
 1. Read this file
-2. Read `knowledge/sprint_log.md`
-3. Read any KB files relevant to the sprint goal
-4. Begin work on the "Resume Here" sprint
+2. Read `knowledge/agent_resume.md`
+3. Read only the code files and KB files relevant to the active sprint
+4. Read `knowledge/sprint_log.md` only if historical context is actually needed
+5. Begin work on the "Resume Here" sprint
 
 ### When you END a session (or hit rate limit / cooldown):
 1. Update the **Current State** table above (agent name, date, sprint completed/in-progress)
 2. Update **Resume Here** with the exact task the next agent should pick up
 3. Note any blockers or partial work in a `## In Progress` section below if mid-sprint
-4. Update `knowledge/sprint_log.md` with what was done this session
+4. Update `knowledge/agent_resume.md` with the new compact resume state
+5. Update `knowledge/sprint_log.md` with what was done this session
+
+### Token-Saving Rule
+- `knowledge/sprint_log.md` is the long-form archive, not the default first-read file
+- Agent switching should prefer `HANDOFF.md` + `knowledge/agent_resume.md` + targeted source files
+- Only pull historical sprint entries when a decision depends on older implementation details
 
 ### Handoff note format (add below if mid-sprint):
 ```markdown
