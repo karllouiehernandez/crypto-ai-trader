@@ -68,9 +68,10 @@ def _controlled_indicator_df(last_row: dict, prev_row: dict, n: int = 5) -> pd.D
     default = {
         "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 500.0,
         "ma_21": 100.0, "ma_55": 100.0, "rsi_14": 50.0,
-        "bb_hi": 105.0, "bb_lo": 95.0,
+        "bb_hi": 105.0, "bb_lo": 95.0, "bb_width": 0.05,
         "macd": 0.0, "macd_s": 0.0,
         "ema_200": 100.0, "volume_ma_20": 500.0,
+        "adx_14": 15.0,   # RANGING by default so signal tests aren't blocked by regime
     }
     rows = [{**default} for _ in range(n - 2)]
     rows.append({**default, **prev_row})
@@ -387,3 +388,121 @@ class TestVolumeFilter:
             sig = compute_signal(session, candles[-1])
 
         assert sig == Signal.BUY
+
+
+# ── regime gate ────────────────────────────────────────────────────────────────
+
+class TestRegimeGate:
+    """Verify that detect_regime output gates signal generation in compute_signal."""
+
+    def _buy_conditions(self, extra: dict = None) -> dict:
+        base = {"rsi_14": 33.0, "close": 94.0, "bb_lo": 96.0,
+                "macd": -0.1, "macd_s": -0.2,
+                "ema_200": 90.0, "volume_ma_20": 500.0, "volume": 800.0,
+                "adx_14": 15.0}
+        return {**base, **(extra or {})}
+
+    def _sell_conditions(self, extra: dict = None) -> dict:
+        base = {"rsi_14": 72.0, "close": 106.0, "bb_hi": 104.0,
+                "macd": 0.1, "macd_s": 0.2,
+                "ema_200": 110.0, "volume_ma_20": 500.0, "volume": 800.0,
+                "adx_14": 15.0}
+        return {**base, **(extra or {})}
+
+    def _prev_buy(self) -> dict:
+        return {"rsi_14": 34.0, "close": 94.0, "bb_lo": 96.0,
+                "macd": -0.3, "macd_s": -0.2,
+                "ema_200": 90.0, "volume_ma_20": 500.0, "volume": 800.0,
+                "adx_14": 15.0}
+
+    def _prev_sell(self) -> dict:
+        return {"rsi_14": 72.0, "close": 106.0, "bb_hi": 104.0,
+                "macd": 0.3, "macd_s": 0.2,
+                "ema_200": 110.0, "volume_ma_20": 500.0, "volume": 800.0,
+                "adx_14": 15.0}
+
+    def test_buy_blocked_in_trending_regime(self):
+        """All BUY conditions met, but ADX > 25 → TRENDING regime → HOLD."""
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row=self._prev_buy(),
+            last_row=self._buy_conditions({"adx_14": 30.0}),
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.HOLD
+
+    def test_sell_blocked_in_trending_regime(self):
+        """All SELL conditions met, but ADX > 25 → TRENDING regime → HOLD."""
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row=self._prev_sell(),
+            last_row=self._sell_conditions({"adx_14": 30.0}),
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.HOLD
+
+    def test_buy_blocked_in_high_vol_regime(self):
+        """All BUY conditions met, but HIGH_VOL regime → HOLD."""
+        from strategy.regime import Regime
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row=self._prev_buy(),
+            last_row=self._buy_conditions(),
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.HIGH_VOL):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.HOLD
+
+    def test_buy_blocked_in_squeeze_regime(self):
+        """All BUY conditions met, but SQUEEZE regime → HOLD (not RANGING)."""
+        from strategy.regime import Regime
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row=self._prev_buy(),
+            last_row=self._buy_conditions(),
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.SQUEEZE):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.HOLD
+
+    def test_buy_fires_in_ranging_regime(self):
+        """All BUY conditions met AND regime is RANGING → BUY fires."""
+        from strategy.regime import Regime
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row=self._prev_buy(),
+            last_row=self._buy_conditions(),
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.RANGING):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.BUY
+
+    def test_sell_fires_in_ranging_regime(self):
+        """All SELL conditions met AND regime is RANGING → SELL fires."""
+        from strategy.regime import Regime
+        session = MagicMock()
+        candles = _candle_list(220, _flat_closes(220))
+        controlled = _controlled_indicator_df(
+            prev_row=self._prev_sell(),
+            last_row=self._sell_conditions(),
+        )
+        with patch("strategy.signal_engine._fetch_recent_candles", return_value=candles), \
+             patch("strategy.signal_engine.add_indicators", return_value=controlled), \
+             patch("strategy.signal_engine.detect_regime", return_value=Regime.RANGING):
+            sig = compute_signal(session, candles[-1])
+        assert sig == Signal.SELL

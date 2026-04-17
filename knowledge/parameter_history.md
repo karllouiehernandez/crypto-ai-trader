@@ -63,6 +63,48 @@ Initial parameter snapshot from `config.py` at project start. No changes have be
 **Sprint:** Sprint 4
 **Result:** Pending backtest validation.
 
+---
+
+## 2026-04-17 — ADX_TREND_THRESHOLD (new parameter)
+**Old value:** N/A (no regime detection existed)
+**New value:** 25 (via `config.ADX_TREND_THRESHOLD`)
+**Reason:** ADX > 25 is the standard threshold for a trending market. Values ≤ 25 (including the 20–25 grey zone) are treated as RANGING — conservative choice to avoid false trending classification.
+**Expected effect:** Mean-reversion signals only fire in ranging conditions; trending markets are excluded.
+**Sprint:** Sprint 5
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-17 — BB_WIDTH_SQUEEZE_PERCENTILE (new parameter)
+**Old value:** N/A
+**New value:** 20 (via `config.BB_WIDTH_SQUEEZE_PERCENTILE`)
+**Reason:** BB width below the 20th percentile of available history indicates compression (squeeze). Uses prior-window-only quantile to avoid self-inclusion bias.
+**Expected effect:** Identifies low-volatility pre-breakout periods; mean reversion halted during squeeze.
+**Sprint:** Sprint 5
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-17 — HIGH_VOL_MULTIPLIER (new parameter)
+**Old value:** N/A
+**New value:** 2.0 (via `config.HIGH_VOL_MULTIPLIER`)
+**Reason:** Recent realized vol must exceed 2× the prior-window baseline to classify as HIGH_VOL and halt all signals.
+**Expected effect:** Protects bot from trading during volatility spikes/liquidation cascades.
+**Sprint:** Sprint 5
+**Result:** Pending backtest validation.
+
+---
+
+## 2026-04-17 — HIGH_VOL_SHORT_WINDOW (new parameter)
+**Old value:** N/A
+**New value:** 10 (via `config.HIGH_VOL_SHORT_WINDOW`)
+**Reason:** Prototype uses 10 1m-candles (~10 minutes) as the recent vol window. Production spec is ~30 candles (~30 min). Deferred to later sprint when proper 1h/multi-timeframe data is available.
+**Expected effect:** Short-window spike detection for prototype; will underdetect slower vol buildups.
+**Sprint:** Sprint 5
+**Result:** Pending backtest validation. **Known limitation:** 10-minute window is much shorter than production spec of 30-day baseline.
+
+---
+
 ### Entry Format
 ```markdown
 ## [DATE] — [PARAMETER NAME]

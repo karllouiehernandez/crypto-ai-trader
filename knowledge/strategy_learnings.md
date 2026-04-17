@@ -27,11 +27,17 @@ Update this file after every backtest and after every paper trading session.
 
 **Otherwise:** HOLD
 
+**Regime gate (Sprint 5):**
+- Mean-reversion BUY/SELL only fires when `detect_regime(df) == RANGING`
+- HIGH_VOL regime halts all signals immediately (highest priority)
+- SQUEEZE and TRENDING regimes also suppress mean-reversion (return HOLD)
+- Regime priority: HIGH_VOL > SQUEEZE > TRENDING > RANGING
+
 **Known weaknesses:**
 1. All conditions must fire simultaneously — very rare, may miss many valid entries
-2. EMA-200 runs on 1m candles (3.3h context) not 1h candles (8.3d context) as specified — see `parameter_history.md` 2026-04-17 for design rationale; proper 1h EMA-200 deferred to Sprint 5/6
-3. No multi-timeframe confirmation (1m+5m+15m) — deferred from Sprint 4; requires separate data feeds; target Sprint 5/6
-4. No regime gate — mean reversion runs in trending markets (ADX gate is Sprint 5)
+2. EMA-200 runs on 1m candles (3.3h context) not 1h candles (8.3d context) as specified — see `parameter_history.md` 2026-04-17 for design rationale; proper 1h EMA-200 deferred to Sprint 6+
+3. No multi-timeframe confirmation (1m+5m+15m) — deferred from Sprint 4; requires separate data feeds; target Sprint 6+
+4. HIGH_VOL short window is 10 1m-candles (prototype); production spec is 30-day baseline — deferred to later sprint
 5. Minimum 210 candles required — ~3.5h wait before any signal can fire
 
 **Backtest results:** None yet (backtester was broken at project start — fixed in Sprint 0)

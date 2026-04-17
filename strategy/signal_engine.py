@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from config import EMA_LOOKBACK, MIN_CANDLES_EMA200, VOLUME_CONFIRMATION_MULT
 from database.models import Candle
+from .regime import Regime, detect_regime
 from .ta_features import add_indicators
 
 
@@ -50,6 +51,17 @@ def compute_signal(session: Session, candle: Candle) -> Signal:
     df = add_indicators(df)
     if len(df) < 2:
         return Signal.HOLD
+
+    regime = detect_regime(df)
+
+    # High volatility: halt all signals
+    if regime == Regime.HIGH_VOL:
+        return Signal.HOLD
+
+    # Mean reversion only fires in RANGING regime
+    if regime != Regime.RANGING:
+        return Signal.HOLD
+
     last, prev = df.iloc[-1], df.iloc[-2]
 
     # Trend filter: long only above EMA-200, short only below EMA-200

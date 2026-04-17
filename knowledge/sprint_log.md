@@ -167,9 +167,30 @@ All new logic covered by deterministic controlled-DataFrame tests. Ready for Spr
 ---
 
 ## Sprint 5 — Regime Detection
-**Date started:** —
-**Goal:** ADX + BB-width regime classifier; gate strategies by active regime
-**Status:** PENDING
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Goal:** ADX + BB-width regime classifier; gate mean-reversion to RANGING only
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `strategy/regime.py` — new module: `Regime` enum (TRENDING/RANGING/SQUEEZE/HIGH_VOL), `detect_regime(df)`, `_is_high_vol()` (prior-window-only baseline), `_is_squeeze()` (prior-window quantile)
+- [x] `strategy/ta_features.py` — added `bb_width` (bollinger_wband) and `adx_14` (ADX-14) columns
+- [x] `strategy/signal_engine.py` — imports `detect_regime`; early HOLD on HIGH_VOL; gates all mean-reversion to RANGING only
+- [x] `config.py` — added `ADX_TREND_THRESHOLD=25`, `BB_WIDTH_SQUEEZE_PERCENTILE=20`, `HIGH_VOL_MULTIPLIER=2.0`, `HIGH_VOL_SHORT_WINDOW=10`; removed unused `ADX_RANGE_THRESHOLD`
+- [x] `tests/test_regime.py` — new file: 17 tests (basic branches, priority ordering, edge cases, noisy-baseline regression)
+- [x] `tests/test_signal_engine.py` — updated controlled df helper; added `TestRegimeGate` (6 tests)
+- [x] `knowledge/parameter_history.md` — documented 4 new Sprint 5 config constants
+- [x] `knowledge/strategy_learnings.md` — updated to reflect regime gate is active
+
+### Code Review (1 pass)
+**Pass 1 result:** APPROVED AFTER FIXES — 0 CRITICAL, 1 HIGH, 4 MEDIUM found
+- HIGH-1: `_is_high_vol` baseline contaminated by recent volatile window — **fixed**
+- MEDIUM-1: `ADX_RANGE_THRESHOLD` config constant unused — **fixed** (removed)
+- MEDIUM-2: `_is_squeeze` self-inclusion bias in quantile — **fixed** (`iloc[:-1]`)
+- MEDIUM-3/LOW-4: KB not updated — **fixed**
+
+### Outcome
+137 tests passing in 1.17s. Signal engine now halts on HIGH_VOL and suppresses mean-reversion outside RANGING regime. Ready for Sprint 6.
 
 ---
 

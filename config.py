@@ -71,3 +71,11 @@ DRAWDOWN_HALT_PCT    = 0.15   # halt if equity drops 15% from peak
 EMA_LOOKBACK            = 220   # candles fetched; gives ~20 post-warmup rows for EMA-200
 MIN_CANDLES_EMA200      = 210   # minimum raw candles required before computing a signal
 VOLUME_CONFIRMATION_MULT = 1.5  # entry volume must be >= this × volume_ma_20
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  Regime detection (Sprint 5)
+# ─────────────────────────────────────────────────────────────────────────────
+ADX_TREND_THRESHOLD         = 25    # ADX > this → TRENDING; ADX ≤ 25 (incl. grey zone 20-25) → RANGING
+BB_WIDTH_SQUEEZE_PERCENTILE = 20    # BB width below this percentile of available history → SQUEEZE
+HIGH_VOL_MULTIPLIER         = 2.0   # recent vol > this × baseline vol → HIGH_VOL
+HIGH_VOL_SHORT_WINDOW       = 10    # candles for recent-vol window (prototype uses 1m; production: ~30m)

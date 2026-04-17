@@ -10,9 +10,9 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-17 |
-| **Sprint completed** | Sprint 4 ✅ |
-| **Next sprint** | Sprint 5 |
+| **Last updated** | 2026-04-17 (Sprint 5) |
+| **Sprint completed** | Sprint 5 ✅ |
+| **Next sprint** | Sprint 6 |
 | **Blocking issues** | None |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -20,32 +20,24 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 ---
 
-## Resume Here — Sprint 5
+## Resume Here — Sprint 6
 
-**GitHub issue:** https://github.com/karllouiehernandez/crypto-ai-trader/issues/6 (create if not exists)
+**GitHub issue:** https://github.com/karllouiehernandez/crypto-ai-trader/issues/7
 
-**Goal:** Regime detection — ADX + BB-width classifier; gate strategies by active regime.
+**Goal:** Multi-strategy portfolio — add momentum and breakout strategies alongside mean reversion.
 
 **Acceptance criteria:**
-- `strategy/regime.py` new module: `detect_regime(df) -> Regime` returning `TRENDING | RANGING | SQUEEZE | HIGH_VOL`
-- Regime rules from `config.py` constants: ADX > 25 → TRENDING, ADX < 20 → RANGING, BB width < 20th percentile (90d) → SQUEEZE, realized vol > 2× 30d avg → HIGH_VOL
-- `strategy/signal_engine.py` gates mean-reversion BUY/SELL to RANGING regime only (ADX < 20)
-- HIGH_VOL regime halts all signal generation (return HOLD)
-- `tests/test_regime.py` — unit tests for each regime branch
-- `tests/test_signal_engine.py` — tests verifying signal is gated by regime
-- `knowledge/sprint_log.md` — update Sprint 5 section on close
-
-**Files to modify:**
-- `strategy/regime.py` — new file
-- `strategy/signal_engine.py` — import and gate on regime
-- `strategy/ta_features.py` — add `adx_14` column (using `ta.trend.ADXIndicator`)
-- `config.py` — add `ADX_TREND_THRESHOLD=25`, `ADX_RANGE_THRESHOLD=20`, `HIGH_VOL_MULTIPLIER=2.0`
-- `tests/test_regime.py` — new file
+- `strategy/signal_momentum.py` — EMA9>EMA21>EMA55 + ADX>25 + pullback-to-EMA21 momentum signal; active when regime == TRENDING
+- `strategy/signal_breakout.py` — close above 20-period high + volume 2× avg breakout signal; active when regime == SQUEEZE
+- `strategy/signal_engine.py` — route to appropriate strategy based on regime (RANGING→mean reversion, TRENDING→momentum, SQUEEZE→breakout, HIGH_VOL→HOLD)
+- `strategy/ta_features.py` — add `ema_9`, `ema_21`, `ema_55` columns
+- `config.py` — add `BREAKOUT_VOLUME_MULT=2.0`, `BREAKOUT_LOOKBACK=20`
+- `tests/test_signal_momentum.py`, `tests/test_signal_breakout.py` — unit tests for new strategies
 - `knowledge/sprint_log.md`, `HANDOFF.md`
 
-**Note on deferred Sprint 4 items:**
-- Multi-timeframe confirmation (1m+5m+15m) — deferred to Sprint 6 when multi-strategy portfolio adds 5m/15m feeds
-- 1h EMA-200 — same deferral; see `knowledge/parameter_history.md` for design rationale
+**Context from prior sprints:**
+- `detect_regime()` in `strategy/regime.py` is already wired; just route to new strategies
+- Multi-timeframe confirmation still deferred — see `parameter_history.md`
 
 ---
 
@@ -58,6 +50,7 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Sprint 2 — Testing infrastructure | ✅ CLOSED | GitHub Copilot | 2026-04-16 |
 | Sprint 3 — Risk management overhaul | ✅ CLOSED | GitHub Copilot | 2026-04-16 |
 | Sprint 4 — Signal quality improvements | ✅ CLOSED | Claude Code | 2026-04-17 |
+| Sprint 5 — Regime detection | ✅ CLOSED | Claude Code | 2026-04-17 |
 
 ---
 
