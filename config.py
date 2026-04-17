@@ -114,3 +114,31 @@ MIN_TRADES_GATE     = 200     # minimum trades for acceptance gate
 SHARPE_GATE         = 1.5     # minimum annualised Sharpe ratio
 MAX_DD_GATE         = 0.20    # maximum peak-to-trough drawdown (fraction)
 PROFIT_FACTOR_GATE  = 1.5     # minimum profit factor (gross profit / gross loss)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  LLM / Claude API (Sprint 9+)
+# ─────────────────────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY     = os.environ.get("ANTHROPIC_API_KEY", "")
+LLM_MODEL             = os.environ.get("LLM_MODEL", "claude-sonnet-4-6")
+LLM_CACHE_TTL_SECONDS = int(os.environ.get("LLM_CACHE_TTL_SECONDS", "300"))   # 5-min minimum
+LLM_ENABLED           = os.environ.get("LLM_ENABLED", "true").lower() == "true"
+LLM_MAX_TOKENS        = int(os.environ.get("LLM_MAX_TOKENS", "4096"))
+
+# Self-learning loop
+LLM_CONFIDENCE_GATE   = float(os.environ.get("LLM_CONFIDENCE_GATE", "0.80"))  # 0.0–1.0
+LLM_PAPER_WINDOW_DAYS = int(os.environ.get("LLM_PAPER_WINDOW_DAYS", "30"))    # min days before promotion eval
+LLM_AUTO_PROMOTE      = os.environ.get("LLM_AUTO_PROMOTE", "false").lower() == "true"
+
+# Plugin strategy directory
+STRATEGIES_DIR = BASE_DIR / "strategies"
+
+
+def validate_env_llm() -> None:
+    """Validate credentials required for LLM features.
+    Call at startup when LLM_ENABLED=True. Raises RuntimeError if key is missing.
+    """
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError(
+            "Missing ANTHROPIC_API_KEY in .env. "
+            "Set LLM_ENABLED=false in .env to run without LLM features."
+        )

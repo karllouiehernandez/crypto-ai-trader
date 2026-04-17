@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Crypto AI Trader — Architecture & Roadmap</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+    --border: #30363d; --text: #c9d1d9; --muted: #8b949e;
+    --blue: #58a6ff; --green: #3fb950; --yellow: #d29922;
+    --orange: #f0883e; --red: #f85149; --purple: #bc8cff;
+    --teal: #39d353; --cyan: #79c0ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size: 14px; line-height: 1.6; }
+
+  /* ── NAV ── */
+  nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 32px; display: flex; align-items: center; gap: 24px; position: sticky; top: 0; z-index: 100; }
+  nav .logo { font-size: 16px; font-weight: 700; color: var(--blue); }
+  nav a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  nav a:hover { color: var(--text); }
+
+  /* ── LAYOUT ── */
+  .container { max-width: 1400px; margin: 0 auto; padding: 32px 24px; }
+  .section { margin-bottom: 64px; }
+  h1 { font-size: 28px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+  h2 { font-size: 20px; font-weight: 600; color: var(--blue); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 15px; font-weight: 600; color: var(--cyan); margin-bottom: 10px; }
+  p { color: var(--muted); margin-bottom: 12px; }
+  .subtitle { color: var(--muted); font-size: 15px; margin-bottom: 32px; }
+
+  /* ── BADGE ── */
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-green  { background: rgba(63,185,80,.15);  color: var(--green);  border: 1px solid rgba(63,185,80,.4); }
+  .badge-blue   { background: rgba(88,166,255,.15); color: var(--blue);   border: 1px solid rgba(88,166,255,.4); }
+  .badge-yellow { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.4); }
+  .badge-red    { background: rgba(248,81,73,.15);  color: var(--red);    border: 1px solid rgba(248,81,73,.4); }
+  .badge-purple { background: rgba(188,140,255,.15);color: var(--purple); border: 1px solid rgba(188,140,255,.4); }
+  .badge-orange { background: rgba(240,136,62,.15); color: var(--orange); border: 1px solid rgba(240,136,62,.4); }
+
+  /* ── CARDS ── */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+  .card-grid { display: grid; gap: 16px; }
+  .card-grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .card-grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .card-grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .card h3 { margin-bottom: 8px; }
+
+  /* ── COMPARISON TABLE ── */
+  .cmp-table { width: 100%; border-collapse: collapse; background: var(--bg2); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .cmp-table th { background: var(--bg3); color: var(--text); padding: 12px 16px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .cmp-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted); vertical-align: top; }
+  .cmp-table tr:last-child td { border-bottom: none; }
+  .cmp-table tr:hover td { background: rgba(255,255,255,.02); }
+  .cmp-table td:first-child { color: var(--text); font-weight: 500; }
+  .check  { color: var(--green); }
+  .cross  { color: var(--red); }
+  .partial { color: var(--yellow); }
+
+  /* ── FLOW DIAGRAMS (pure CSS/SVG-style boxes) ── */
+  .flow { display: flex; flex-direction: column; gap: 0; align-items: center; width: 100%; }
+  .flow-row { display: flex; align-items: center; justify-content: center; gap: 0; width: 100%; flex-wrap: wrap; }
+  .flow-box {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 18px; text-align: center; font-size: 12px; min-width: 130px;
+    position: relative; white-space: nowrap;
+  }
+  .flow-box.primary   { border-color: var(--blue);   color: var(--blue);   background: rgba(88,166,255,.08); }
+  .flow-box.success   { border-color: var(--green);  color: var(--green);  background: rgba(63,185,80,.08); }
+  .flow-box.warning   { border-color: var(--yellow); color: var(--yellow); background: rgba(210,153,34,.08); }
+  .flow-box.danger    { border-color: var(--red);    color: var(--red);    background: rgba(248,81,73,.08); }
+  .flow-box.purple    { border-color: var(--purple); color: var(--purple); background: rgba(188,140,255,.08); }
+  .flow-box.orange    { border-color: var(--orange); color: var(--orange); background: rgba(240,136,62,.08); }
+  .flow-box.cyan      { border-color: var(--cyan);   color: var(--cyan);   background: rgba(121,192,255,.08); }
+  .flow-arrow-down { display: flex; justify-content: center; align-items: center; padding: 4px 0; color: var(--muted); font-size: 18px; }
+  .flow-arrow-right { padding: 0 6px; color: var(--muted); font-size: 18px; align-self: center; }
+  .flow-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* ── SPRINT TIMELINE ── */
+  .timeline { position: relative; padding-left: 32px; }
+  .timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .timeline-item { position: relative; margin-bottom: 28px; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -24px; top: 4px;
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--border); background: var(--bg);
+  }
+  .timeline-item.done::before  { background: var(--green);  border-color: var(--green); }
+  .timeline-item.active::before{ background: var(--blue);   border-color: var(--blue);  box-shadow: 0 0 8px var(--blue); }
+  .timeline-item.next::before  { background: var(--yellow); border-color: var(--yellow); }
+  .timeline-item.future::before{ background: var(--bg3); border-color: var(--muted); }
+  .tl-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .tl-title { font-weight: 600; font-size: 14px; color: var(--text); }
+  .tl-body { color: var(--muted); font-size: 13px; padding-left: 4px; }
+  .tl-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .file-chip { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 11px; color: var(--cyan); font-family: monospace; }
+  .file-chip.new { border-color: rgba(63,185,80,.4); color: var(--green); }
+  .file-chip.mod { border-color: rgba(88,166,255,.4); color: var(--blue); }
+
+  /* ── METRIC BOXES ── */
+  .metric-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .metric { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; flex: 1; min-width: 140px; }
+  .metric .val { font-size: 28px; font-weight: 700; color: var(--blue); }
+  .metric .lbl { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* ── ARCH DIAGRAM ── */
+  .arch { width: 100%; overflow-x: auto; }
+  .arch-svg { width: 100%; max-width: 1100px; display: block; margin: 0 auto; }
+
+  /* ── LOOP DIAGRAM ── */
+  .loop-wrap { display: flex; justify-content: center; padding: 20px 0; }
+  .loop-ring { position: relative; width: 600px; height: 600px; }
+  .loop-node {
+    position: absolute; width: 140px; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg3);
+    text-align: center; font-size: 12px; font-weight: 500;
+  }
+  .loop-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 120px; height: 120px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(88,166,255,.1); border: 2px solid var(--blue);
+    font-size: 13px; font-weight: 700; color: var(--blue); text-align: center;
+  }
+
+  code { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: 'SFMono-Regular',Consolas,monospace; font-size: 12px; color: var(--orange); }
+  pre { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; font-family: 'SFMono-Regular',Consolas,monospace; font-size: 12px; color: var(--text); line-height: 1.8; margin-bottom: 12px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+  .tag { display: inline-block; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 1px 8px; font-size: 11px; color: var(--muted); margin-right: 4px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+
+  /* ── HIGHLIGHT BOX ── */
+  .callout { border-left: 3px solid var(--blue); background: rgba(88,166,255,.06); border-radius: 0 6px 6px 0; padding: 12px 16px; margin-bottom: 16px; }
+  .callout.green { border-color: var(--green); background: rgba(63,185,80,.06); }
+  .callout.yellow { border-color: var(--yellow); background: rgba(210,153,34,.06); }
+  .callout.purple { border-color: var(--purple); background: rgba(188,140,255,.06); }
+
+  /* SVG ARCH */
+  .arch-container { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 24px; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">⚡ Crypto AI Trader</span>
+  <a href="#overview">Overview</a>
+  <a href="#current">Current System</a>
+  <a href="#jesse">Jesse-AI Comparison</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#flow">Data Flow</a>
+  <a href="#selflearn">Self-Learning Loop</a>
+  <a href="#multiagent">Multi-Agent</a>
+  <a href="#roadmap">Roadmap</a>
+</nav>
+
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="section" id="overview">
+    <h1>Crypto AI Trader — Architecture & Roadmap</h1>
+    <p class="subtitle">A self-learning crypto trading system powered by Claude LLM, Jesse-AI-inspired strategy plugins, and multi-agent token monitoring.</p>
+
+    <div class="metric-row">
+      <div class="metric"><div class="val">8</div><div class="lbl">Sprints Complete</div></div>
+      <div class="metric"><div class="val">213</div><div class="lbl">Tests Passing</div></div>
+      <div class="metric"><div class="val">3</div><div class="lbl">Live Tokens (BTC/ETH/BNB)</div></div>
+      <div class="metric"><div class="val">4</div><div class="lbl">Market Regimes</div></div>
+      <div class="metric"><div class="val">5</div><div class="lbl">Sprints Planned (9–13)</div></div>
+      <div class="metric"><div class="val">~295</div><div class="lbl">Tests After Sprint 13</div></div>
+    </div>
+
+    <div class="callout green">
+      <strong>Status:</strong> All 8 foundation sprints complete. Bot is paper-trading-ready. The next 5 sprints add LLM self-learning, Jesse-style strategy plugins, and multi-agent monitoring — transforming it from a static rule-based bot into an adaptive, self-improving system.
+    </div>
+  </div>
+
+  <!-- CURRENT SYSTEM -->
+  <div class="section" id="current">
+    <h2>Current System (Sprints 0–8)</h2>
+
+    <div class="card-grid card-grid-2">
+      <div class="card">
+        <h3>Signal Engine</h3>
+        <p>Regime-aware signal routing. Each candle is classified into one of 4 regimes, then routed to the appropriate strategy.</p>
+        <div class="flow" style="margin-top:12px;">
+          <div class="flow-box primary" style="width:100%">Candle (1m OHLCV)</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box" style="width:100%">add_indicators() — EMA/RSI/BB/MACD/ADX</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box warning" style="width:100%">detect_regime() — HIGH_VOL / SQUEEZE / TRENDING / RANGING</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-row" style="gap:8px;margin-top:4px;">
+            <div class="flow-box danger" style="min-width:90px;font-size:11px;">HIGH_VOL<div class="flow-label">HALT</div></div>
+            <div class="flow-box primary" style="min-width:90px;font-size:11px;">TRENDING<div class="flow-label">Momentum</div></div>
+            <div class="flow-box orange" style="min-width:90px;font-size:11px;">SQUEEZE<div class="flow-label">Breakout</div></div>
+            <div class="flow-box success" style="min-width:90px;font-size:11px;">RANGING<div class="flow-label">Mean Rev.</div></div>
+          </div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box" style="width:100%">Signal: BUY / SELL / HOLD</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Risk Management</h3>
+        <p>ATR-based position sizing. Two independent circuit breakers prevent catastrophic loss.</p>
+        <pre style="margin:0;font-size:11px;">ATR Sizing:
+  qty = (equity × 1%) / (ATR × 1.5)
+
+Circuit Breakers:
+  Daily Loss   → halt if loss > 3%
+  Drawdown CB  → halt if equity < peak × 85%
+
+Acceptance Gates (walk-forward):
+  Sharpe    ≥ 1.5
+  Max DD    ≤ 20%
+  Prof.Fac  ≥ 1.5
+  Trades    ≥ 200</pre>
+      </div>
+
+      <div class="card">
+        <h3>Data Pipeline</h3>
+        <div class="flow">
+          <div class="flow-box cyan" style="width:100%">Binance Testnet (WebSocket poll)</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box" style="width:100%">live_streamer.py — 1s poll, UPSERT candles</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box" style="width:100%">SQLite (SQLAlchemy 2.x async ORM)</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box primary" style="width:100%">PaperTrader.step() — 1s loop</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box success" style="width:100%">Telegram Alerts + Trade Log</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Backtesting (Sprint 8)</h3>
+        <div class="flow">
+          <div class="flow-box" style="width:100%">run_backtest.py BTCUSDT 2024-01-01 2024-06-30</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box primary" style="width:100%">walk_forward() — 3mo rolling windows, 70/30 split</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box" style="width:100%">backtester/engine.py — slippage 0.1% + fees 0.1%</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box" style="width:100%">metrics.py — Sharpe / MaxDD / ProfFactor</div>
+          <div class="flow-arrow-down">↓</div>
+          <div class="flow-box success" style="width:100%">acceptance_gate() → PASS / FAIL</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JESSE COMPARISON -->
+  <div class="section" id="jesse">
+    <h2>Jesse-AI vs. Our System — Deep Comparison</h2>
+
+    <div class="callout purple">
+      <strong>Jesse-AI</strong> (<a href="https://github.com/jesse-ai/jesse" style="color:var(--purple)">github.com/jesse-ai/jesse</a>) is the gold standard for Python crypto trading frameworks. It has 300+ indicators, genetic algorithm optimization, a Vue.js dashboard, multi-timeframe native support, and an integrated ML pipeline. Our Sprints 9–13 close the key gaps.
+    </div>
+
+    <table class="cmp-table">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>Jesse-AI</th>
+          <th>Our System (Now)</th>
+          <th>Our System (Sprint 13)</th>
+          <th>Gap</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Strategy Base Class</td>
+          <td><span class="check">✓</span> Full OOP lifecycle (<code>should_long</code>, <code>go_long</code>, <code>on_open_position</code>…)</td>
+          <td><span class="cross">✗</span> Pure functions only</td>
+          <td><span class="check">✓</span> <code>StrategyBase</code> ABC with <code>should_long/short + evaluate()</code></td>
+          <td><span class="badge badge-blue">Sprint 9</span></td>
+        </tr>
+        <tr>
+          <td>Hot-Reload / Plugin Drop</td>
+          <td><span class="check">✓</span> Edit file, auto-reload</td>
+          <td><span class="cross">✗</span> Manual restart required</td>
+          <td><span class="check">✓</span> <code>watchdog</code> file watcher, auto-registers on save</td>
+          <td><span class="badge badge-blue">Sprint 9</span></td>
+        </tr>
+        <tr>
+          <td>300+ Built-in Indicators</td>
+          <td><span class="check">✓</span> <code>jesse.indicators</code> (Rust + Numba)</td>
+          <td><span class="partial">~</span> <code>ta</code> library (~30 indicators)</td>
+          <td><span class="partial">~</span> <code>ta</code> library (expanding via plugins)</td>
+          <td><span class="badge badge-yellow">Future</span></td>
+        </tr>
+        <tr>
+          <td>Multi-Timeframe Native</td>
+          <td><span class="check">✓</span> <code>self.get_candles(exchange, sym, '4H')</code></td>
+          <td><span class="partial">~</span> Dashboard resamples for display only</td>
+          <td><span class="partial">~</span> TokenAgent accesses multiple TF candles</td>
+          <td><span class="badge badge-yellow">Partial</span></td>
+        </tr>
+        <tr>
+          <td>Partial Fills Simulation</td>
+          <td><span class="check">✓</span> Orders split across multiple candles</td>
+          <td><span class="cross">✗</span> Full fill at close price + slippage</td>
+          <td><span class="cross">✗</span> Not planned in 9–13</td>
+          <td><span class="badge badge-yellow">Future</span></td>
+        </tr>
+        <tr>
+          <td>Genetic Algorithm Optimization</td>
+          <td><span class="check">✓</span> Optuna + Ray distributed (GPU optional)</td>
+          <td><span class="cross">✗</span> Manual parameter tuning via KB</td>
+          <td><span class="partial">~</span> LLM-guided parameter suggestions + sweep</td>
+          <td><span class="badge badge-blue">Sprint 11</span></td>
+        </tr>
+        <tr>
+          <td>LLM Strategy Generation</td>
+          <td><span class="partial">~</span> JesseGPT (external web assistant)</td>
+          <td><span class="cross">✗</span> Not present</td>
+          <td><span class="check">✓</span> <code>llm/generator.py</code> → writes <code>.py</code> file, hot-loads automatically</td>
+          <td><span class="badge badge-blue">Sprint 10</span></td>
+        </tr>
+        <tr>
+          <td>Trade Critique / Analysis</td>
+          <td><span class="cross">✗</span> Not native</td>
+          <td><span class="cross">✗</span> Not present</td>
+          <td><span class="check">✓</span> <code>llm/critiquer.py</code> after every SELL (5-min cache)</td>
+          <td><span class="badge badge-blue">Sprint 10</span></td>
+        </tr>
+        <tr>
+          <td>Self-Learning Loop</td>
+          <td><span class="cross">✗</span> Not native</td>
+          <td><span class="cross">✗</span> Manual KB updates</td>
+          <td><span class="check">✓</span> 24h cycle: metrics → LLM → KB → param suggestions</td>
+          <td><span class="badge badge-blue">Sprint 11</span></td>
+        </tr>
+        <tr>
+          <td>Live Promotion Gate</td>
+          <td><span class="cross">✗</span> Manual decision</td>
+          <td><span class="cross">✗</span> Manual checklist</td>
+          <td><span class="check">✓</span> 5-gate confidence gate (Sharpe + DD + PF + LLM score + trend)</td>
+          <td><span class="badge badge-blue">Sprint 11</span></td>
+        </tr>
+        <tr>
+          <td>Multi-Agent Per Symbol</td>
+          <td><span class="partial">~</span> Routes system (static)</td>
+          <td><span class="cross">✗</span> Serial loop over symbols</td>
+          <td><span class="check">✓</span> Independent <code>TokenAgent</code> per symbol, <code>AgentCoordinator</code></td>
+          <td><span class="badge badge-blue">Sprint 12</span></td>
+        </tr>
+        <tr>
+          <td>Dashboard</td>
+          <td><span class="check">✓</span> Vue.js web app, mobile-optimized, live code editor</td>
+          <td><span class="partial">~</span> Streamlit (Python), 4-subplot chart, regime badge</td>
+          <td><span class="partial">~</span> + LLM status, confidence gate, agent signal grid</td>
+          <td><span class="badge badge-blue">Sprint 13</span></td>
+        </tr>
+        <tr>
+          <td>Backtesting Engine</td>
+          <td><span class="check">✓</span> Minute-resolution, partial fills, look-ahead safe</td>
+          <td><span class="partial">~</span> Candle-level, slippage model, walk-forward</td>
+          <td><span class="partial">~</span> Same + LLM result analysis</td>
+          <td><span class="badge badge-green">Good enough</span></td>
+        </tr>
+        <tr>
+          <td>Monte Carlo</td>
+          <td><span class="check">✓</span> Trade shuffle + candle shuffle</td>
+          <td><span class="cross">✗</span> Not present</td>
+          <td><span class="cross">✗</span> Not in 9–13 scope</td>
+          <td><span class="badge badge-yellow">Future</span></td>
+        </tr>
+        <tr>
+          <td>ML Pipeline (scikit-learn)</td>
+          <td><span class="check">✓</span> Gather labels in backtest, train, deploy predictions</td>
+          <td><span class="cross">✗</span> Not present</td>
+          <td><span class="cross">✗</span> LLM replaces this for now</td>
+          <td><span class="badge badge-yellow">Future</span></td>
+        </tr>
+        <tr>
+          <td>Knowledge Base System</td>
+          <td><span class="cross">✗</span> Not native</td>
+          <td><span class="check">✓</span> 8 living KB files, auto-updated each sprint</td>
+          <td><span class="check">✓</span> + LLM writes KB entries automatically</td>
+          <td><span class="badge badge-green">Unique to us</span></td>
+        </tr>
+        <tr>
+          <td>CCXT Multi-Exchange</td>
+          <td><span class="check">✓</span> 100+ exchanges</td>
+          <td><span class="cross">✗</span> Binance only (python-binance)</td>
+          <td><span class="cross">✗</span> Not in 9–13 scope</td>
+          <td><span class="badge badge-yellow">Future</span></td>
+        </tr>
+        <tr>
+          <td>Agent Handoff Protocol</td>
+          <td><span class="cross">✗</span> Not applicable</td>
+          <td><span class="check">✓</span> HANDOFF.md + copilot-instructions.md, per-sprint updates</td>
+          <td><span class="check">✓</span> Continues every sprint</td>
+          <td><span class="badge badge-green">Unique to us</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FULL ARCHITECTURE DIAGRAM -->
+  <div class="section" id="architecture">
+    <h2>Full System Architecture (Sprint 13 Target)</h2>
+
+    <div class="arch-container">
+      <svg class="arch-svg" viewBox="0 0 1060 820" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,sans-serif" font-size="12">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/>
+          </marker>
+          <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#58a6ff"/>
+          </marker>
+          <marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#3fb950"/>
+          </marker>
+          <marker id="arr-purple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#bc8cff"/>
+          </marker>
+        </defs>
+
+        <!-- LAYER BACKGROUNDS -->
+        <!-- Exchange layer -->
+        <rect x="10" y="10" width="1040" height="70" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="28" fill="#8b949e" font-size="10" font-weight="600">EXCHANGE LAYER</text>
+
+        <!-- Data layer -->
+        <rect x="10" y="100" width="1040" height="70" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="118" fill="#8b949e" font-size="10" font-weight="600">DATA LAYER</text>
+
+        <!-- Agent layer -->
+        <rect x="10" y="190" width="1040" height="100" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="208" fill="#8b949e" font-size="10" font-weight="600">MULTI-AGENT LAYER (NEW — Sprint 12)</text>
+
+        <!-- Strategy layer -->
+        <rect x="10" y="310" width="1040" height="100" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="328" fill="#8b949e" font-size="10" font-weight="600">STRATEGY LAYER</text>
+
+        <!-- LLM layer -->
+        <rect x="10" y="430" width="1040" height="100" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="448" fill="#8b949e" font-size="10" font-weight="600">LLM LAYER (NEW — Sprints 10–11)</text>
+
+        <!-- Execution layer -->
+        <rect x="10" y="550" width="1040" height="70" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="568" fill="#8b949e" font-size="10" font-weight="600">EXECUTION LAYER</text>
+
+        <!-- Output layer -->
+        <rect x="10" y="640" width="1040" height="100" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="658" fill="#8b949e" font-size="10" font-weight="600">OUTPUT / MONITORING LAYER</text>
+
+        <!-- Backtester layer -->
+        <rect x="10" y="755" width="1040" height="55" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="20" y="773" fill="#8b949e" font-size="10" font-weight="600">BACKTESTING LAYER</text>
+
+        <!-- ═══ EXCHANGE ═══ -->
+        <rect x="390" y="25" width="280" height="40" rx="5" fill="#161b22" stroke="#79c0ff" stroke-width="1.5"/>
+        <text x="530" y="44" fill="#79c0ff" text-anchor="middle" font-weight="600">Binance Testnet (WebSocket / REST)</text>
+        <text x="530" y="57" fill="#8b949e" text-anchor="middle" font-size="10">python-binance async client · BINANCE_TESTNET=True</text>
+
+        <!-- ═══ DATA ═══ -->
+        <rect x="60" y="115" width="200" height="40" rx="5" fill="#161b22" stroke="#79c0ff" stroke-width="1.5"/>
+        <text x="160" y="133" fill="#79c0ff" text-anchor="middle" font-weight="600">live_streamer.py</text>
+        <text x="160" y="147" fill="#8b949e" text-anchor="middle" font-size="10">1s poll → UPSERT candles</text>
+
+        <rect x="330" y="115" width="200" height="40" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="430" y="133" fill="#c9d1d9" text-anchor="middle" font-weight="600">SQLite DB</text>
+        <text x="430" y="147" fill="#8b949e" text-anchor="middle" font-size="10">Candle · Trade · Portfolio</text>
+
+        <rect x="600" y="115" width="200" height="40" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="700" y="133" fill="#c9d1d9" text-anchor="middle" font-weight="600">historical_loader.py</text>
+        <text x="700" y="147" fill="#8b949e" text-anchor="middle" font-size="10">365-day 1m candle fetch (idempotent)</text>
+
+        <!-- ═══ AGENTS ═══ -->
+        <rect x="40" y="220" width="150" height="50" rx="5" fill="#161b22" stroke="#bc8cff" stroke-width="1.5"/>
+        <text x="115" y="240" fill="#bc8cff" text-anchor="middle" font-weight="600">TokenAgent</text>
+        <text x="115" y="253" fill="#8b949e" text-anchor="middle" font-size="10">BTCUSDT</text>
+        <text x="115" y="263" fill="#8b949e" text-anchor="middle" font-size="10">async task · 1s loop</text>
+
+        <rect x="210" y="220" width="150" height="50" rx="5" fill="#161b22" stroke="#bc8cff" stroke-width="1.5"/>
+        <text x="285" y="240" fill="#bc8cff" text-anchor="middle" font-weight="600">TokenAgent</text>
+        <text x="285" y="253" fill="#8b949e" text-anchor="middle" font-size="10">ETHUSDT</text>
+        <text x="285" y="263" fill="#8b949e" text-anchor="middle" font-size="10">async task · 1s loop</text>
+
+        <rect x="380" y="220" width="150" height="50" rx="5" fill="#161b22" stroke="#bc8cff" stroke-width="1.5"/>
+        <text x="455" y="240" fill="#bc8cff" text-anchor="middle" font-weight="600">TokenAgent</text>
+        <text x="455" y="253" fill="#8b949e" text-anchor="middle" font-size="10">BNBUSDT</text>
+        <text x="455" y="263" fill="#8b949e" text-anchor="middle" font-size="10">async task · 1s loop</text>
+
+        <rect x="580" y="215" width="180" height="60" rx="5" fill="#161b22" stroke="#bc8cff" stroke-width="2"/>
+        <text x="670" y="238" fill="#bc8cff" text-anchor="middle" font-weight="700">AgentCoordinator</text>
+        <text x="670" y="252" fill="#8b949e" text-anchor="middle" font-size="10">asyncio.Queue[AgentReport]</text>
+        <text x="670" y="265" fill="#8b949e" text-anchor="middle" font-size="10">latest_report(sym) → dict</text>
+
+        <rect x="810" y="215" width="200" height="60" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="910" y="238" fill="#c9d1d9" text-anchor="middle" font-weight="600">strategies/loader.py</text>
+        <text x="910" y="252" fill="#3fb950" text-anchor="middle" font-size="10">🔥 Hot-Reload (watchdog)</text>
+        <text x="910" y="265" fill="#8b949e" text-anchor="middle" font-size="10">strategies/*.py → registry</text>
+
+        <!-- ═══ STRATEGY ═══ -->
+        <rect x="40" y="335" width="180" height="55" rx="5" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="130" y="358" fill="#58a6ff" text-anchor="middle" font-weight="600">StrategyBase ABC</text>
+        <text x="130" y="372" fill="#8b949e" text-anchor="middle" font-size="10">should_long/short + evaluate()</text>
+        <text x="130" y="382" fill="#3fb950" text-anchor="middle" font-size="10">★ NEW Sprint 9</text>
+
+        <rect x="240" y="335" width="160" height="55" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="320" y="355" fill="#c9d1d9" text-anchor="middle" font-weight="600">signal_engine.py</text>
+        <text x="320" y="369" fill="#8b949e" text-anchor="middle" font-size="10">Heuristic fallback</text>
+        <text x="320" y="382" fill="#8b949e" text-anchor="middle" font-size="10">compute_signal(sess, candle)</text>
+
+        <rect x="420" y="335" width="160" height="55" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="500" y="355" fill="#c9d1d9" text-anchor="middle" font-weight="600">regime.py</text>
+        <text x="500" y="369" fill="#8b949e" text-anchor="middle" font-size="10">detect_regime(df)</text>
+        <text x="500" y="382" fill="#8b949e" text-anchor="middle" font-size="10">TRENDING/RANGING/SQUEEZE/HIGH_VOL</text>
+
+        <rect x="600" y="335" width="160" height="55" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="680" y="355" fill="#c9d1d9" text-anchor="middle" font-weight="600">ta_features.py</text>
+        <text x="680" y="369" fill="#8b949e" text-anchor="middle" font-size="10">add_indicators(df)</text>
+        <text x="680" y="382" fill="#8b949e" text-anchor="middle" font-size="10">EMA/RSI/BB/MACD/ADX</text>
+
+        <rect x="780" y="335" width="160" height="55" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="860" y="355" fill="#c9d1d9" text-anchor="middle" font-weight="600">risk.py</text>
+        <text x="860" y="369" fill="#8b949e" text-anchor="middle" font-size="10">ATR sizing · DailyLoss</text>
+        <text x="860" y="382" fill="#8b949e" text-anchor="middle" font-size="10">DrawdownCB</text>
+
+        <!-- ═══ LLM ═══ -->
+        <rect x="40" y="455" width="150" height="55" rx="5" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="115" y="476" fill="#f0883e" text-anchor="middle" font-weight="600">llm/client.py</text>
+        <text x="115" y="490" fill="#8b949e" text-anchor="middle" font-size="10">Anthropic SDK wrapper</text>
+        <text x="115" y="503" fill="#8b949e" text-anchor="middle" font-size="10">TTL cache · fallback</text>
+
+        <rect x="210" y="455" width="150" height="55" rx="5" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="285" y="476" fill="#f0883e" text-anchor="middle" font-weight="600">llm/generator.py</text>
+        <text x="285" y="490" fill="#8b949e" text-anchor="middle" font-size="10">NL → Python strategy</text>
+        <text x="285" y="503" fill="#8b949e" text-anchor="middle" font-size="10">AST validate → file write</text>
+
+        <rect x="380" y="455" width="150" height="55" rx="5" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="455" y="476" fill="#f0883e" text-anchor="middle" font-weight="600">llm/analyzer.py</text>
+        <text x="455" y="490" fill="#8b949e" text-anchor="middle" font-size="10">Backtest results → JSON</text>
+        <text x="455" y="503" fill="#8b949e" text-anchor="middle" font-size="10">param suggestions + confidence</text>
+
+        <rect x="550" y="455" width="150" height="55" rx="5" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="625" y="476" fill="#f0883e" text-anchor="middle" font-weight="600">llm/critiquer.py</text>
+        <text x="625" y="490" fill="#8b949e" text-anchor="middle" font-size="10">Trade critique after SELL</text>
+        <text x="625" y="503" fill="#8b949e" text-anchor="middle" font-size="10">GOOD / MEDIOCRE / BAD</text>
+
+        <rect x="720" y="455" width="160" height="55" rx="5" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="800" y="476" fill="#f0883e" text-anchor="middle" font-weight="600">llm/self_learner.py</text>
+        <text x="800" y="490" fill="#8b949e" text-anchor="middle" font-size="10">24h loop · KB writer</text>
+        <text x="800" y="503" fill="#8b949e" text-anchor="middle" font-size="10">confidence gate eval</text>
+
+        <rect x="900" y="455" width="140" height="55" rx="5" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="970" y="476" fill="#f0883e" text-anchor="middle" font-weight="600">llm/confidence_gate.py</text>
+        <text x="970" y="490" fill="#8b949e" text-anchor="middle" font-size="10">5-gate composite check</text>
+        <text x="970" y="503" fill="#d29922" text-anchor="middle" font-size="10">→ PROMOTE TO LIVE</text>
+
+        <!-- ═══ EXECUTION ═══ -->
+        <rect x="200" y="565" width="260" height="45" rx="5" fill="#161b22" stroke="#3fb950" stroke-width="2"/>
+        <text x="330" y="586" fill="#3fb950" text-anchor="middle" font-weight="700">paper_trader.py (PaperTrader)</text>
+        <text x="330" y="600" fill="#8b949e" text-anchor="middle" font-size="10">_auto_buy / _auto_sell · ATR sizing · Circuit breakers</text>
+
+        <rect x="530" y="565" width="200" height="45" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="630" y="586" fill="#c9d1d9" text-anchor="middle" font-weight="600">Telegram Bot</text>
+        <text x="630" y="600" fill="#8b949e" text-anchor="middle" font-size="10">Alerts + manual BUY/SELL override</text>
+
+        <!-- ═══ OUTPUT ═══ -->
+        <rect x="40" y="662" width="200" height="60" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="140" y="685" fill="#c9d1d9" text-anchor="middle" font-weight="600">Dashboard</text>
+        <text x="140" y="699" fill="#8b949e" text-anchor="middle" font-size="10">Streamlit + Plotly</text>
+        <text x="140" y="712" fill="#3fb950" text-anchor="middle" font-size="10">+ LLM panels (Sprint 13)</text>
+
+        <rect x="270" y="662" width="200" height="60" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="370" y="685" fill="#c9d1d9" text-anchor="middle" font-weight="600">knowledge/ KB</text>
+        <text x="370" y="699" fill="#8b949e" text-anchor="middle" font-size="10">experiment_log.md</text>
+        <text x="370" y="712" fill="#8b949e" text-anchor="middle" font-size="10">strategy_learnings.md · etc.</text>
+
+        <rect x="500" y="662" width="200" height="60" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="600" y="685" fill="#c9d1d9" text-anchor="middle" font-weight="600">HANDOFF.md</text>
+        <text x="600" y="699" fill="#8b949e" text-anchor="middle" font-size="10">Claude Code ↔ Copilot</text>
+        <text x="600" y="712" fill="#8b949e" text-anchor="middle" font-size="10">Updated every sprint</text>
+
+        <rect x="730" y="662" width="200" height="60" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="830" y="685" fill="#c9d1d9" text-anchor="middle" font-weight="600">GitHub Repo</text>
+        <text x="830" y="699" fill="#8b949e" text-anchor="middle" font-size="10">commit + push each sprint</text>
+        <text x="830" y="712" fill="#8b949e" text-anchor="middle" font-size="10">.github/copilot-instructions.md</text>
+
+        <!-- ═══ BACKTESTER ═══ -->
+        <rect x="60" y="768" width="180" height="30" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="150" y="787" fill="#c9d1d9" text-anchor="middle" font-weight="600">backtester/engine.py</text>
+
+        <rect x="260" y="768" width="180" height="30" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="350" y="787" fill="#c9d1d9" text-anchor="middle" font-weight="600">walk_forward.py</text>
+
+        <rect x="460" y="768" width="180" height="30" rx="5" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+        <text x="550" y="787" fill="#c9d1d9" text-anchor="middle" font-weight="600">metrics.py</text>
+
+        <rect x="660" y="768" width="200" height="30" rx="5" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+        <text x="760" y="787" fill="#d29922" text-anchor="middle" font-weight="600">acceptance_gate() → PASS/FAIL</text>
+
+        <!-- ═══ ARROWS ═══ -->
+        <!-- Binance → streamer -->
+        <line x1="390" y1="55" x2="230" y2="115" stroke="#79c0ff" stroke-width="1.2" marker-end="url(#arr-blue)" stroke-dasharray="4,3"/>
+        <!-- Binance → loader -->
+        <line x1="530" y1="65" x2="530" y2="115" stroke="#79c0ff" stroke-width="1.2" marker-end="url(#arr-blue)" stroke-dasharray="4,3"/>
+        <!-- streamer → SQLite -->
+        <line x1="260" y1="135" x2="330" y2="135" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr)"/>
+        <!-- SQLite → agents -->
+        <line x1="430" y1="155" x2="430" y2="220" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr)"/>
+        <!-- SQLite → agents left -->
+        <line x1="380" y1="155" x2="200" y2="220" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arr)"/>
+        <line x1="380" y1="155" x2="350" y2="220" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arr)"/>
+        <!-- Agents → coordinator -->
+        <line x1="190" y1="245" x2="580" y2="245" stroke="#bc8cff" stroke-width="1.2" marker-end="url(#arr-purple)" stroke-dasharray="4,3"/>
+        <line x1="360" y1="245" x2="580" y2="245" stroke="#bc8cff" stroke-width="1.2" marker-end="url(#arr-purple)" stroke-dasharray="4,3"/>
+        <line x1="530" y1="245" x2="580" y2="245" stroke="#bc8cff" stroke-width="1.2" marker-end="url(#arr-purple)" stroke-dasharray="4,3"/>
+        <!-- loader → strategies (right side) -->
+        <line x1="910" y1="275" x2="910" y2="335" stroke="#3fb950" stroke-width="1.2" marker-end="url(#arr-green)"/>
+        <!-- strategies → signal engine -->
+        <line x1="130" y1="390" x2="260" y2="390" stroke="#58a6ff" stroke-width="1.2" marker-end="url(#arr-blue)"/>
+        <!-- Coordinator → paper trader -->
+        <line x1="670" y1="275" x2="330" y2="565" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#arr-purple)" stroke-dasharray="5,3"/>
+        <!-- signal engine → paper trader -->
+        <line x1="320" y1="390" x2="320" y2="565" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr)"/>
+        <!-- LLM → KB -->
+        <line x1="800" y1="510" x2="450" y2="662" stroke="#f0883e" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4,3"/>
+        <!-- critiquer → KB -->
+        <line x1="625" y1="510" x2="430" y2="662" stroke="#f0883e" stroke-width="1" marker-end="url(#arr)" stroke-dasharray="4,3"/>
+        <!-- paper trader → telegram -->
+        <line x1="460" y1="587" x2="530" y2="587" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr)"/>
+        <!-- paper trader → dashboard -->
+        <line x1="270" y1="600" x2="220" y2="662" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr)"/>
+        <!-- analyzer → confidence gate -->
+        <line x1="905" y1="482" x2="900" y2="482" stroke="#f0883e" stroke-width="1.2" marker-end="url(#arr)"/>
+        <!-- confidence gate → promote -->
+        <line x1="970" y1="510" x2="970" y2="662" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr)" stroke-dasharray="4,3"/>
+        <!-- generator → strategies dir (hot reload) -->
+        <line x1="285" y1="510" x2="910" y2="215" stroke="#f0883e" stroke-width="1" marker-end="url(#arr)" stroke-dasharray="3,4"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- DATA FLOW -->
+  <div class="section" id="flow">
+    <h2>End-to-End Data Flow (Per Trading Tick)</h2>
+
+    <div class="flow" style="gap:0;">
+      <div class="flow-box cyan" style="width:700px;max-width:100%">
+        <strong>1. COLLECT</strong> — Binance Testnet WebSocket poll every 1s → live_streamer.py → UPSERT into SQLite Candle table
+      </div>
+      <div class="flow-arrow-down">↓</div>
+      <div class="flow-box purple" style="width:700px;max-width:100%">
+        <strong>2. DETECT</strong> — TokenAgent (per symbol) reads last 250 candles → <code>add_indicators(df)</code> → <code>detect_regime(df)</code>
+      </div>
+      <div class="flow-arrow-down">↓</div>
+      <div class="flow-row" style="gap:16px;">
+        <div class="flow-box primary" style="width:200px;">
+          <strong>3a. PLUGIN SIGNAL</strong><br/>
+          <small><code>StrategyBase.evaluate(df, regime)</code></small>
+        </div>
+        <div class="flow-box" style="width:200px;">
+          <strong>3b. HEURISTIC</strong><br/>
+          <small><code>compute_signal(sess, candle)</code></small><br/>
+          <small style="color:#3fb950">fallback if no plugin</small>
+        </div>
+      </div>
+      <div class="flow-arrow-down">↓</div>
+      <div class="flow-box purple" style="width:700px;max-width:100%">
+        <strong>4. COORDINATE</strong> — AgentCoordinator collects AgentReport from all symbols via asyncio.Queue → <code>latest_report(sym)</code>
+      </div>
+      <div class="flow-arrow-down">↓</div>
+      <div class="flow-box success" style="width:700px;max-width:100%">
+        <strong>5. EXECUTE</strong> — PaperTrader.step() reads coordinator → <code>_auto_buy(sym, price, atr)</code> / <code>_auto_sell(sym, price)</code> · ATR sizing · Circuit breakers check
+      </div>
+      <div class="flow-arrow-down">↓</div>
+      <div class="flow-box orange" style="width:700px;max-width:100%">
+        <strong>6. CRITIQUE</strong> — After SELL: <code>llm/critiquer.py</code> → TradeVerdict (GOOD/MEDIOCRE/BAD) → logged to KB <small>(5-min cache)</small>
+      </div>
+      <div class="flow-arrow-down">↓</div>
+      <div class="flow-box" style="width:700px;max-width:100%">
+        <strong>7. ACCUMULATE</strong> — Trade record written to SQLite Trade table · Telegram alert sent · Dashboard auto-refreshes (15s)
+      </div>
+    </div>
+
+    <div style="margin-top:32px;">
+      <h3>Self-Learning Cycle (24h interval)</h3>
+      <div class="flow" style="gap:0;">
+        <div class="flow-box orange" style="width:700px;max-width:100%">
+          <strong>8. EVALUATE</strong> — SelfLearner reads 30-day Trade window → <code>compute_metrics()</code> → Sharpe / DD / PF
+        </div>
+        <div class="flow-arrow-down">↓</div>
+        <div class="flow-box orange" style="width:700px;max-width:100%">
+          <strong>9. ANALYZE</strong> — <code>llm/analyzer.py</code> sends metrics + KB context to Claude → structured JSON: param suggestions + confidence score + recommendation
+        </div>
+        <div class="flow-arrow-down">↓</div>
+        <div class="flow-box" style="width:700px;max-width:100%">
+          <strong>10. WRITE KB</strong> — Self-learner appends entry to <code>knowledge/experiment_log.md</code> · parameter_history.md updated if params change
+        </div>
+        <div class="flow-arrow-down">↓</div>
+        <div class="flow-box warning" style="width:700px;max-width:100%">
+          <strong>11. GENERATE</strong> — If LLM suggests new strategy: <code>llm/generator.py</code> writes <code>strategies/generated_{ts}.py</code> → watchdog auto-loads it
+        </div>
+        <div class="flow-arrow-down">↓</div>
+        <div class="flow-box primary" style="width:700px;max-width:100%">
+          <strong>12. BACKTEST</strong> — New strategy auto-backtested via <code>walk_forward()</code> → results saved to <code>knowledge/backtest_results/{name}.json</code>
+        </div>
+        <div class="flow-arrow-down">↓</div>
+        <div class="flow-row" style="gap:16px;">
+          <div class="flow-box success" style="width:280px;">
+            <strong>13a. PROMOTE</strong><br/>All 5 gates pass →<br/>Dashboard: <strong>PROMOTE TO LIVE</strong>
+          </div>
+          <div class="flow-box warning" style="width:280px;">
+            <strong>13b. HOLD PAPER</strong><br/>Gate not met → continue 24h cycle · adjust params
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SELF-LEARNING LOOP DETAIL -->
+  <div class="section" id="selflearn">
+    <h2>Self-Learning Loop — Confidence Gate Detail</h2>
+
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <h3>5-Gate Composite Check</h3>
+          <p>All 5 conditions must pass simultaneously before the system recommends live trading promotion.</p>
+          <table class="cmp-table" style="margin-top:12px;">
+            <thead><tr><th>#</th><th>Gate</th><th>Threshold</th><th>Source</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Sharpe Ratio (30-day paper)</td><td>≥ 1.5</td><td><code>SHARPE_GATE</code></td></tr>
+              <tr><td>2</td><td>Max Drawdown</td><td>≤ 20%</td><td><code>MAX_DD_GATE</code></td></tr>
+              <tr><td>3</td><td>Profit Factor</td><td>≥ 1.5</td><td><code>PROFIT_FACTOR_GATE</code></td></tr>
+              <tr><td>4</td><td>LLM Confidence Score</td><td>≥ 0.80</td><td><code>LLM_CONFIDENCE_GATE</code></td></tr>
+              <tr><td>5</td><td>3× consecutive PROMOTE_TO_LIVE</td><td>All 3</td><td><code>SelfLearner</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <h3>LLM Confidence Score — How It's Derived</h3>
+          <p>Claude evaluates the strategy holistically from a quantitative + qualitative lens:</p>
+          <ul style="color:var(--muted);font-size:13px;padding-left:20px;line-height:2;">
+            <li>Walk-forward pass rate (% of windows passing acceptance gate)</li>
+            <li>Sharpe stability across rolling windows (low variance = higher confidence)</li>
+            <li>Regime coverage (does it degrade in certain regimes?)</li>
+            <li>Known weaknesses from KB (strategy_learnings.md context)</li>
+            <li>Parameter sensitivity (did ±20% changes shift results?)</li>
+          </ul>
+          <p style="margin-top:8px;">A strategy can pass the quantitative gates but receive a low LLM confidence if Claude detects regime-specific brittleness or overfitting signals in the KB history.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h3>LLM Recommendation States</h3>
+          <div class="flow" style="gap:8px;">
+            <div class="flow-box danger" style="width:100%;">
+              <strong>ABANDON</strong><br/>
+              <small>Sharpe &lt; 1.0 OR confidence &lt; 0.4 — strategy fundamentally broken</small>
+            </div>
+            <div class="flow-arrow-down">↑ escalation path</div>
+            <div class="flow-box warning" style="width:100%;">
+              <strong>HOLD_PAPER</strong><br/>
+              <small>Some gates failing — continue paper trading, apply param suggestions</small>
+            </div>
+            <div class="flow-arrow-down">↑ escalation path</div>
+            <div class="flow-box success" style="width:100%;">
+              <strong>PROMOTE_TO_LIVE</strong><br/>
+              <small>All 5 gates pass — 3 consecutive evaluations needed before dashboard badge</small>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <h3>Auto-Promote Safety</h3>
+            <div class="callout yellow">
+              <code>LLM_AUTO_PROMOTE=false</code> by default. The system <strong>recommends</strong>, the user decides. Set <code>LLM_AUTO_PROMOTE=true</code> in <code>.env</code> to allow autonomous promotion — use only after you trust the system's 30+ day track record.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MULTI-AGENT -->
+  <div class="section" id="multiagent">
+    <h2>Multi-Agent Architecture (Sprint 12)</h2>
+
+    <div class="callout purple">
+      Each symbol gets its own independent <code>TokenAgent</code> asyncio task. Agents never execute trades — they only report signals. The <code>AgentCoordinator</code> aggregates reports via an asyncio.Queue and provides the latest signal per symbol to PaperTrader via a non-blocking dict lookup. This decouples signal generation from trade execution.
+    </div>
+
+    <div class="card-grid card-grid-3" style="margin-top:16px;">
+      <div class="card">
+        <h3>TokenAgent (per symbol)</h3>
+        <pre style="font-size:11px;">class TokenAgent:
+  symbol: str
+  strategy: StrategyBase | None
+  result_queue: asyncio.Queue
+
+  async def run():
+    while True:
+      report = await _step()
+      await queue.put(report)
+      await asyncio.sleep(1.0)
+
+  async def _step() -> AgentReport:
+    # read DB candles
+    # add_indicators + detect_regime
+    # strategy.evaluate() OR heuristic
+    # return AgentReport(signal, regime...)</pre>
+      </div>
+      <div class="card">
+        <h3>AgentCoordinator</h3>
+        <pre style="font-size:11px;">class AgentCoordinator:
+  _agents: Dict[str, TokenAgent]
+  _tasks:  Dict[str, asyncio.Task]
+  _latest: Dict[str, AgentReport]
+  _queue:  asyncio.Queue[AgentReport]
+
+  async def run():
+    await _spawn_all()   # one task per sym
+    await _consume()     # drain queue loop
+
+  def latest_report(sym) -> AgentReport:
+    return _latest.get(sym)  # non-blocking
+
+  def agent_status() -> list[dict]:
+    # for dashboard display</pre>
+      </div>
+      <div class="card">
+        <h3>PaperTrader Integration</h3>
+        <pre style="font-size:11px;"># In PaperTrader.step():
+for sym in SYMBOLS:
+  if self._coordinator:
+    # NEW: read from agent
+    report = coordinator.latest_report(sym)
+    sig = report.signal if report else HOLD
+  else:
+    # EXISTING: direct call
+    sig = compute_signal(sess, candle)
+
+  if sig == BUY:
+    await _auto_buy(sym, price, atr)
+  elif sig == SELL:
+    await _auto_sell(sym, price)</pre>
+        <div class="callout" style="margin-top:8px;padding:8px 12px;font-size:12px;">
+          100% backward compatible — coordinator is optional. If not set, existing behavior is unchanged and all 213 tests still pass.
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:24px;">
+      <h3>Strategy Assignment to Agents</h3>
+      <div class="flow-row" style="gap:16px;flex-wrap:wrap;justify-content:flex-start;">
+        <div class="card" style="min-width:220px;">
+          <div style="color:var(--purple);font-weight:600;margin-bottom:8px;">Mode 1: Heuristic (Default)</div>
+          All agents use <code>compute_signal()</code>.<br/>No plugin strategy assigned. Full fallback to existing regime-routing logic.
+        </div>
+        <div class="card" style="min-width:220px;">
+          <div style="color:var(--blue);font-weight:600;margin-bottom:8px;">Mode 2: Named Plugin</div>
+          <code>--strategy rsi_v1</code> — all agents use the same <code>StrategyBase</code> subclass loaded from <code>strategies/rsi_v1.py</code>.
+        </div>
+        <div class="card" style="min-width:220px;">
+          <div style="color:var(--orange);font-weight:600;margin-bottom:8px;">Mode 3: LLM-Generated</div>
+          <code>llm/generator.py</code> creates <code>strategies/generated_{ts}.py</code> → watchdog hot-loads → coordinator assigns to agents automatically.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROADMAP -->
+  <div class="section" id="roadmap">
+    <h2>Sprint Roadmap</h2>
+
+    <div class="timeline">
+
+      <!-- DONE: 0-8 -->
+      <div class="timeline-item done">
+        <div class="tl-header">
+          <span class="tl-title">Sprints 0–8 — Foundation (Complete)</span>
+          <span class="badge badge-green">✓ DONE</span>
+          <span style="color:var(--muted);font-size:12px;">213 tests passing</span>
+        </div>
+        <div class="tl-body">Credentials, backtester, ATR risk, signal quality, regime detection, multi-strategy portfolio, dashboard UX, walk-forward backtesting, Hummingbot integration.</div>
+        <div class="tl-files">
+          <span class="file-chip">strategy/signal_engine.py</span>
+          <span class="file-chip">strategy/regime.py</span>
+          <span class="file-chip">backtester/engine.py</span>
+          <span class="file-chip">backtester/walk_forward.py</span>
+          <span class="file-chip">simulator/paper_trader.py</span>
+          <span class="file-chip">dashboard/streamlit_app.py</span>
+        </div>
+      </div>
+
+      <!-- SPRINT 9 -->
+      <div class="timeline-item active">
+        <div class="tl-header">
+          <span class="tl-title">Sprint 9 — Strategy Plugin System</span>
+          <span class="badge badge-blue">▶ ACTIVE</span>
+          <span style="color:var(--muted);font-size:12px;">~15 new tests → 228 total</span>
+        </div>
+        <div class="tl-body">Jesse-AI-style StrategyBase ABC + hot-reload file watcher. Drop a <code>.py</code> file in <code>strategies/</code>, it loads automatically. Zero behavior change to existing system.</div>
+        <div class="tl-files">
+          <span class="file-chip new">strategy/base.py</span>
+          <span class="file-chip new">strategies/__init__.py</span>
+          <span class="file-chip new">strategies/loader.py</span>
+          <span class="file-chip new">strategies/example_rsi_mean_reversion.py</span>
+          <span class="file-chip mod">config.py (+LLM section)</span>
+          <span class="file-chip mod">requirements.txt (+anthropic, +watchdog)</span>
+          <span class="file-chip new">tests/test_strategy_base.py</span>
+          <span class="file-chip new">tests/test_strategy_loader.py</span>
+          <span class="file-chip mod">HANDOFF.md</span>
+          <span class="file-chip mod">.github/copilot-instructions.md</span>
+        </div>
+      </div>
+
+      <!-- SPRINT 10 -->
+      <div class="timeline-item next">
+        <div class="tl-header">
+          <span class="tl-title">Sprint 10 — LLM Core Layer</span>
+          <span class="badge badge-yellow">NEXT</span>
+          <span style="color:var(--muted);font-size:12px;">~20 new tests → 248 total</span>
+        </div>
+        <div class="tl-body">Claude API wrapper with 5-min TTL cache + graceful fallback. Strategy generator (NL → Python). Backtest analyzer (metrics → JSON). Trade critiquer (SELL → verdict). All LLM calls mockable in tests.</div>
+        <div class="tl-files">
+          <span class="file-chip new">llm/__init__.py</span>
+          <span class="file-chip new">llm/cache.py</span>
+          <span class="file-chip new">llm/client.py</span>
+          <span class="file-chip new">llm/prompts.py</span>
+          <span class="file-chip new">llm/generator.py</span>
+          <span class="file-chip new">llm/analyzer.py</span>
+          <span class="file-chip new">llm/critiquer.py</span>
+          <span class="file-chip new">tests/test_llm_*.py (×4)</span>
+        </div>
+      </div>
+
+      <!-- SPRINT 11 -->
+      <div class="timeline-item future">
+        <div class="tl-header">
+          <span class="tl-title">Sprint 11 — Self-Learning Loop + KB Integration</span>
+          <span class="badge badge-orange">Sprint 11</span>
+          <span style="color:var(--muted);font-size:12px;">~15 new tests → 263 total</span>
+        </div>
+        <div class="tl-body">24h self-learning cycle: paper metrics → LLM analysis → KB write → 5-gate confidence evaluation. Trade critique wired into PaperTrader. Auto-promotion recommendation when all gates pass.</div>
+        <div class="tl-files">
+          <span class="file-chip new">llm/self_learner.py</span>
+          <span class="file-chip new">llm/confidence_gate.py</span>
+          <span class="file-chip mod">simulator/paper_trader.py (+critique, +coordinator hook)</span>
+          <span class="file-chip new">tests/test_self_learner.py</span>
+          <span class="file-chip new">tests/test_confidence_gate.py</span>
+        </div>
+      </div>
+
+      <!-- SPRINT 12 -->
+      <div class="timeline-item future">
+        <div class="tl-header">
+          <span class="tl-title">Sprint 12 — Multi-Agent Token Monitor</span>
+          <span class="badge badge-orange">Sprint 12</span>
+          <span style="color:var(--muted);font-size:12px;">~20 new tests → 283 total</span>
+        </div>
+        <div class="tl-body">Independent asyncio TokenAgent per symbol. AgentCoordinator aggregates via Queue. PaperTrader reads from coordinator (optional, backward-compatible). New entry point <code>run_agents.py</code>.</div>
+        <div class="tl-files">
+          <span class="file-chip new">agents/__init__.py</span>
+          <span class="file-chip new">agents/token_agent.py</span>
+          <span class="file-chip new">agents/coordinator.py</span>
+          <span class="file-chip new">agents/reporter.py</span>
+          <span class="file-chip new">run_agents.py</span>
+          <span class="file-chip new">tests/test_token_agent.py</span>
+          <span class="file-chip new">tests/test_coordinator.py</span>
+        </div>
+      </div>
+
+      <!-- SPRINT 13 -->
+      <div class="timeline-item future">
+        <div class="tl-header">
+          <span class="tl-title">Sprint 13 — Dashboard + End-to-End Integration</span>
+          <span class="badge badge-orange">Sprint 13</span>
+          <span style="color:var(--muted);font-size:12px;">~12 new tests → 295 total</span>
+        </div>
+        <div class="tl-body">LLM status panel + confidence gate display + agent signal grid in dashboard. Full integration test. Code review gate. System ready for 30-day LLM-assisted paper trading run.</div>
+        <div class="tl-files">
+          <span class="file-chip mod">dashboard/streamlit_app.py (+LLM panels, +agent grid)</span>
+          <span class="file-chip mod">config.py (+validate_env_llm)</span>
+          <span class="file-chip new">tests/test_integration.py</span>
+          <span class="file-chip mod">HANDOFF.md (final LLM sprint)</span>
+          <span class="file-chip mod">knowledge/sprint_log.md</span>
+        </div>
+      </div>
+
+    </div>
+
+    <hr/>
+
+    <!-- FILE STRUCTURE -->
+    <h2>Target File Structure (Sprint 13)</h2>
+    <div class="two-col">
+      <div>
+        <pre>crypto_ai_trader/
+├── strategy/                 # Pure functions (unchanged)
+│   ├── base.py               # NEW ★ StrategyBase ABC
+│   ├── signal_engine.py
+│   ├── signal_momentum.py
+│   ├── signal_breakout.py
+│   ├── regime.py
+│   ├── ta_features.py
+│   ├── risk.py
+│   └── signals.py
+├── strategies/               # NEW ★ Plugin directory
+│   ├── __init__.py
+│   ├── loader.py             # Hot-reload engine
+│   └── example_*.py
+├── llm/                      # NEW ★ Claude API layer
+│   ├── __init__.py
+│   ├── cache.py
+│   ├── client.py
+│   ├── prompts.py
+│   ├── generator.py
+│   ├── analyzer.py
+│   ├── critiquer.py
+│   ├── self_learner.py
+│   └── confidence_gate.py
+├── agents/                   # NEW ★ Multi-agent
+│   ├── __init__.py
+│   ├── token_agent.py
+│   ├── coordinator.py
+│   └── reporter.py</pre>
+      </div>
+      <div>
+        <pre>├── backtester/               # Existing (unchanged)
+│   ├── engine.py
+│   ├── metrics.py
+│   └── walk_forward.py
+├── simulator/
+│   ├── paper_trader.py       # MODIFIED ★
+│   └── backtester.py
+├── collectors/
+│   ├── live_streamer.py
+│   └── historical_loader.py
+├── database/
+│   └── models.py
+├── dashboard/
+│   └── streamlit_app.py      # MODIFIED ★
+├── knowledge/                # Living KB (auto-updated)
+│   ├── experiment_log.md     # LLM writes here
+│   ├── strategy_learnings.md
+│   └── backtest_results/
+├── config.py                 # MODIFIED ★ +LLM section
+├── requirements.txt          # MODIFIED ★
+├── run_live.py               # Existing entry point
+├── run_agents.py             # NEW ★ Multi-agent entry
+├── run_backtest.py
+├── HANDOFF.md                # Updated every sprint
+└── .github/
+    └── copilot-instructions.md  # Updated every sprint</pre>
+      </div>
+    </div>
+
+    <hr/>
+
+    <!-- HOW TO RUN -->
+    <h2>How to Run (Sprint 13)</h2>
+    <div class="card-grid card-grid-2">
+      <div class="card">
+        <h3>Classic Paper Trading (unchanged)</h3>
+        <pre>python run_live.py
+streamlit run dashboard/streamlit_app.py</pre>
+      </div>
+      <div class="card">
+        <h3>Multi-Agent + Self-Learning (new)</h3>
+        <pre># Heuristic signals, all symbols
+python run_agents.py
+
+# With plugin strategy
+python run_agents.py --strategy rsi_v1
+
+# With LLM self-learning loop (24h cycle)
+python run_agents.py --learn
+
+# Dashboard (shows LLM panels + agent grid)
+streamlit run dashboard/streamlit_app.py</pre>
+      </div>
+      <div class="card">
+        <h3>Generate a New Strategy via LLM</h3>
+        <pre>python -c "
+from llm.generator import generate_strategy
+code, resp = generate_strategy(
+  'RSI reversal on Bollinger Band touch '
+  'with volume confirmation in ranging market'
+)
+print(code)
+# writes to strategies/generated_{ts}.py
+# loader.py hot-loads it automatically
+"</pre>
+      </div>
+      <div class="card">
+        <h3>Required .env Keys (Sprint 10+)</h3>
+        <pre># Existing keys
+BINANCE_API_KEY=...
+BINANCE_API_SECRET=...
+TELEGRAM_TOKEN=...
+TELEGRAM_CHAT_ID=...
+
+# NEW for LLM features
+ANTHROPIC_API_KEY=...
+LLM_MODEL=claude-sonnet-4-6
+LLM_ENABLED=true
+LLM_CONFIDENCE_GATE=0.80
+LLM_PAPER_WINDOW_DAYS=30
+LLM_AUTO_PROMOTE=false   # safety: manual confirm</pre>
+      </div>
+    </div>
+
+    <hr/>
+
+    <!-- AGENT HANDOFF -->
+    <h2>Claude Code ↔ GitHub Copilot Handoff Protocol</h2>
+    <div class="callout">
+      Both agents read <code>HANDOFF.md</code> first and update it last. The protocol is enforced by the sprint workflow — skipping the HANDOFF update is treated the same as skipping the code review gate: the sprint is not closed.
+    </div>
+
+    <div class="card-grid card-grid-2">
+      <div class="card">
+        <h3>Files Updated Every Sprint</h3>
+        <table class="cmp-table">
+          <thead><tr><th>File</th><th>What to Update</th></tr></thead>
+          <tbody>
+            <tr><td><code>HANDOFF.md</code></td><td>Current State table · Resume Here · Sprint History row</td></tr>
+            <tr><td><code>.github/copilot-instructions.md</code></td><td>New dirs/files/entry points added this sprint</td></tr>
+            <tr><td><code>knowledge/sprint_log.md</code></td><td>Full outcome entry in KB format</td></tr>
+            <tr><td><code>knowledge/experiment_log.md</code></td><td>LLM writes automatically (Sprint 11+)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Mid-Sprint Handoff Format</h3>
+        <pre style="font-size:11px;">## In Progress — CLAUDE CODE left off here
+
+**Sprint:** Sprint 10
+**Last file edited:** llm/client.py
+**What was done:** Built TTL cache + client wrapper.
+  Prompts not yet written.
+**What's next:** Create llm/prompts.py with all 4
+  system prompt templates
+**Partial work notes:** ANTHROPIC_API_KEY must be
+  in .env — add to validate_env_llm() first</pre>
+      </div>
+    </div>
+
+  </div><!-- /roadmap -->
+
+</div><!-- /container -->
+
+<div style="background:var(--bg2);border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--muted);font-size:12px;margin-top:32px;">
+  Crypto AI Trader — Architecture Document · Generated 2026-04-17 · Sprints 0–8 Complete · Sprints 9–13 Planned
+</div>
+
+</body>
+</html>

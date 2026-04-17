@@ -9,16 +9,52 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | GitHub Copilot |
-| **Last updated** | 2026-04-17 (Dashboard UX fix) |
-| **Sprint completed** | Dashboard UX Fix ✅ |
-| **Next sprint** | Start 30-day paper trading run |
-| **Blocking issues** | None — bot is ready to run |
+| **Last active agent** | Claude Code |
+| **Last updated** | 2026-04-17 (Sprint 9 — Strategy Plugin System) |
+| **Sprint completed** | Sprint 9 ✅ |
+| **Next sprint** | Sprint 10 — LLM Core Layer (`llm/`) |
+| **Blocking issues** | None — add `ANTHROPIC_API_KEY` to `.env` before Sprint 10 |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Switching to Claude Code |
+| **Reason for handoff** | Sprint 9 complete; continuing to Sprint 10 |
 
 ---
+
+## Resume Here — Sprint 10: LLM Core Layer
+
+**Sprint 9 complete.** Strategy plugin system is live. 245 tests passing.
+
+### What was done in Sprint 9
+- `strategy/base.py` — `StrategyBase` ABC with `should_long/short + evaluate()` (regime-gated, not overridable)
+- `strategies/loader.py` — hot-reload engine (watchdog file watcher + compile/exec bypass of pyc cache)
+- `strategies/example_rsi_mean_reversion.py` — reference plugin translating existing mean-reversion logic
+- `config.py` — LLM config section (`ANTHROPIC_API_KEY`, `LLM_MODEL`, `LLM_ENABLED`, `LLM_CONFIDENCE_GATE`, `validate_env_llm()`)
+- `requirements.txt` — added `anthropic>=0.25.0`, `watchdog>=4.0.0`
+- `docs/architecture.html` — full system architecture + Jesse-AI comparison document
+- 32 new tests: `test_strategy_base.py` (18) + `test_strategy_loader.py` (14)
+
+### Sprint 10 Goal — `llm/` package
+Build the Claude API wrapper with TTL cache, strategy generator, backtest analyzer, and trade critiquer.
+
+**Key files to create:**
+- `llm/__init__.py`
+- `llm/cache.py` — thread-safe TTL cache (5-min minimum, SHA-256 keyed)
+- `llm/client.py` — Anthropic SDK wrapper, prompt caching, fallback to heuristic
+- `llm/prompts.py` — all 4 system prompt templates as module-level constants
+- `llm/generator.py` — NL → Python strategy, AST validate, write to `strategies/`
+- `llm/analyzer.py` — backtest metrics → JSON (param suggestions + confidence score)
+- `llm/critiquer.py` — trade critique after SELL (GOOD/MEDIOCRE/BAD)
+
+**Pre-requisite:** Add `ANTHROPIC_API_KEY=sk-ant-...` to `.env` (Sprint 10 needs it for integration testing; tests themselves mock the client)
+
+### How to start Sprint 10
+```bash
+# Verify 245 tests still pass
+pytest tests/ -v
+# Check new plugin system works
+python -c "from strategies.loader import list_strategies; print(list_strategies())"
+# Begin Sprint 10: create llm/ package
+```
 
 ## Resume Here — Start Paper Trading
 
@@ -88,6 +124,7 @@ docker attach hummingbot_crypto_ai
 | Sprint 6 — Multi-strategy portfolio | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 | Sprint 7 — Dashboard fixes + observability | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
 | Sprint 8 — Backtesting rigor | ✅ CLOSED | GitHub Copilot | 2026-04-18 |
+| Sprint 9 — Strategy Plugin System + StrategyBase ABC | ✅ CLOSED | Claude Code | 2026-04-17 |
 
 ---
 

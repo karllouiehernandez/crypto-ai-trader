@@ -37,13 +37,17 @@ Fully async Python (`asyncio`). Three modes: live trading, backtesting, dashboar
 | `run_backtest.py` | CLI backtest entry point |
 | `database/models.py` | SQLAlchemy ORM: `Candle`, `Trade`, `Portfolio` |
 | `strategy/signal_engine.py` | Core signal: `compute_signal(sess, candle) → Signal` |
+| `strategy/base.py` | **NEW (Sprint 9)** `StrategyBase` ABC — base class for all plugins |
 | `strategy/ta_features.py` | Pure indicator functions (RSI, BB, MACD, SMA) |
+| `strategies/loader.py` | **NEW (Sprint 9)** Hot-reload plugin engine (watchdog + compile/exec) |
+| `strategies/` | **NEW (Sprint 9)** Drop `.py` files here to hot-load strategies automatically |
 | `simulator/paper_trader.py` | Async paper trading loop |
 | `backtester/engine.py` | Sync backtesting loop |
 | `collectors/historical_loader.py` | One-time 365-day candle fetch from Binance |
 | `collectors/live_streamer.py` | 1-second price polling loop |
 | `utils/telegram_utils.py` | Telegram alerts + callback queue |
 | `dashboard/streamlit_app.py` | Streamlit + Plotly live dashboard |
+| `docs/architecture.html` | **NEW (Sprint 9)** Full architecture + Jesse-AI comparison (open in browser) |
 
 ### Critical Rules
 - `strategy/` files must be **pure functions** — no DB calls, no I/O
@@ -75,14 +79,64 @@ Every sprint follows this loop — **never skip a step**:
 | Sprint | Goal | Status |
 |--------|------|--------|
 | 0 | Foundation fixes + credentials | ✅ CLOSED |
-| 1 | Knowledge base `kb_update.py` script | ⬅ NEXT |
-| 2 | Testing infrastructure (`pytest`) | PENDING |
-| 3 | Risk management (ATR sizing, circuit breakers) | PENDING |
-| 4 | Signal quality (trend filter, multi-timeframe, volume) | PENDING |
-| 5 | Regime detection | PENDING |
-| 6 | Multi-strategy portfolio | PENDING |
-| 7 | Dashboard fixes + observability | PENDING |
-| 8 | Backtesting rigor (walk-forward) | PENDING |
+| 1 | Knowledge base `kb_update.py` script | ✅ CLOSED |
+| 2 | Testing infrastructure (`pytest`) | ✅ CLOSED |
+| 3 | Risk management (ATR sizing, circuit breakers) | ✅ CLOSED |
+| 4 | Signal quality (trend filter, multi-timeframe, volume) | ✅ CLOSED |
+| 5 | Regime detection | ✅ CLOSED |
+| 6 | Multi-strategy portfolio | ✅ CLOSED |
+| 7 | Dashboard fixes + observability | ✅ CLOSED |
+| 8 | Backtesting rigor (walk-forward) | ✅ CLOSED |
+| 9 | Strategy Plugin System + StrategyBase ABC | ✅ CLOSED |
+| 10 | LLM Core Layer (`llm/` package) | ⬅ NEXT |
+| 11 | Self-Learning Loop + KB Integration | PENDING |
+| 12 | Multi-Agent Token Monitor | PENDING |
+| 13 | Dashboard Extensions + End-to-End Integration | PENDING |
+
+### New Entry Points (Sprint 9+)
+```bash
+# Plugin system — list loaded strategies
+python -c "from strategies.loader import list_strategies; print(list_strategies())"
+
+# Multi-agent mode (Sprint 12)
+python run_agents.py
+python run_agents.py --strategy rsi_mean_reversion_v1
+python run_agents.py --learn   # enables 24h self-learning loop
+```
+
+### Strategy Plugin System (Sprint 9)
+To add a new strategy:
+1. Create a `.py` file in `strategies/`
+2. Subclass `StrategyBase` from `strategy.base`
+3. Implement `should_long(df)` and `should_short(df)` — pure DataFrame logic, no I/O
+4. Set `name`, `version`, `regimes` class attributes
+5. File is hot-loaded automatically (watchdog). No restart needed.
+
+```python
+from strategy.base import StrategyBase
+from strategy.regime import Regime
+
+class MyStrategy(StrategyBase):
+    name = "my_strategy_v1"
+    version = "1.0.0"
+    regimes = [Regime.TRENDING]   # [] = active in all regimes
+
+    def should_long(self, df):
+        return df.iloc[-1]["rsi_14"] < 30
+
+    def should_short(self, df):
+        return df.iloc[-1]["rsi_14"] > 70
+```
+
+### LLM Config Keys (Sprint 9+, in `.env`)
+```
+ANTHROPIC_API_KEY=sk-ant-...      # Required for Sprint 10+
+LLM_MODEL=claude-sonnet-4-6
+LLM_ENABLED=true
+LLM_CONFIDENCE_GATE=0.80
+LLM_PAPER_WINDOW_DAYS=30
+LLM_AUTO_PROMOTE=false
+```
 
 ---
 
