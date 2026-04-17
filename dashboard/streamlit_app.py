@@ -25,6 +25,8 @@ from backtester.service import (
     run_and_persist_backtest,
 )
 from dashboard.workbench import (
+    build_backtest_run_leaderboard,
+    build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
@@ -468,23 +470,133 @@ with backtest_tab:
 
     runs_df = load_backtest_runs()
     all_backtest_runs = runs_df
+    comparison_df = build_strategy_comparison_frame(runs_df, strategy_catalog, active_strategy["name"])
+    selected_strategy_row = comparison_df[comparison_df["strategy_name"] == bt_strategy].head(1)
+    evaluated_strategies = comparison_df[comparison_df["run_count"] > 0].copy() if not comparison_df.empty else pd.DataFrame()
+    leading_strategy_row = evaluated_strategies.head(1)
+
+    if not comparison_df.empty:
+        comparison_cols = st.columns(4)
+        comparison_cols[0].metric("Compared Strategies", str(int(len(evaluated_strategies))))
+        comparison_cols[1].metric(
+            "Passing Candidates",
+            str(int((comparison_df["passed_runs"].fillna(0) > 0).sum())),
+        )
+        comparison_cols[2].metric(
+            "Current Leader",
+            leading_strategy_row.iloc[0]["display_name"] if not leading_strategy_row.empty else "—",
+        )
+        comparison_cols[3].metric(
+            "Focus Rank",
+            f"#{int(selected_strategy_row.iloc[0]['rank'])}" if not selected_strategy_row.empty else "—",
+        )
+
+    if not selected_strategy_row.empty:
+        focus_summary = selected_strategy_row.iloc[0]
+        focus_cols = st.columns(4)
+        focus_cols[0].metric("Saved Runs", str(int(focus_summary["run_count"])))
+        focus_cols[1].metric("Pass Rate", f"{float(focus_summary['pass_rate']):.0%}")
+        focus_cols[2].metric(
+            "Best Sharpe",
+            f"{float(focus_summary['best_sharpe']):.2f}" if pd.notna(focus_summary["best_sharpe"]) else "—",
+        )
+        focus_cols[3].metric(
+            "Best Run",
+            f"#{int(focus_summary['best_run_id'])}" if pd.notna(focus_summary["best_run_id"]) else "—",
+        )
+        st.caption(
+            f"`{bt_strategy}` is ranked #{int(focus_summary['rank'])} in saved evaluations. "
+            f"Latest outcome: {focus_summary['latest_status']}."
+        )
+
+    if not comparison_df.empty:
+        st.markdown("#### Candidate Comparison")
+        display_comparison = comparison_df.copy()
+        if "latest_run_at" in display_comparison.columns:
+            display_comparison["latest_run_at"] = pd.to_datetime(display_comparison["latest_run_at"]).dt.strftime("%Y-%m-%d %H:%M")
+            display_comparison["latest_run_at"] = display_comparison["latest_run_at"].fillna("—")
+        display_comparison["pass_rate"] = display_comparison["pass_rate"].apply(lambda value: f"{float(value):.0%}")
+        for col in ["best_sharpe", "best_profit_factor"]:
+            if col in display_comparison.columns:
+                display_comparison[col] = display_comparison[col].apply(
+                    lambda value: f"{float(value):.2f}" if pd.notna(value) else "—"
+                )
+        if "lowest_max_drawdown" in display_comparison.columns:
+            display_comparison["lowest_max_drawdown"] = display_comparison["lowest_max_drawdown"].apply(
+                lambda value: f"{float(value):.1%}" if pd.notna(value) else "—"
+            )
+        if "best_run_id" in display_comparison.columns:
+            display_comparison["best_run_id"] = display_comparison["best_run_id"].apply(
+                lambda value: f"#{int(value)}" if pd.notna(value) else "—"
+            )
+        display_comparison["is_active"] = display_comparison["is_active"].apply(lambda value: "Yes" if value else "")
+        st.dataframe(
+            display_comparison[
+                [
+                    "rank",
+                    "display_name",
+                    "strategy_name",
+                    "origin",
+                    "workflow_stage",
+                    "is_active",
+                    "run_count",
+                    "passed_runs",
+                    "pass_rate",
+                    "best_sharpe",
+                    "best_profit_factor",
+                    "lowest_max_drawdown",
+                    "latest_status",
+                    "latest_symbol",
+                    "latest_run_at",
+                    "best_run_id",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
     st.checkbox("Show all saved runs", key="show_all_backtest_runs")
     visible_runs_df = filter_backtest_runs(runs_df, bt_strategy, show_all=st.session_state["show_all_backtest_runs"])
+    leaderboard_df = build_backtest_run_leaderboard(visible_runs_df)
     if not visible_runs_df.empty:
-        display_runs = visible_runs_df.copy()
+        display_runs = leaderboard_df.copy()
         if "created_at" in display_runs.columns:
             display_runs["created_at"] = pd.to_datetime(display_runs["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
         if "start_ts" in display_runs.columns:
             display_runs["start_ts"] = pd.to_datetime(display_runs["start_ts"]).dt.strftime("%Y-%m-%d")
         if "end_ts" in display_runs.columns:
             display_runs["end_ts"] = pd.to_datetime(display_runs["end_ts"]).dt.strftime("%Y-%m-%d")
-        if "failures" in display_runs.columns:
-            display_runs["failures"] = display_runs["failures"].apply(
-                lambda value: "; ".join(value) if isinstance(value, list) else value
+        if "max_drawdown" in display_runs.columns:
+            display_runs["max_drawdown"] = display_runs["max_drawdown"].apply(
+                lambda value: f"{float(value):.1%}" if pd.notna(value) else "—"
             )
-        st.markdown("#### Saved Runs")
-        st.dataframe(display_runs, use_container_width=True, hide_index=True)
-        available_run_ids = visible_runs_df["id"].astype(int).tolist()
+        for col in ["sharpe", "profit_factor"]:
+            if col in display_runs.columns:
+                display_runs[col] = display_runs[col].apply(
+                    lambda value: f"{float(value):.2f}" if pd.notna(value) else "—"
+                )
+        st.markdown("#### Saved Run Leaderboard")
+        st.dataframe(
+            display_runs[
+                [
+                    "rank",
+                    "id",
+                    "status_label",
+                    "symbol",
+                    "start_ts",
+                    "end_ts",
+                    "sharpe",
+                    "max_drawdown",
+                    "profit_factor",
+                    "n_trades",
+                    "created_at",
+                    "failure_summary",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+        available_run_ids = leaderboard_df["id"].astype(int).tolist()
         selected_run_id = st.selectbox(
             "Inspect saved run",
             available_run_ids,
@@ -493,11 +605,12 @@ with backtest_tab:
             key="selected_backtest_run_id",
             format_func=lambda run_id: (
                 f"#{run_id} · "
-                f"{visible_runs_df.loc[visible_runs_df['id'] == run_id, 'strategy_name'].iloc[0]} · "
-                f"{visible_runs_df.loc[visible_runs_df['id'] == run_id, 'symbol'].iloc[0]}"
+                f"{leaderboard_df.loc[leaderboard_df['id'] == run_id, 'strategy_name'].iloc[0]} · "
+                f"{leaderboard_df.loc[leaderboard_df['id'] == run_id, 'symbol'].iloc[0]} · "
+                f"{leaderboard_df.loc[leaderboard_df['id'] == run_id, 'status_label'].iloc[0]}"
             ),
         )
-        selected_run = load_backtest_run(int(selected_run_id)) or visible_runs_df[visible_runs_df["id"] == selected_run_id].iloc[0].to_dict()
+        selected_run = load_backtest_run(int(selected_run_id)) or leaderboard_df[leaderboard_df["id"] == selected_run_id].iloc[0].to_dict()
         selected_run_trades = load_backtest_trades(int(selected_run_id))
         selected_run_equity = compute_trade_equity_curve(selected_run_trades)
         selected_run_drawdown = compute_drawdown_curve(selected_run_equity)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import pandas as pd
 
 from dashboard.workbench import (
+    build_backtest_run_leaderboard,
+    build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
@@ -106,6 +108,85 @@ def test_filter_backtest_runs_filters_by_strategy_name():
     )
     filtered = filter_backtest_runs(frame, "a")
     assert filtered["id"].tolist() == [1]
+
+
+def test_build_strategy_comparison_frame_ranks_reviewed_candidate_first():
+    runs = pd.DataFrame(
+        [
+            {
+                "id": 11,
+                "created_at": pd.Timestamp("2026-04-18 09:00:00"),
+                "strategy_name": "candidate_a",
+                "symbol": "BTCUSDT",
+                "status": "passed",
+                "sharpe": 2.4,
+                "profit_factor": 1.9,
+                "max_drawdown": 0.11,
+                "n_trades": 240,
+            },
+            {
+                "id": 12,
+                "created_at": pd.Timestamp("2026-04-18 08:00:00"),
+                "strategy_name": "candidate_b",
+                "symbol": "BTCUSDT",
+                "status": "failed",
+                "sharpe": 0.8,
+                "profit_factor": 1.2,
+                "max_drawdown": 0.28,
+                "n_trades": 180,
+            },
+        ]
+    )
+    catalog = [
+        {"name": "candidate_a", "display_name": "Candidate A", "provenance": "plugin"},
+        {"name": "candidate_b", "display_name": "Candidate B", "provenance": "generated"},
+        {"name": "candidate_c", "display_name": "Candidate C", "provenance": "builtin"},
+    ]
+
+    frame = build_strategy_comparison_frame(runs, catalog=catalog, active_strategy_name="candidate_b")
+
+    assert frame.iloc[0]["strategy_name"] == "candidate_a"
+    assert frame.iloc[0]["rank"] == 1
+    assert frame.loc[frame["strategy_name"] == "candidate_b", "is_active"].iloc[0]
+    assert frame.loc[frame["strategy_name"] == "candidate_c", "latest_status"].iloc[0] == "Not Run"
+
+
+def test_build_backtest_run_leaderboard_prioritizes_passed_runs():
+    runs = pd.DataFrame(
+        [
+            {
+                "id": 21,
+                "created_at": pd.Timestamp("2026-04-18 09:00:00"),
+                "strategy_name": "candidate_a",
+                "symbol": "BTCUSDT",
+                "status": "failed",
+                "sharpe": 3.0,
+                "profit_factor": 2.0,
+                "max_drawdown": 0.09,
+                "n_trades": 210,
+                "failures": ["Sharpe 1.0 < 1.5 (gate)"],
+            },
+            {
+                "id": 22,
+                "created_at": pd.Timestamp("2026-04-18 10:00:00"),
+                "strategy_name": "candidate_a",
+                "symbol": "BTCUSDT",
+                "status": "passed",
+                "sharpe": 2.0,
+                "profit_factor": 1.8,
+                "max_drawdown": 0.12,
+                "n_trades": 250,
+                "failures": [],
+            },
+        ]
+    )
+
+    leaderboard = build_backtest_run_leaderboard(runs)
+
+    assert leaderboard.iloc[0]["id"] == 22
+    assert leaderboard.iloc[0]["rank"] == 1
+    assert leaderboard.iloc[0]["status_label"] == "Passed"
+    assert "Sharpe" in leaderboard.iloc[1]["failure_summary"]
 
 
 def test_filter_runtime_data_filters_strategy_and_mode():

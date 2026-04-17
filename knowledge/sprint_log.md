@@ -244,6 +244,34 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
+## Sprint 22 — Strategy Comparison & Evaluation UX
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Codex
+**Goal:** Make saved evaluations faster to compare by adding strategy-level candidate ranking and run-level leaderboards inside the existing Jesse-like `Backtest Lab`.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/workbench.py` — MODIFIED: added pure comparison helpers `build_strategy_comparison_frame()` and `build_backtest_run_leaderboard()` so saved backtests can be ranked by pass history, Sharpe, profit factor, drawdown, and recency without burying ranking logic in Streamlit code
+- [x] `dashboard/streamlit_app.py` — MODIFIED: upgraded `Backtest Lab` with evaluation overview cards, a strategy candidate comparison table, a saved-run leaderboard, focus-strategy ranking context, and run selection ordered by evaluation quality instead of raw insertion order
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the new comparison surfaces still preserve the Jesse-like research loop and do not collapse the dashboard back into a one-run-at-a-time monitor
+- [x] `tests/test_workbench_helpers.py` — MODIFIED: added coverage for strategy comparison ranking, active-strategy markers, not-yet-run strategies, and saved-run leaderboard ordering
+
+### Test Results
+- Before: 413 tests passing
+- After: **415 tests passing** (+2 new) — 0 failures
+- Additional validation: `python -m py_compile dashboard/streamlit_app.py dashboard/workbench.py`
+
+### Key Technical Decisions
+1. **Comparison logic stays pure and testable:** strategy ranking and run ordering live in `dashboard/workbench.py` so the dashboard can stay focused on presentation and state.
+2. **Strategy comparison includes unevaluated catalog entries:** the candidate table can show “Not Run” strategies alongside evaluated ones, which keeps the workbench strategy-first instead of hiding dormant candidates.
+3. **Run inspection now starts from the leaderboard, not raw history order:** the saved-run selector follows the ranked leaderboard so the most credible run is the easiest one to inspect first.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 415/415. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

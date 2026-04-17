@@ -10,45 +10,48 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 21 closed) |
-| **Sprint completed** | Sprint 21 ✅ — Jesse-like workbench polish committed + pushed to GitHub |
-| **Next sprint** | Sprint 22 — Strategy Comparison & Evaluation UX |
+| **Last updated** | 2026-04-18 (Sprint 22 closed) |
+| **Sprint completed** | Sprint 22 ✅ — Strategy comparison and evaluation UX committed + pushed to GitHub |
+| **Next sprint** | Sprint 23 — Strategy Parameters & Scenario Presets |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
+| **Local worktree note** | `knowledge/experiment_log.md` is expected to stay dirty while the background runtime process is running; do not edit or stage it unless you intentionally stop that process |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 21 complete; next agent should improve strategy comparison and evaluation ergonomics inside the workbench |
+| **Reason for handoff** | Sprint 22 complete; next agent should move from comparison-only UX into parameterized scenario evaluation inside the workbench |
 
 ---
 
-## Resume Here — Sprint 22: Strategy Comparison & Evaluation UX
+## Resume Here — Sprint 23: Strategy Parameters & Scenario Presets
 
-**Sprint 21 complete.** The dashboard now has tabbed workbench navigation and a shared status strip, so the main workflow is more coherent. 413 tests passing.
+**Sprint 22 complete.** The dashboard can now compare saved strategy candidates and rank saved runs directly inside `Backtest Lab`. 415 tests passing.
 
-### What was done in Sprint 21
-- `dashboard/streamlit_app.py` — MODIFIED: replaced the top-level split layout with tabbed `Strategies`, `Backtest Lab`, and `Runtime Monitor` surfaces and added a shared workbench status strip for active/focus/runtime context
-- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the new tabbed information architecture still matches the Jesse-like workflow guidance
-- **413 total passing** (unchanged from Sprint 20)
+### What was done in Sprint 22
+- `dashboard/workbench.py` — MODIFIED: added pure helper logic for ranking strategy candidates and sorting saved backtest runs into a leaderboard
+- `dashboard/streamlit_app.py` — MODIFIED: added comparison overview cards, a candidate comparison table, a saved-run leaderboard, and focus-strategy ranking context in `Backtest Lab`
+- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the new comparison surfaces still match the Jesse-like research workflow
+- **415 total passing** (+2 over Sprint 21)
 
-### Sprint 22 Goal — Strategy Comparison & Evaluation UX
-The main workbench flow is now coherent, but comparing strategies and reading evaluation outcomes is still heavier than it should be. Improve the UX for comparing candidates, scanning saved-run history, and understanding which strategy is actually strongest without leaving the dashboard.
+### Sprint 23 Goal — Strategy Parameters & Scenario Presets
+The workbench can now compare saved runs, but it still treats every backtest as a fixed no-parameter scenario. Add parameter-aware evaluation controls so a user can adjust strategy inputs, save scenario context with the run, and compare parameterized candidates without leaving the dashboard.
 
 ### Scope
-- `dashboard/streamlit_app.py` — improve comparison affordances for strategy candidates and saved backtest runs
-- `dashboard/workbench.py` — add any pure helper logic needed for ranking, comparing, or summarizing strategy evaluations
-- keep the tabbed workbench structure from Sprint 21 intact while making evaluation faster to scan
-- review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` if the comparison UX requires additional workflow rules
+- `dashboard/streamlit_app.py` — surface parameter controls from each strategy’s `param_schema()` / `default_params()` in `Backtest Lab`
+- `backtester/service.py` and related persistence — store selected parameter payloads so saved runs are scenario-aware instead of all looking identical
+- `dashboard/workbench.py` — add pure helpers for formatting or comparing parameterized scenarios where useful
+- keep the tabbed Jesse-like workbench structure intact; parameter entry should feel like part of the same research loop
+- review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` if scenario or parameter UX requires updated rules
 
 ### Step 1 — Verify baseline
 ```bash
-pytest tests/ -q   # must show 413 passed
+pytest tests/ -q   # must show 415 passed
 ```
 
 ### Step 2 — Sprint close checklist
 - [ ] All CRITICAL and HIGH review findings fixed
-- [ ] `knowledge/sprint_log.md` updated with Sprint 22 entry
+- [ ] `knowledge/sprint_log.md` updated with Sprint 23 entry
 - [ ] `HANDOFF.md` Current State table updated
 - [ ] Committed and pushed to GitHub
-- [ ] GitHub issue created and closed for Sprint 22
+- [ ] GitHub issue created and closed for Sprint 23
 
 ---
 
@@ -78,6 +81,7 @@ pytest tests/ -q   # must show 413 passed
 | Sprint 19 — Paper/Live Strategy Monitoring | ✅ CLOSED | Codex | 2026-04-17 |
 | Sprint 20 — Manual Agent Strategy Workflow | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 21 — Jesse-Like Workbench Polish | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 22 — Strategy Comparison & Evaluation UX | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 

@@ -161,6 +161,179 @@ def filter_backtest_runs(
     return frame[frame["strategy_name"] == strategy_name].copy()
 
 
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    """Return a stable ratio for dashboard summaries."""
+    if denominator <= 0:
+        return 0.0
+    return float(numerator / denominator)
+
+
+def build_strategy_comparison_frame(
+    runs: pd.DataFrame,
+    catalog: list[dict[str, Any]] | None = None,
+    active_strategy_name: str = "",
+) -> pd.DataFrame:
+    """Summarise saved backtests into one comparison row per strategy."""
+    catalog = catalog or []
+    catalog_lookup = {str(item.get("name", "")): item for item in catalog if item.get("name")}
+
+    if runs.empty:
+        rows = []
+        for name, meta in catalog_lookup.items():
+            workflow_status = strategy_workflow_status(meta, runs, active_strategy_name)
+            rows.append(
+                {
+                    "display_name": meta.get("display_name", name),
+                    "strategy_name": name,
+                    "origin": format_strategy_origin(meta),
+                    "workflow_stage": workflow_status["stage"],
+                    "is_active": name == active_strategy_name,
+                    "run_count": 0,
+                    "passed_runs": 0,
+                    "failed_runs": 0,
+                    "pass_rate": 0.0,
+                    "best_sharpe": None,
+                    "best_profit_factor": None,
+                    "lowest_max_drawdown": None,
+                    "latest_status": "Not Run",
+                    "latest_symbol": "—",
+                    "latest_run_id": None,
+                    "latest_run_at": None,
+                    "best_run_id": None,
+                }
+            )
+        return pd.DataFrame(rows)
+
+    frame = runs.copy()
+    if "created_at" in frame.columns:
+        frame["created_at"] = pd.to_datetime(frame["created_at"], errors="coerce")
+    for column in ["sharpe", "profit_factor", "max_drawdown", "n_trades"]:
+        if column not in frame.columns:
+            frame[column] = pd.NA
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    if "status" in frame.columns:
+        frame["status"] = frame["status"].fillna("").astype(str).str.lower()
+    else:
+        frame["status"] = ""
+
+    rows: list[dict[str, Any]] = []
+    for strategy_name, strategy_runs in frame.groupby("strategy_name", dropna=False):
+        strategy_name = str(strategy_name or "")
+        strategy_runs = strategy_runs.sort_values("created_at", ascending=False, na_position="last").copy()
+        meta = catalog_lookup.get(strategy_name, {"name": strategy_name, "display_name": strategy_name})
+        workflow_status = strategy_workflow_status(meta, frame, active_strategy_name)
+
+        passed_runs = strategy_runs[strategy_runs["status"] == "passed"] if "status" in strategy_runs.columns else pd.DataFrame()
+        best_source = passed_runs if not passed_runs.empty else strategy_runs
+        best_source = best_source.sort_values(
+            by=["sharpe", "profit_factor", "max_drawdown", "n_trades", "created_at"],
+            ascending=[False, False, True, False, False],
+            na_position="last",
+        )
+        best_run = best_source.iloc[0].to_dict() if not best_source.empty else {}
+        latest_run = strategy_runs.iloc[0].to_dict() if not strategy_runs.empty else {}
+
+        passed_count = int((strategy_runs["status"] == "passed").sum()) if "status" in strategy_runs.columns else 0
+        failed_count = int((strategy_runs["status"] == "failed").sum()) if "status" in strategy_runs.columns else 0
+        run_count = int(len(strategy_runs))
+
+        rows.append(
+            {
+                "display_name": meta.get("display_name", strategy_name),
+                "strategy_name": strategy_name,
+                "origin": format_strategy_origin(meta),
+                "workflow_stage": workflow_status["stage"],
+                "is_active": strategy_name == active_strategy_name,
+                "run_count": run_count,
+                "passed_runs": passed_count,
+                "failed_runs": failed_count,
+                "pass_rate": _safe_ratio(passed_count, run_count),
+                "best_sharpe": best_run.get("sharpe"),
+                "best_profit_factor": best_run.get("profit_factor"),
+                "lowest_max_drawdown": best_run.get("max_drawdown"),
+                "latest_status": str(latest_run.get("status", "not run")).replace("_", " ").title(),
+                "latest_symbol": latest_run.get("symbol", "—"),
+                "latest_run_id": latest_run.get("id"),
+                "latest_run_at": latest_run.get("created_at"),
+                "best_run_id": best_run.get("id"),
+            }
+        )
+
+    seen_names = set(str(rows_item["strategy_name"]) for rows_item in rows)
+    for name, meta in catalog_lookup.items():
+        if name in seen_names:
+            continue
+        workflow_status = strategy_workflow_status(meta, frame, active_strategy_name)
+        rows.append(
+            {
+                "display_name": meta.get("display_name", name),
+                "strategy_name": name,
+                "origin": format_strategy_origin(meta),
+                "workflow_stage": workflow_status["stage"],
+                "is_active": name == active_strategy_name,
+                "run_count": 0,
+                "passed_runs": 0,
+                "failed_runs": 0,
+                "pass_rate": 0.0,
+                "best_sharpe": None,
+                "best_profit_factor": None,
+                "lowest_max_drawdown": None,
+                "latest_status": "Not Run",
+                "latest_symbol": "—",
+                "latest_run_id": None,
+                "latest_run_at": None,
+                "best_run_id": None,
+            }
+        )
+
+    summary = pd.DataFrame(rows)
+    if summary.empty:
+        return summary
+
+    summary = summary.sort_values(
+        by=["passed_runs", "pass_rate", "best_sharpe", "best_profit_factor", "lowest_max_drawdown", "latest_run_at"],
+        ascending=[False, False, False, False, True, False],
+        na_position="last",
+    ).reset_index(drop=True)
+    summary["rank"] = range(1, len(summary) + 1)
+    return summary
+
+
+def build_backtest_run_leaderboard(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return saved runs sorted for quick evaluation scanning."""
+    if frame.empty:
+        return pd.DataFrame()
+
+    leaderboard = frame.copy()
+    if "created_at" in leaderboard.columns:
+        leaderboard["created_at"] = pd.to_datetime(leaderboard["created_at"], errors="coerce")
+    for column in ["sharpe", "profit_factor", "max_drawdown", "n_trades"]:
+        if column not in leaderboard.columns:
+            leaderboard[column] = pd.NA
+        leaderboard[column] = pd.to_numeric(leaderboard[column], errors="coerce")
+    if "status" in leaderboard.columns:
+        leaderboard["status"] = leaderboard["status"].fillna("").astype(str).str.lower()
+        leaderboard["gate_passed"] = leaderboard["status"] == "passed"
+    else:
+        leaderboard["gate_passed"] = False
+
+    if "failures" in leaderboard.columns:
+        leaderboard["failure_summary"] = leaderboard["failures"].apply(
+            lambda value: "; ".join(value) if isinstance(value, list) else (value or "")
+        )
+    else:
+        leaderboard["failure_summary"] = ""
+
+    leaderboard = leaderboard.sort_values(
+        by=["gate_passed", "sharpe", "profit_factor", "max_drawdown", "n_trades", "created_at"],
+        ascending=[False, False, False, True, False, False],
+        na_position="last",
+    ).reset_index(drop=True)
+    leaderboard["rank"] = range(1, len(leaderboard) + 1)
+    leaderboard["status_label"] = leaderboard["status"].replace({"passed": "Passed", "failed": "Failed"}).fillna("Unknown")
+    return leaderboard
+
+
 def filter_runtime_data(
     frame: pd.DataFrame,
     strategy_name: str,
