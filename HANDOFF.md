@@ -10,48 +10,49 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 22 closed) |
-| **Sprint completed** | Sprint 22 ✅ — Strategy comparison and evaluation UX committed + pushed to GitHub |
-| **Next sprint** | Sprint 23 — Strategy Parameters & Scenario Presets |
+| **Last updated** | 2026-04-18 (Sprint 23 closed) |
+| **Sprint completed** | Sprint 23 ✅ — Strategy parameters and run-scoped scenarios committed + pushed to GitHub |
+| **Next sprint** | Sprint 24 — Named Scenario Presets |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **Local worktree note** | `knowledge/experiment_log.md` is expected to stay dirty while the background runtime process is running; do not edit or stage it unless you intentionally stop that process |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 22 complete; next agent should move from comparison-only UX into parameterized scenario evaluation inside the workbench |
+| **Reason for handoff** | Sprint 23 complete; next agent should promote run-scoped scenarios into reusable named presets without disturbing the current workbench flow |
 
 ---
 
-## Resume Here — Sprint 23: Strategy Parameters & Scenario Presets
+## Resume Here — Sprint 24: Named Scenario Presets
 
-**Sprint 22 complete.** The dashboard can now compare saved strategy candidates and rank saved runs directly inside `Backtest Lab`. 415 tests passing.
+**Sprint 23 complete.** The dashboard can now edit backtest params, persist them with saved runs, and compare parameterized scenarios directly inside `Backtest Lab`. 421 tests passing.
 
-### What was done in Sprint 22
-- `dashboard/workbench.py` — MODIFIED: added pure helper logic for ranking strategy candidates and sorting saved backtest runs into a leaderboard
-- `dashboard/streamlit_app.py` — MODIFIED: added comparison overview cards, a candidate comparison table, a saved-run leaderboard, and focus-strategy ranking context in `Backtest Lab`
-- `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the new comparison surfaces still match the Jesse-like research workflow
-- **415 total passing** (+2 over Sprint 21)
+### What was done in Sprint 23
+- `strategy/base.py`, `strategy/runtime.py` — MODIFIED: added isolated parameter application for backtest strategy instances
+- `backtester/engine.py`, `backtester/service.py` — MODIFIED: backtests now accept params and persist them in saved runs
+- `dashboard/workbench.py`, `dashboard/streamlit_app.py` — MODIFIED: `Backtest Lab` now renders strategy parameter controls and shows scenario-aware comparison/run views
+- **421 total passing** (+6 over Sprint 22)
 
-### Sprint 23 Goal — Strategy Parameters & Scenario Presets
-The workbench can now compare saved runs, but it still treats every backtest as a fixed no-parameter scenario. Add parameter-aware evaluation controls so a user can adjust strategy inputs, save scenario context with the run, and compare parameterized candidates without leaving the dashboard.
+### Sprint 24 Goal — Named Scenario Presets
+Sprint 23 made scenarios run-scoped, but they still vanish into individual backtest records. Add reusable named presets so a user can save a parameter set once, reapply it to future backtests, and compare stable scenario names instead of raw parameter blobs.
 
 ### Scope
-- `dashboard/streamlit_app.py` — surface parameter controls from each strategy’s `param_schema()` / `default_params()` in `Backtest Lab`
-- `backtester/service.py` and related persistence — store selected parameter payloads so saved runs are scenario-aware instead of all looking identical
-- `dashboard/workbench.py` — add pure helpers for formatting or comparing parameterized scenarios where useful
-- keep the tabbed Jesse-like workbench structure intact; parameter entry should feel like part of the same research loop
-- review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` if scenario or parameter UX requires updated rules
+- `dashboard/streamlit_app.py` — add preset save/apply UX on top of the existing parameter controls in `Backtest Lab`
+- persistence layer — introduce a simple store for named presets keyed by strategy
+- `dashboard/workbench.py` — add any pure helpers needed for preset labels and scenario formatting
+- keep the current run-scoped scenario behavior intact; named presets should be additive, not a replacement
+- review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` if preset UX requires explicit workflow guidance
 
 ### Step 1 — Verify baseline
 ```bash
-pytest tests/ -q   # must show 415 passed
+pytest tests/ -q   # must show 421 passed
 ```
 
 ### Step 2 — Sprint close checklist
 - [ ] All CRITICAL and HIGH review findings fixed
-- [ ] `knowledge/sprint_log.md` updated with Sprint 23 entry
+- [ ] `knowledge/agent_resume.md` updated for Sprint 24
+- [ ] `knowledge/sprint_log.md` updated with Sprint 24 entry
 - [ ] `HANDOFF.md` Current State table updated
 - [ ] Committed and pushed to GitHub
-- [ ] GitHub issue created and closed for Sprint 23
+- [ ] GitHub issue created and closed for Sprint 24
 
 ---
 
@@ -82,6 +83,7 @@ pytest tests/ -q   # must show 415 passed
 | Sprint 20 — Manual Agent Strategy Workflow | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 21 — Jesse-Like Workbench Polish | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 22 — Strategy Comparison & Evaluation UX | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 23 — Strategy Parameters & Scenario Presets | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 

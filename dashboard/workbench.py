@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 import pandas as pd
@@ -41,8 +42,8 @@ def compute_drawdown_curve(equity_curve: pd.DataFrame) -> pd.DataFrame:
     return curve[["step", "drawdown"]]
 
 
-def parse_metrics_json(raw: str | None) -> dict[str, Any]:
-    """Parse persisted metrics JSON safely."""
+def _parse_json_dict(raw: str | None) -> dict[str, Any]:
+    """Parse a persisted JSON object safely."""
     if not raw:
         return {}
     try:
@@ -50,6 +51,49 @@ def parse_metrics_json(raw: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def parse_metrics_json(raw: str | None) -> dict[str, Any]:
+    """Parse persisted metrics JSON safely."""
+    return _parse_json_dict(raw)
+
+
+def parse_params_json(raw: str | None) -> dict[str, Any]:
+    """Parse persisted params JSON safely."""
+    return _parse_json_dict(raw)
+
+
+def normalise_params(params: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a stable params dict for persistence and comparison."""
+    if not isinstance(params, dict):
+        return {}
+
+    normalised: dict[str, Any] = {}
+    for key in sorted(params):
+        value = params[key]
+        if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+            normalised[str(key)] = int(value)
+        else:
+            normalised[str(key)] = value
+    return normalised
+
+
+def format_params_summary(params: dict[str, Any] | None, max_items: int = 3) -> str:
+    """Return a compact human-readable summary for a scenario payload."""
+    payload = normalise_params(params)
+    if not payload:
+        return "Default"
+
+    parts = [f"{key}={payload[key]}" for key in payload]
+    if len(parts) <= max_items:
+        return ", ".join(parts)
+    visible = ", ".join(parts[:max_items])
+    return f"{visible}, +{len(parts) - max_items} more"
+
+
+def scenario_key(params: dict[str, Any] | None) -> str:
+    """Return a stable key for grouping runs by parameter scenario."""
+    return json.dumps(normalise_params(params), sort_keys=True)
 
 
 def format_strategy_origin(meta: dict[str, Any] | None) -> str:
@@ -173,7 +217,7 @@ def build_strategy_comparison_frame(
     catalog: list[dict[str, Any]] | None = None,
     active_strategy_name: str = "",
 ) -> pd.DataFrame:
-    """Summarise saved backtests into one comparison row per strategy."""
+    """Summarise saved backtests into one comparison row per strategy scenario."""
     catalog = catalog or []
     catalog_lookup = {str(item.get("name", "")): item for item in catalog if item.get("name")}
 
@@ -181,10 +225,14 @@ def build_strategy_comparison_frame(
         rows = []
         for name, meta in catalog_lookup.items():
             workflow_status = strategy_workflow_status(meta, runs, active_strategy_name)
+            default_params = normalise_params(meta.get("default_params"))
             rows.append(
                 {
                     "display_name": meta.get("display_name", name),
                     "strategy_name": name,
+                    "scenario_key": scenario_key(default_params),
+                    "scenario_label": format_params_summary(default_params),
+                    "scenario_params": default_params,
                     "origin": format_strategy_origin(meta),
                     "workflow_stage": workflow_status["stage"],
                     "is_active": name == active_strategy_name,
@@ -211,13 +259,20 @@ def build_strategy_comparison_frame(
         if column not in frame.columns:
             frame[column] = pd.NA
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    if "params" not in frame.columns:
+        frame["params"] = [{} for _ in range(len(frame))]
+    frame["params"] = frame["params"].apply(
+        lambda value: normalise_params(value) if isinstance(value, dict) else {}
+    )
+    frame["scenario_key"] = frame["params"].apply(scenario_key)
+    frame["scenario_label"] = frame["params"].apply(format_params_summary)
     if "status" in frame.columns:
         frame["status"] = frame["status"].fillna("").astype(str).str.lower()
     else:
         frame["status"] = ""
 
     rows: list[dict[str, Any]] = []
-    for strategy_name, strategy_runs in frame.groupby("strategy_name", dropna=False):
+    for (strategy_name, run_scenario_key), strategy_runs in frame.groupby(["strategy_name", "scenario_key"], dropna=False):
         strategy_name = str(strategy_name or "")
         strategy_runs = strategy_runs.sort_values("created_at", ascending=False, na_position="last").copy()
         meta = catalog_lookup.get(strategy_name, {"name": strategy_name, "display_name": strategy_name})
@@ -236,11 +291,15 @@ def build_strategy_comparison_frame(
         passed_count = int((strategy_runs["status"] == "passed").sum()) if "status" in strategy_runs.columns else 0
         failed_count = int((strategy_runs["status"] == "failed").sum()) if "status" in strategy_runs.columns else 0
         run_count = int(len(strategy_runs))
+        scenario_params = normalise_params(strategy_runs.iloc[0].get("params", {})) if not strategy_runs.empty else {}
 
         rows.append(
             {
                 "display_name": meta.get("display_name", strategy_name),
                 "strategy_name": strategy_name,
+                "scenario_key": run_scenario_key,
+                "scenario_label": format_params_summary(scenario_params),
+                "scenario_params": scenario_params,
                 "origin": format_strategy_origin(meta),
                 "workflow_stage": workflow_status["stage"],
                 "is_active": strategy_name == active_strategy_name,
@@ -259,15 +318,20 @@ def build_strategy_comparison_frame(
             }
         )
 
-    seen_names = set(str(rows_item["strategy_name"]) for rows_item in rows)
+    seen_pairs = {(str(rows_item["strategy_name"]), str(rows_item["scenario_key"])) for rows_item in rows}
     for name, meta in catalog_lookup.items():
-        if name in seen_names:
+        default_params = normalise_params(meta.get("default_params"))
+        default_scenario_key = scenario_key(default_params)
+        if (name, default_scenario_key) in seen_pairs:
             continue
         workflow_status = strategy_workflow_status(meta, frame, active_strategy_name)
         rows.append(
             {
                 "display_name": meta.get("display_name", name),
                 "strategy_name": name,
+                "scenario_key": default_scenario_key,
+                "scenario_label": format_params_summary(default_params),
+                "scenario_params": default_params,
                 "origin": format_strategy_origin(meta),
                 "workflow_stage": workflow_status["stage"],
                 "is_active": name == active_strategy_name,
@@ -311,6 +375,12 @@ def build_backtest_run_leaderboard(frame: pd.DataFrame) -> pd.DataFrame:
         if column not in leaderboard.columns:
             leaderboard[column] = pd.NA
         leaderboard[column] = pd.to_numeric(leaderboard[column], errors="coerce")
+    if "params" not in leaderboard.columns:
+        leaderboard["params"] = [{} for _ in range(len(leaderboard))]
+    leaderboard["params"] = leaderboard["params"].apply(
+        lambda value: normalise_params(value) if isinstance(value, dict) else {}
+    )
+    leaderboard["scenario_label"] = leaderboard["params"].apply(format_params_summary)
     if "status" in leaderboard.columns:
         leaderboard["status"] = leaderboard["status"].fillna("").astype(str).str.lower()
         leaderboard["gate_passed"] = leaderboard["status"] == "passed"

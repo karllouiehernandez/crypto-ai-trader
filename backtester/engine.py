@@ -16,7 +16,7 @@ import logging
 import pandas as pd
 
 from database.models import Candle, SessionLocal
-from strategy.runtime import compute_strategy_decision, get_active_strategy_config
+from strategy.runtime import compute_strategy_decision, get_active_strategy_config, get_strategy_instance
 from strategy.signals import Signal
 from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD, SLIPPAGE_PCT
 
@@ -33,6 +33,7 @@ def run_backtest(
     end: datetime,
     slippage_pct: float = SLIPPAGE_PCT,
     strategy_name: str | None = None,
+    params: dict | None = None,
 ) -> BacktestResult:
     """Back-test `symbol` between *start* and *end* (inclusive).
 
@@ -44,7 +45,10 @@ def run_backtest(
     cash      = STARTING_BALANCE_USD
     position  = 0.0
     trades: list[dict] = []
-    selected_strategy = strategy_name or get_active_strategy_config()["name"]
+    active_config = get_active_strategy_config()
+    selected_strategy = strategy_name or active_config["name"]
+    selected_params = params if params is not None else (active_config.get("params", {}) if strategy_name is None else {})
+    strategy = get_strategy_instance(selected_strategy, selected_params)
 
     with SessionLocal() as sess:
         candles: List[Candle] = (
@@ -62,7 +66,13 @@ def run_backtest(
             raise ValueError("No candles in the requested date range")
 
         for c in candles:
-            decision = compute_strategy_decision(sess, c, strategy_name=selected_strategy)
+            decision = compute_strategy_decision(
+                sess,
+                c,
+                strategy_name=selected_strategy,
+                strategy_params=selected_params,
+                strategy=strategy,
+            )
             sig   = decision.signal
             price = c.close
 

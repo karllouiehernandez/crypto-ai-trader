@@ -10,7 +10,7 @@ import pandas as pd
 from backtester.engine import build_equity_curve, run_backtest
 from backtester.metrics import acceptance_gate, compute_metrics
 from database.models import BacktestRun, BacktestTrade, SessionLocal, init_db
-from dashboard.workbench import parse_metrics_json
+from dashboard.workbench import parse_metrics_json, parse_params_json
 
 
 def run_and_persist_backtest(
@@ -18,10 +18,12 @@ def run_and_persist_backtest(
     start: datetime,
     end: datetime,
     strategy_name: str,
+    params: dict | None = None,
 ) -> dict:
     """Run a backtest, persist the run, and return a dashboard-ready payload."""
     init_db()
-    trades = run_backtest(symbol, start, end, strategy_name=strategy_name)
+    params = parse_params_json(json.dumps(params or {}))
+    trades = run_backtest(symbol, start, end, strategy_name=strategy_name, params=params)
     equity_curve = build_equity_curve(trades)
     metrics = compute_metrics(trades, equity_curve)
     passed, failures = acceptance_gate(metrics)
@@ -37,7 +39,7 @@ def run_and_persist_backtest(
             end_ts=end,
             strategy_name=strategy_name,
             strategy_version=strategy_version,
-            params_json="{}",
+            params_json=json.dumps(params, sort_keys=True),
             metrics_json=json.dumps({**metrics, "passed": passed, "failures": failures}),
             status="passed" if passed else "failed",
         )
@@ -65,6 +67,7 @@ def run_and_persist_backtest(
         "trades": trades,
         "equity_curve": equity_curve,
         "metrics": metrics,
+        "params": params,
         "passed": passed,
         "failures": failures,
     }
@@ -90,6 +93,7 @@ def list_backtest_runs(limit: int = 100) -> pd.DataFrame:
             "strategy_name": row.strategy_name,
             "strategy_version": row.strategy_version,
             "status": row.status,
+            "params": parse_params_json(row.params_json),
             **parse_metrics_json(row.metrics_json),
         }
         for row in rows
@@ -113,6 +117,7 @@ def get_backtest_run(run_id: int) -> dict | None:
         "strategy_name": row.strategy_name,
         "strategy_version": row.strategy_version,
         "status": row.status,
+        "params": parse_params_json(row.params_json),
         **parse_metrics_json(row.metrics_json),
     }
 

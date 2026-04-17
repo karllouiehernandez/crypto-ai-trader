@@ -41,6 +41,10 @@ class StrategyBase(ABC):
     version: str = "0.1.0"
     regimes: list = []  # empty = active in all regimes
 
+    def __init__(self, params: dict | None = None):
+        self.params: dict = {}
+        self.apply_params(params)
+
     @abstractmethod
     def should_long(self, df: pd.DataFrame) -> bool:
         """Return True to emit a BUY signal on the current candle."""
@@ -85,6 +89,14 @@ class StrategyBase(ABC):
             return Signal.HOLD
 
         return self.decide(df, regime)
+
+    def apply_params(self, params: dict | None = None) -> dict:
+        """Merge explicit params over defaults for one strategy instance."""
+        merged = dict(self.default_params())
+        if isinstance(params, dict):
+            merged.update({key: value for key, value in params.items()})
+        self.params = merged
+        return self.params
 
     def default_params(self) -> dict:
         """Return default parameter values for UI forms and persisted settings."""

@@ -33,8 +33,10 @@ from dashboard.workbench import (
     compute_trade_equity_curve,
     filter_backtest_runs,
     filter_runtime_data,
+    format_params_summary,
     format_strategy_origin,
     list_runtime_strategies,
+    normalise_params,
     runtime_mode_table,
     strategy_workflow_status,
     runtime_summary,
@@ -171,6 +173,72 @@ def load_backtest_trades(run_id: int) -> pd.DataFrame:
 @st.cache_data(ttl=10)
 def load_backtest_run(run_id: int) -> dict | None:
     return get_backtest_run(run_id)
+
+
+def render_strategy_param_control(strategy_name: str, field: dict, defaults: dict) -> object:
+    """Render one parameter control for the selected strategy."""
+    name = str(field.get("name", "")).strip()
+    if not name:
+        return None
+
+    label = str(field.get("label") or name.replace("_", " ").title())
+    help_text = field.get("help")
+    key = f"bt_param_{strategy_name}_{name}"
+    field_type = str(field.get("type", "text")).lower()
+    default_value = defaults.get(name)
+
+    if key not in st.session_state:
+        st.session_state[key] = default_value
+
+    if field_type == "bool":
+        if st.session_state[key] is None:
+            st.session_state[key] = False
+        return st.checkbox(label, key=key, help=help_text)
+
+    if field_type == "int":
+        if st.session_state[key] is None:
+            st.session_state[key] = int(default_value or 0)
+        input_kwargs = {
+            "label": label,
+            "step": int(field.get("step", 1) or 1),
+            "key": key,
+            "help": help_text,
+        }
+        if field.get("min") is not None:
+            input_kwargs["min_value"] = int(field["min"])
+        if field.get("max") is not None:
+            input_kwargs["max_value"] = int(field["max"])
+        return int(st.number_input(**input_kwargs))
+
+    if field_type == "float":
+        if st.session_state[key] is None:
+            st.session_state[key] = float(default_value or 0.0)
+        input_kwargs = {
+            "label": label,
+            "step": float(field.get("step", 0.1) or 0.1),
+            "key": key,
+            "help": help_text,
+            "format": "%.4f",
+        }
+        if field.get("min") is not None:
+            input_kwargs["min_value"] = float(field["min"])
+        if field.get("max") is not None:
+            input_kwargs["max_value"] = float(field["max"])
+        return float(st.number_input(**input_kwargs))
+
+    if field_type == "select":
+        options = list(field.get("options") or [])
+        if not options:
+            if st.session_state[key] is None:
+                st.session_state[key] = str(default_value or "")
+            return st.text_input(label, key=key, help=help_text)
+        if st.session_state[key] not in options:
+            st.session_state[key] = default_value if default_value in options else options[0]
+        return st.selectbox(label, options, key=key, help=help_text)
+
+    if st.session_state[key] is None:
+        st.session_state[key] = "" if default_value is None else str(default_value)
+    return st.text_input(label, key=key, help=help_text)
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -429,20 +497,39 @@ with strategy_tab:
 
 with backtest_tab:
     st.markdown("### Backtest Lab")
-    with st.form("backtest_lab_form", clear_on_submit=False):
-        bt_symbol = st.selectbox("Symbol", SYMBOLS, index=SYMBOLS.index(symbol), key="bt_symbol")
-        bt_strategy = st.selectbox(
-            "Strategy",
-            strategy_names,
-            index=default_strategy_index,
-            key="bt_strategy",
-        )
-        date_cols = st.columns(2)
-        bt_start = date_cols[0].date_input("Start", value=datetime.utcnow().date() - timedelta(days=30))
-        bt_end = date_cols[1].date_input("End", value=datetime.utcnow().date())
-        run_backtest_now = st.form_submit_button("Run Backtest", type="primary", use_container_width=True)
-
+    selector_cols = st.columns(2)
+    bt_symbol = selector_cols[0].selectbox("Symbol", SYMBOLS, index=SYMBOLS.index(symbol), key="bt_symbol")
+    bt_strategy = selector_cols[1].selectbox(
+        "Strategy",
+        strategy_names,
+        index=default_strategy_index,
+        key="bt_strategy",
+    )
     selected_bt_meta = strategy_lookup.get(bt_strategy)
+    bt_default_params = normalise_params(selected_bt_meta.get("default_params", {}) if selected_bt_meta else {})
+    bt_param_schema = list(selected_bt_meta.get("param_schema", []) if selected_bt_meta else [])
+    bt_params = dict(bt_default_params)
+
+    if bt_param_schema:
+        st.markdown("#### Scenario Parameters")
+        st.caption("Backtest-only in Sprint 23. These values are saved with the run and used in comparison views.")
+        param_cols = st.columns(2)
+        for idx, field in enumerate(bt_param_schema):
+            with param_cols[idx % 2]:
+                field_name = str(field.get("name", "")).strip()
+                if not field_name:
+                    continue
+                bt_params[field_name] = render_strategy_param_control(bt_strategy, field, bt_default_params)
+
+    date_cols = st.columns(2)
+    bt_start = date_cols[0].date_input("Start", value=datetime.utcnow().date() - timedelta(days=30))
+    bt_end = date_cols[1].date_input("End", value=datetime.utcnow().date())
+    current_scenario_label = format_params_summary(bt_params)
+    st.caption(f"Scenario: **{current_scenario_label}**")
+    if bt_params:
+        st.json(bt_params, expanded=False)
+    run_backtest_now = st.button("Run Backtest", type="primary", use_container_width=True)
+
     if selected_bt_meta:
         bt_workflow_status = strategy_workflow_status(selected_bt_meta, all_backtest_runs, active_strategy["name"])
         st.caption(
@@ -462,9 +549,11 @@ with backtest_tab:
                 datetime.combine(bt_start, datetime.min.time()),
                 datetime.combine(bt_end, datetime.min.time()),
                 bt_strategy,
+                params=bt_params,
             )
         st.session_state["selected_backtest_run_id"] = result["run_id"]
         load_backtest_runs.clear()
+        load_backtest_run.clear()
         load_backtest_trades.clear()
         st.success(f"Backtest run #{result['run_id']} saved.")
 
@@ -477,14 +566,17 @@ with backtest_tab:
 
     if not comparison_df.empty:
         comparison_cols = st.columns(4)
-        comparison_cols[0].metric("Compared Strategies", str(int(len(evaluated_strategies))))
+        comparison_cols[0].metric("Compared Scenarios", str(int(len(evaluated_strategies))))
         comparison_cols[1].metric(
             "Passing Candidates",
             str(int((comparison_df["passed_runs"].fillna(0) > 0).sum())),
         )
         comparison_cols[2].metric(
             "Current Leader",
-            leading_strategy_row.iloc[0]["display_name"] if not leading_strategy_row.empty else "—",
+            (
+                f"{leading_strategy_row.iloc[0]['display_name']} · {leading_strategy_row.iloc[0]['scenario_label']}"
+                if not leading_strategy_row.empty else "—"
+            ),
         )
         comparison_cols[3].metric(
             "Focus Rank",
@@ -501,8 +593,8 @@ with backtest_tab:
             f"{float(focus_summary['best_sharpe']):.2f}" if pd.notna(focus_summary["best_sharpe"]) else "—",
         )
         focus_cols[3].metric(
-            "Best Run",
-            f"#{int(focus_summary['best_run_id'])}" if pd.notna(focus_summary["best_run_id"]) else "—",
+            "Best Scenario",
+            str(focus_summary["scenario_label"]),
         )
         st.caption(
             f"`{bt_strategy}` is ranked #{int(focus_summary['rank'])} in saved evaluations. "
@@ -536,6 +628,7 @@ with backtest_tab:
                     "rank",
                     "display_name",
                     "strategy_name",
+                    "scenario_label",
                     "origin",
                     "workflow_stage",
                     "is_active",
@@ -582,6 +675,7 @@ with backtest_tab:
                     "rank",
                     "id",
                     "status_label",
+                    "scenario_label",
                     "symbol",
                     "start_ts",
                     "end_ts",
@@ -606,6 +700,7 @@ with backtest_tab:
             format_func=lambda run_id: (
                 f"#{run_id} · "
                 f"{leaderboard_df.loc[leaderboard_df['id'] == run_id, 'strategy_name'].iloc[0]} · "
+                f"{leaderboard_df.loc[leaderboard_df['id'] == run_id, 'scenario_label'].iloc[0]} · "
                 f"{leaderboard_df.loc[leaderboard_df['id'] == run_id, 'symbol'].iloc[0]} · "
                 f"{leaderboard_df.loc[leaderboard_df['id'] == run_id, 'status_label'].iloc[0]}"
             ),
@@ -623,6 +718,9 @@ with backtest_tab:
         metric_cols[3].metric("Max DD", f"{float(selected_run.get('max_drawdown', 0.0)):.1%}")
         metric_cols[4].metric("PF", f"{float(selected_run.get('profit_factor', 0.0)):.2f}")
         metric_cols[5].metric("Trades", f"{int(selected_run.get('n_trades', 0))}")
+        st.caption(f"Scenario: **{format_params_summary(selected_run.get('params'))}**")
+        if selected_run.get("params"):
+            st.json(selected_run["params"], expanded=False)
 
         if selected_run.get("failures"):
             failures = selected_run["failures"]

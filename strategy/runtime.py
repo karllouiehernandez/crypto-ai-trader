@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from dataclasses import dataclass
@@ -54,6 +55,17 @@ def get_strategy(name: str) -> Optional[StrategyBase]:
 
     load_all()
     return get_plugin_strategy(name)
+
+
+def get_strategy_instance(name: str, params: Optional[dict] = None) -> Optional[StrategyBase]:
+    """Return an isolated strategy instance with explicit params applied."""
+    prototype = get_strategy(name)
+    if prototype is None:
+        return None
+
+    strategy = copy.deepcopy(prototype)
+    strategy.apply_params(params)
+    return strategy
 
 
 def list_available_strategies() -> list[dict]:
@@ -170,10 +182,15 @@ def compute_strategy_decision(
     session: Session,
     candle: Candle,
     strategy_name: Optional[str] = None,
+    strategy_params: Optional[dict] = None,
+    strategy: StrategyBase | None = None,
 ) -> StrategyDecision:
     """Resolve a strategy and compute the current signal for the given candle."""
-    config = get_active_strategy_config() if strategy_name is None else {"name": strategy_name}
-    strategy = get_strategy(config["name"]) or get_strategy(DEFAULT_STRATEGY_NAME)
+    if strategy is None:
+        config = get_active_strategy_config() if strategy_name is None else {"name": strategy_name, "params": strategy_params or {}}
+        strategy = get_strategy_instance(config["name"], params=config.get("params"))
+        if strategy is None:
+            strategy = get_strategy_instance(DEFAULT_STRATEGY_NAME)
     if strategy is None:
         return StrategyDecision(
             signal=Signal.HOLD,

@@ -272,6 +272,37 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
+## Sprint 23 — Strategy Parameters & Scenario Presets
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Codex
+**Goal:** Make `Backtest Lab` parameter-aware so saved runs capture scenario inputs and comparison views can evaluate strategy scenarios instead of only fixed strategy names.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `strategy/base.py`, `strategy/runtime.py` — MODIFIED: added per-instance parameter application and isolated strategy instantiation so backtests can run with explicit params without mutating the globally loaded plugin/built-in instances
+- [x] `strategy/builtin.py` — MODIFIED: added real parameter metadata and parameterized decision logic for `mean_reversion_v1` so the new dashboard controls exercise a concrete built-in strategy
+- [x] `backtester/engine.py`, `backtester/service.py` — MODIFIED: backtests now accept explicit params, persist them in `BacktestRun.params_json`, and reload them as parsed dicts for dashboard use
+- [x] `dashboard/workbench.py` — MODIFIED: added safe params parsing, compact scenario labels, and scenario-aware grouping for candidate comparison and saved-run leaderboard helpers
+- [x] `dashboard/streamlit_app.py` — MODIFIED: replaced the fixed backtest form with strategy-aware parameter controls, showed current scenario context in `Backtest Lab`, and surfaced scenario labels/params in comparison tables and run inspection
+- [x] `.codex/skills/jesse-workbench-ui-ux/SKILL.md` — REVIEWED: confirmed the parameter-entry flow still fits the Jesse-like research loop; no rule changes required
+- [x] `tests/test_builtin_strategies.py`, `tests/test_backtester_service.py`, `tests/test_workbench_helpers.py` — MODIFIED: added coverage for parameter overrides, persisted params payloads, and scenario-aware comparison formatting
+
+### Test Results
+- Before: 415 tests passing
+- After: **421 tests passing** (+6 new) — 0 failures
+- Additional validation: `python -m py_compile strategy/base.py strategy/builtin.py strategy/runtime.py backtester/engine.py backtester/service.py dashboard/workbench.py dashboard/streamlit_app.py`
+
+### Key Technical Decisions
+1. **Sprint 23 stays run-scoped:** params are editable and persisted for backtests, but there is still no named preset library and no paper/live parameter editing path yet.
+2. **Backtests use isolated strategy instances:** runtime cloning avoids mutating the shared loader registry while still letting one run execute with a specific scenario payload.
+3. **Scenario identity is visible everywhere in the lab:** saved-run ranking and candidate comparison now treat `strategy + params` as the unit of evaluation, not just the strategy name.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full suite passes at 421/421. Approved to close: YES
+
+---
+
 ## Sprint 13 — Dashboard Promotion Panel + Live Trade Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

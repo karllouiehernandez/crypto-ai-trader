@@ -10,9 +10,9 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 23 — Strategy Parameters & Scenario Presets`
+- Sprint: `Sprint 24 — Named Scenario Presets`
 - Status: ready to start
-- Baseline: `pytest tests/ -q` must show `415 passed`
+- Baseline: `pytest tests/ -q` must show `421 passed`
 
 ## Why This Exists
 
@@ -25,17 +25,22 @@ Read order for a new agent:
   - strategy candidate comparison table
   - saved-run leaderboard
   - run ranking helpers in `dashboard/workbench.py`
+- Run-scoped scenarios are now in place from Sprint 23:
+  - backtest parameter controls in `Backtest Lab`
+  - params persisted with each saved run
+  - comparison views treat `strategy + params` as the evaluation unit
 - Runtime monitoring is already strategy-aware and mode-aware
 
 ## Immediate Goal
 
-Make backtests parameter-aware so the dashboard can evaluate scenarios, not just fixed strategy names.
+Add reusable named presets on top of the run-scoped scenario system so backtests can reapply saved parameter sets without manual re-entry.
 
 ## Files Most Likely Needed First
 
 - `dashboard/streamlit_app.py`
 - `dashboard/workbench.py`
 - `backtester/service.py`
+- `database/models.py`
 - `strategy/base.py`
 - `strategy/runtime.py`
 - `HANDOFF.md`
@@ -49,16 +54,18 @@ Make backtests parameter-aware so the dashboard can evaluate scenarios, not just
 
 ## Sprint 23 Working Target
 
-- surface strategy parameter controls in `Backtest Lab`
-- persist chosen parameter payloads with each saved backtest run
-- make saved runs and comparisons scenario-aware
-- keep paper/live activation behavior unchanged unless explicitly required
+Sprint 23 closed. The next sprint should:
+
+- add named presets keyed by strategy
+- let the dashboard save and reapply a preset in `Backtest Lab`
+- keep run-scoped params and saved-run comparisons working as they do now
+- keep paper/live parameter behavior unchanged unless explicitly expanded
 
 ## Last Verified State
 
-- Tests: `415 passed, 1 warning`
-- Last sprint closed: `Sprint 22`
-- Last pushed commit at handoff creation: `fa3c8ba`
+- Tests: `421 passed, 1 warning`
+- Last sprint closed: `Sprint 23`
+- Latest closed sprint artifacts are in the repo; use `git log --oneline -n 3` if you need the exact commit IDs without reopening the full sprint archive
 
 ## Token-Saving Rule
 

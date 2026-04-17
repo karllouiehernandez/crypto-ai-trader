@@ -13,9 +13,11 @@ from dashboard.workbench import (
     compute_trade_equity_curve,
     filter_backtest_runs,
     filter_runtime_data,
+    format_params_summary,
     format_strategy_origin,
     list_runtime_strategies,
     parse_metrics_json,
+    parse_params_json,
     runtime_mode_table,
     strategy_workflow_status,
     runtime_summary,
@@ -48,6 +50,16 @@ def test_compute_drawdown_curve_tracks_peak_to_trough():
 def test_parse_metrics_json_bad_input_returns_empty():
     assert parse_metrics_json("{not-json}") == {}
     assert parse_metrics_json(None) == {}
+
+
+def test_parse_params_json_bad_input_returns_empty():
+    assert parse_params_json("{not-json}") == {}
+    assert parse_params_json(None) == {}
+
+
+def test_format_params_summary_formats_default_and_values():
+    assert format_params_summary({}) == "Default"
+    assert "threshold=10" in format_params_summary({"threshold": 10, "enabled": True})
 
 
 def test_format_strategy_origin_distinguishes_generated_plugins():
@@ -119,6 +131,7 @@ def test_build_strategy_comparison_frame_ranks_reviewed_candidate_first():
                 "strategy_name": "candidate_a",
                 "symbol": "BTCUSDT",
                 "status": "passed",
+                "params": {"rsi_buy_threshold": 30},
                 "sharpe": 2.4,
                 "profit_factor": 1.9,
                 "max_drawdown": 0.11,
@@ -130,6 +143,7 @@ def test_build_strategy_comparison_frame_ranks_reviewed_candidate_first():
                 "strategy_name": "candidate_b",
                 "symbol": "BTCUSDT",
                 "status": "failed",
+                "params": {"rsi_buy_threshold": 35},
                 "sharpe": 0.8,
                 "profit_factor": 1.2,
                 "max_drawdown": 0.28,
@@ -147,6 +161,7 @@ def test_build_strategy_comparison_frame_ranks_reviewed_candidate_first():
 
     assert frame.iloc[0]["strategy_name"] == "candidate_a"
     assert frame.iloc[0]["rank"] == 1
+    assert "rsi_buy_threshold=30" in frame.iloc[0]["scenario_label"]
     assert frame.loc[frame["strategy_name"] == "candidate_b", "is_active"].iloc[0]
     assert frame.loc[frame["strategy_name"] == "candidate_c", "latest_status"].iloc[0] == "Not Run"
 
@@ -160,6 +175,7 @@ def test_build_backtest_run_leaderboard_prioritizes_passed_runs():
                 "strategy_name": "candidate_a",
                 "symbol": "BTCUSDT",
                 "status": "failed",
+                "params": {"rsi_buy_threshold": 34},
                 "sharpe": 3.0,
                 "profit_factor": 2.0,
                 "max_drawdown": 0.09,
@@ -172,6 +188,7 @@ def test_build_backtest_run_leaderboard_prioritizes_passed_runs():
                 "strategy_name": "candidate_a",
                 "symbol": "BTCUSDT",
                 "status": "passed",
+                "params": {"rsi_buy_threshold": 28},
                 "sharpe": 2.0,
                 "profit_factor": 1.8,
                 "max_drawdown": 0.12,
@@ -186,6 +203,7 @@ def test_build_backtest_run_leaderboard_prioritizes_passed_runs():
     assert leaderboard.iloc[0]["id"] == 22
     assert leaderboard.iloc[0]["rank"] == 1
     assert leaderboard.iloc[0]["status_label"] == "Passed"
+    assert "rsi_buy_threshold=28" in leaderboard.iloc[0]["scenario_label"]
     assert "Sharpe" in leaderboard.iloc[1]["failure_summary"]
 
 

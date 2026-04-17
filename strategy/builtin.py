@@ -45,11 +45,69 @@ class MeanReversionStrategy(StrategyBase):
     version = "1.0.0"
     regimes = [Regime.RANGING]
 
+    def default_params(self) -> dict:
+        return {
+            "rsi_buy_threshold": 35,
+            "rsi_sell_threshold": 70,
+            "volume_confirmation_mult": VOLUME_CONFIRMATION_MULT,
+        }
+
+    def param_schema(self) -> list[dict]:
+        return [
+            {
+                "name": "rsi_buy_threshold",
+                "label": "RSI Buy Threshold",
+                "type": "int",
+                "min": 5,
+                "max": 50,
+                "step": 1,
+                "help": "Oversold threshold used to trigger long mean-reversion entries.",
+            },
+            {
+                "name": "rsi_sell_threshold",
+                "label": "RSI Sell Threshold",
+                "type": "int",
+                "min": 50,
+                "max": 95,
+                "step": 1,
+                "help": "Overbought threshold used to trigger short mean-reversion entries.",
+            },
+            {
+                "name": "volume_confirmation_mult",
+                "label": "Volume Confirmation Multiplier",
+                "type": "float",
+                "min": 0.5,
+                "max": 5.0,
+                "step": 0.1,
+                "help": "Minimum multiple of volume MA required before a signal is valid.",
+            },
+        ]
+
     def should_long(self, df: pd.DataFrame) -> bool:
-        return mean_reversion_signal(df) == Signal.BUY
+        if len(df) < 2:
+            return False
+        last, prev = df.iloc[-1], df.iloc[-2]
+        return bool(
+            last.rsi_14 < float(self.params.get("rsi_buy_threshold", 35))
+            and last.close < last.bb_lo
+            and last.macd > last.macd_s
+            and prev.macd <= prev.macd_s
+            and last.close > last.ema_200
+            and last.volume >= float(self.params.get("volume_confirmation_mult", VOLUME_CONFIRMATION_MULT)) * last.volume_ma_20
+        )
 
     def should_short(self, df: pd.DataFrame) -> bool:
-        return mean_reversion_signal(df) == Signal.SELL
+        if len(df) < 2:
+            return False
+        last, prev = df.iloc[-1], df.iloc[-2]
+        return bool(
+            last.rsi_14 > float(self.params.get("rsi_sell_threshold", 70))
+            and last.close > last.bb_hi
+            and last.macd < last.macd_s
+            and prev.macd >= prev.macd_s
+            and last.close < last.ema_200
+            and last.volume >= float(self.params.get("volume_confirmation_mult", VOLUME_CONFIRMATION_MULT)) * last.volume_ma_20
+        )
 
 
 class MomentumStrategy(StrategyBase):

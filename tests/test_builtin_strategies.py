@@ -60,6 +60,29 @@ def test_builtin_strategy_meta_has_display_name_and_description():
     assert "description" in meta
 
 
+def test_mean_reversion_strategy_exposes_param_schema():
+    strategy = MeanReversionStrategy()
+    assert strategy.default_params()["rsi_buy_threshold"] == 35
+    assert any(field["name"] == "rsi_buy_threshold" for field in strategy.param_schema())
+
+
+def test_mean_reversion_strategy_params_override_buy_threshold():
+    df = _base_df()
+    df.iloc[-1, df.columns.get_loc("rsi_14")] = 40.0
+    df.iloc[-1, df.columns.get_loc("close")] = 90.0
+    df.iloc[-1, df.columns.get_loc("bb_lo")] = 95.0
+    df.iloc[-1, df.columns.get_loc("macd")] = 1.0
+    df.iloc[-1, df.columns.get_loc("macd_s")] = 0.5
+    df.iloc[-2, df.columns.get_loc("macd")] = 0.1
+    df.iloc[-2, df.columns.get_loc("macd_s")] = 0.5
+    df.iloc[-1, df.columns.get_loc("ema_200")] = 80.0
+    df.iloc[-1, df.columns.get_loc("volume")] = 800.0
+    df.iloc[-1, df.columns.get_loc("volume_ma_20")] = 500.0
+
+    assert MeanReversionStrategy().evaluate(df, regime=Regime.RANGING) == Signal.HOLD
+    assert MeanReversionStrategy(params={"rsi_buy_threshold": 45}).evaluate(df, regime=Regime.RANGING) == Signal.BUY
+
+
 def test_regime_router_routes_trending_to_momentum_logic():
     df = _base_df()
     df.iloc[-1, df.columns.get_loc("ema_9")] = 105.0
