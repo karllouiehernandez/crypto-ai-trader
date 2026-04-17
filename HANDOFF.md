@@ -16,7 +16,7 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 12 complete |
+| **Reason for handoff** | Sprint 13 complete |
 
 ---
 
@@ -33,19 +33,123 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 - **371 total passing** (+16 from Sprint 13)
 
 ### Sprint 14 Goal — Live Trade Execution Gate
-Wire `LIVE_TRADE_ENABLED` from config into `PaperTrader` so that when it is True and the promotion gate has passed, the bot submits real Binance orders instead of simulated ones.
+Wire `LIVE_TRADE_ENABLED` from `config.py` into `PaperTrader` so that when it is `True`, the bot calls the real Binance `create_order` API instead of simulating fills internally. When `False` (default), nothing changes — paper trading continues as before.
 
-Suggested scope:
-- `simulator/paper_trader.py` — check `LIVE_TRADE_ENABLED` before order submission; if True, call real Binance `create_order`; if False, continue mock path
-- `config.py` — no changes needed (flag already exists)
-- `run_live.py` — log a prominent startup warning when `LIVE_TRADE_ENABLED=true`
-- `utils/telegram_utils.py` — send startup alert when real trading is enabled
-- `tests/test_live_trade_gate.py` — unit tests for gate logic: real order path, paper path, gate not passed → stays paper
+---
+
+### Exact changes required
+
+#### 1. `simulator/paper_trader.py`
+
+**Import change** — add `LIVE_TRADE_ENABLED` to the existing config import on line 12:
+```python
+from config import (
+    SYMBOLS, POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD,
+    DAILY_LOSS_LIMIT_PCT, DRAWDOWN_HALT_PCT, LLM_ENABLED,
+    LIVE_TRADE_ENABLED,                          # ← add this
+)
+```
+
+**Add a Binance client attribute** — in `PaperTrader.__init__` (around line 24), add:
+```python
+self._binance_client = None   # set by run_live.py when LIVE_TRADE_ENABLED=True
+```
+
+**Add `_submit_order` helper** — new private method after `_compute_atr`:
+```python
+async def _submit_order(self, sym: str, side: str, qty: float) -> None:
+    """Submit real Binance order when LIVE_TRADE_ENABLED, else no-op (fill already applied)."""
+    if not LIVE_TRADE_ENABLED:
+        return
+    if self._binance_client is None:
+        log.error("LIVE_TRADE_ENABLED=True but _binance_client not set — skipping real order")
+        return
+    try:
+        await self._binance_client.create_order(
+            symbol=sym,
+            side=side,       # "BUY" or "SELL"
+            type="MARKET",
+            quantity=round(qty, 6),
+        )
+        log.info("LIVE ORDER submitted", extra={"symbol": sym, "side": side, "qty": qty})
+    except Exception as exc:
+        log.error("LIVE ORDER failed: %s", exc, extra={"symbol": sym, "side": side})
+```
+
+**Call `_submit_order` from `_auto_buy`** — after the internal fill is applied (after `self.positions[sym] = ...` around line 171), add:
+```python
+await self._submit_order(sym, "BUY", qty)
+```
+
+**Call `_submit_order` from `_auto_sell`** — after `self.cash += proceeds` (around line 188), add:
+```python
+await self._submit_order(sym, "SELL", qty)
+```
+
+---
+
+#### 2. `run_live.py`
+
+When building the `PaperTrader`, pass it the Binance async client when live trading is enabled. Find where `PaperTrader()` is instantiated and add:
+
+```python
+from config import LIVE_TRADE_ENABLED
+
+trader = PaperTrader()
+if LIVE_TRADE_ENABLED:
+    trader._binance_client = client   # `client` is the AsyncClient already created in boot()
+    log.warning("=" * 60)
+    log.warning("⚡  LIVE TRADING ENABLED — real orders will be submitted")
+    log.warning("=" * 60)
+    send_telegram_alert(_token(), _chat_id(),
+        "⚡ *LIVE TRADING ENABLED*\nBot is now submitting real Binance orders.")
+```
+
+---
+
+#### 3. `tests/test_live_trade_gate.py` — NEW file
+
+Write at minimum these test cases (use `unittest.mock.AsyncMock` for the Binance client):
+
+```python
+# test_live_gate_paper_path:
+#   LIVE_TRADE_ENABLED=False → _submit_order returns without calling binance_client
+#
+# test_live_gate_real_buy:
+#   LIVE_TRADE_ENABLED=True, _binance_client set →
+#   _auto_buy calls _binance_client.create_order with side="BUY"
+#
+# test_live_gate_real_sell:
+#   LIVE_TRADE_ENABLED=True, _binance_client set →
+#   _auto_sell calls _binance_client.create_order with side="SELL"
+#
+# test_live_gate_no_client_logs_error:
+#   LIVE_TRADE_ENABLED=True, _binance_client=None →
+#   _submit_order logs error, does NOT raise
+#
+# test_live_gate_binance_exception_does_not_crash_trader:
+#   LIVE_TRADE_ENABLED=True, create_order raises Exception →
+#   _submit_order logs error, does NOT propagate exception
+```
+
+---
 
 ### Step 1 — Verify baseline
 ```bash
 pytest tests/ -q   # must show 371 passed
 ```
+
+### Step 2 — After implementing, run full suite
+```bash
+pytest tests/ -q   # expect 371 + new tests passing
+```
+
+### Step 3 — Sprint close checklist
+- [ ] All CRITICAL and HIGH review findings fixed
+- [ ] `knowledge/sprint_log.md` updated with Sprint 14 entry
+- [ ] `HANDOFF.md` Current State table updated
+- [ ] Committed and pushed to GitHub (`git push`)
+- [ ] GitHub issue created and closed for Sprint 14
 
 ## Resume Here — Sprint 10: LLM Core Layer
 
