@@ -5,6 +5,38 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 12 — Live Promotion Coordinator
+**Date started:** 2026-04-17
+**Date closed:** 2026-04-17
+**Agent:** Claude Code
+**Goal:** Wire SelfLearner into run_live.py as a background asyncio task; add Coordinator that watches confidence gate, writes DB record, and sends Telegram alert on promotion.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `database/models.py` — MODIFIED: added `Promotion` table (id, ts, eval_number, consecutive_promotes, sharpe, max_dd, profit_factor, confidence_score, recommendation); auto-created on `init_db()`
+- [x] `simulator/coordinator.py` — NEW: `Coordinator` class; `run_loop()` starts SelfLearner via `asyncio.create_task()` (reference stored in `_learner_task`); polls gate every `check_interval_s` seconds via `run_in_executor` to keep blocking calls off the event loop; `_check_gate()` fires exactly once when `confidence_gate_passed()` returns True; cancels learner task on shutdown; `_promoted` flag prevents duplicate promotions
+- [x] `run_live.py` — MODIFIED: imports `SelfLearner` + `Coordinator`; creates both in `boot()`; sets `trader._coordinator = coordinator`; adds `coordinator.run_loop()` to `asyncio.gather()`
+- [x] `tests/test_coordinator.py` — NEW: 21 unit tests covering init, `_check_gate` (gate not passed / passes / no duplicate), `_record_promotion` (DB write, correct recommendation, survives errors), `_write_promotion_entry` (creates file, appends, survives OS error), `_send_promotion_alert` (called, message content, survives missing metrics), `run_loop` (starts learner when LLM enabled, skips when disabled, cancels cleanly, stores task ref, cancels learner on shutdown)
+
+### Test Results
+- Before: 334 tests passing
+- After: **355 tests passing** (+21 new) — 0 failures
+
+### Key Technical Decisions
+1. **`run_in_executor` for `_check_gate`**: `_record_promotion` (SQLAlchemy sync), `_write_promotion_entry` (file I/O), and `_send_promotion_alert` (`requests.post` with 10s timeout) are all blocking. Wrapping `_check_gate()` in `loop.run_in_executor(None, ...)` offloads the entire promotion sequence to a thread pool, keeping the event loop free for `live_stream()` and `trader.run()`.
+2. **Stored task reference**: `asyncio.create_task()` result stored in `self._learner_task` to prevent GC of the SelfLearner coroutine mid-run; also enables clean cancellation when the Coordinator is shut down.
+3. **One-shot promotion**: `_promoted` flag set before any side effects in `_check_gate()` so no duplicate DB records or Telegram alerts fire even if the gate remains True across multiple polling intervals.
+
+### Code Review Outcome
+**Pass 1 result:** APPROVED AFTER FIXES
+- HIGH-1: Blocking calls (DB, file, Telegram) in async `run_loop` — **fixed** (`_check_gate` wrapped in `run_in_executor`)
+- HIGH-2: `create_task` result discarded — **fixed** (stored as `_learner_task`; cancelled on `CancelledError`)
+- MEDIUM-3: `_promoted` guard only in `run_loop`, not in `_check_gate` itself — **fixed** (guard added at top of `_check_gate`)
+- MEDIUM-5: sprint_log.md not updated — **fixed** (this entry)
+- LOWs: accepted as non-blocking
+
+---
+
 ## Sprint 10 — LLM Core Layer (Multi-Provider)
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17

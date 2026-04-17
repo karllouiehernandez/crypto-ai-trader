@@ -9,45 +9,41 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | GitHub Copilot |
-| **Last updated** | 2026-04-17 (Sprint 11 closed) |
-| **Sprint completed** | Sprint 11 ✅ — committed + pushed to GitHub |
-| **Next sprint** | Sprint 12 — Live Promotion Coordinator |
+| **Last active agent** | Claude Code |
+| **Last updated** | 2026-04-17 (Sprint 12 closed) |
+| **Sprint completed** | Sprint 12 ✅ — committed + pushed to GitHub |
+| **Next sprint** | Sprint 13 — Dashboard Promotion Panel + Live Trade Gate |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 11 complete |
+| **Reason for handoff** | Sprint 12 complete |
 
 ---
 
-## Resume Here — Sprint 12: Live Promotion Coordinator
+## Resume Here — Sprint 13: Dashboard Promotion Panel + Live Trade Gate
 
-**Sprint 11 complete.** Self-learning loop is live. 334 tests passing.
+**Sprint 12 complete.** Live Promotion Coordinator is wired. 355 tests passing.
 
-### What was done in Sprint 11
-- `llm/confidence_gate.py` — five-gate evaluator (Sharpe, max DD, profit factor, LLM confidence, trailing trend); returns `GateResult` dataclass
-- `llm/self_learner.py` — `SelfLearner` class: `run_loop()` async task, `evaluate()` cycle, `confidence_gate_passed()`, `_write_kb_entry()`; pure metric helpers `_metrics_from_pnls`, `_zero_metrics`
-- `simulator/paper_trader.py` — added `_coordinator`, `_last_regime`; fires `_fire_critique` via `asyncio.create_task()` after every SELL when `LLM_ENABLED=True`; module-level `_fire_critique` coroutine (never raises)
-- 39 new tests → **334 total passing**
+### What was done in Sprint 12
+- `database/models.py` — added `Promotion` table (eval_number, consecutive_promotes, sharpe, max_dd, profit_factor, confidence_score, recommendation)
+- `simulator/coordinator.py` — NEW: `Coordinator` class; `run_loop()` starts SelfLearner via `create_task` (ref stored); polls gate hourly via `run_in_executor`; fires one-shot promotion (DB + KB + Telegram) when `confidence_gate_passed()` first returns True; cancels learner on shutdown
+- `run_live.py` — wires `SelfLearner` + `Coordinator` into `asyncio.gather()`
+- 21 new tests → **355 total passing**
 
-### Sprint 12 Goal — Live Promotion Coordinator
-Wire `SelfLearner` into `run_live.py` as a background asyncio task.
-Add a `Coordinator` class that:
-- Starts `SelfLearner.run_loop()` on bot startup
-- Watches `SelfLearner.confidence_gate_passed()` and logs a promotion event
-- Writes a promotion record to a new `promotions` table (or KB file)
-- Sends a Telegram alert when the gate first flips True
+### Sprint 13 Goal — Dashboard Promotion Panel + Live Trade Gate
+Surface the promotion status in the Streamlit dashboard and add a manual confirmation gate before any real-money trading.
 
-### Key files for Sprint 12
-- `run_live.py` — add `SelfLearner` task to the asyncio gather
-- `simulator/coordinator.py` (new) — wraps `SelfLearner`, watches gate, logs promotion
-- `database/models.py` — optional: add `Promotion` table to record promotion events
-- `tests/test_coordinator.py` — unit tests for coordinator logic
+Suggested scope:
+- `dashboard/streamlit_app.py` — add a "Promotion Status" sidebar section: shows `confidence_gate_passed()` state, consecutive promotes count, last evaluation metrics; reads from `knowledge/promotions.md` and/or `Promotion` DB table
+- `simulator/coordinator.py` — expose `promotion_status() -> dict` method so dashboard can read state without importing SelfLearner
+- `database/models.py` — verify `Promotion` table is queryable from dashboard
+- `config.py` — add `LIVE_TRADE_ENABLED=False` flag: when True + gate passed, PaperTrader switches to real order submission (future sprint)
+- `tests/test_dashboard_promotion.py` — unit tests for promotion panel rendering logic
 
 ### Step 1 — Verify baseline
 ```bash
 cd D:\trader\crypto_ai_trader
-pytest tests/ -q   # must show 334 passed
+pytest tests/ -q   # must show 355 passed
 ```
 
 ## Resume Here — Sprint 10: LLM Core Layer
@@ -157,6 +153,7 @@ docker attach hummingbot_crypto_ai
 | Sprint 9 — Strategy Plugin System + StrategyBase ABC | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 10 — LLM Core Layer (multi-provider) | ✅ CLOSED | Claude Code | 2026-04-17 |
 | Sprint 11 — Self-Learning Loop + KB Integration | ✅ CLOSED | GitHub Copilot | 2026-04-17 |
+| Sprint 12 — Live Promotion Coordinator | ✅ CLOSED | Claude Code | 2026-04-17 |
 
 ---
 

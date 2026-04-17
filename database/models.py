@@ -47,6 +47,18 @@ class Portfolio(Base):
     equity     = Column(Float, nullable=False)
     unreal_pnl = Column(Float, nullable=False)
 
+class Promotion(Base):
+    __tablename__ = "promotions"
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    ts                   = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
+    eval_number          = Column(Integer, nullable=False)
+    consecutive_promotes = Column(Integer, nullable=False)
+    sharpe               = Column(Float, nullable=False)
+    max_dd               = Column(Float, nullable=False)
+    profit_factor        = Column(Float, nullable=False)
+    confidence_score     = Column(Float, nullable=False)
+    recommendation       = Column(String(64), nullable=False)
+
 # ────────────────────────── helpers ──────────────────────────────────────────
 def get_engine(echo: bool = False):
     Path(DB_PATH).parent.mkdir(exist_ok=True)
