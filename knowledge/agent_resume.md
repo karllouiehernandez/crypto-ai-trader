@@ -11,10 +11,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 35 — TBD`
-- Status: Sprint 34 closed. No queued item. Check GitHub Projects board #1 or ask the user.
-- Baseline: `pytest tests/ -q` shows `556 passed, 4 warnings`
-- GitHub tracking: board/issue writes still blocked with `403`; use manual fallback
+- Sprint: `Sprint 36 — TBD`
+- Status: Sprint 35 closed. No queued item. Check GitHub Projects board #1 or ask the user.
+- Baseline: `pytest tests/ -q` shows `561 passed, 4 warnings`
+- GitHub tracking: issue #38 added to board successfully
 
 ## Why This Exists
 
@@ -26,6 +26,12 @@ Read order for a new agent:
   - Codex and Claude Code must act as one developer on this repo
   - Do not treat local dirty files as belonging to one specific agent unless the user explicitly asks for attribution
   - Continue from the current worktree as shared in-progress state
+- Sprint 35 AI UI Testing Agent is complete and pushed:
+  - `tools/ui_agent/browser.py` — Playwright wrapper, 11 tool actions, `TOOL_DEFINITIONS` schema, `dispatch()`
+  - `tools/ui_agent/agent.py` — Claude API agent loop, trader persona, vision + tool use, max 50 steps
+  - `tools/ui_agent/report.py` — `build_report()`, `write_report()` (JSON + Markdown to `reports/`)
+  - `run_ui_agent.py` — CLI: `python run_ui_agent.py [--headed] [--url ...] [--max-steps N]`
+  - `tests/test_ui_agent_smoke.py` — 5 smoke tests (+Sprint 35)
 - Sprint 34 Promotion Control Panel is complete and pushed:
   - `strategy/artifacts.py` — `deactivate_runtime_artifact(run_mode)`, `list_all_strategy_artifacts()`
   - `dashboard/workbench.py` — `build_runtime_target_summary`, `build_artifact_registry_frame`, `list_rollback_candidates`
@@ -114,7 +120,7 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 34 is closed. No Sprint 35 item is queued. Check GitHub Projects board #1 or ask the user for the next priority.
+Sprint 35 is closed. No Sprint 36 item is queued. Check GitHub Projects board #1 or ask the user for the next priority.
 
 ## Likely Files
 
@@ -137,9 +143,9 @@ Sprint 34 is closed. No Sprint 35 item is queued. Check GitHub Projects board #1
 
 ## Last Verified State
 
-- Tests: `556 passed, 4 warnings`
+- Tests: `561 passed, 4 warnings`
 - Headless dashboard startup: verified after Sprint 34 changes
-- Last sprint closed: `Sprint 34`
+- Last sprint closed: `Sprint 35`
 
 ## Token-Saving Rule
 
