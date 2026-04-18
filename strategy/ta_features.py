@@ -2,9 +2,14 @@
 import pandas as pd
 import ta
 
+MIN_INDICATOR_ROWS = 14
+
+
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
+    if len(df) < MIN_INDICATOR_ROWS:
+        return df.iloc[0:0].copy()
     out = df.copy()
     out["ma_21"]  = ta.trend.sma_indicator(out.close, window=21)
     out["ma_55"]  = ta.trend.sma_indicator(out.close, window=55)

@@ -22,6 +22,7 @@ from typing import Optional
 
 from llm.client import LLMResponse, call_llm
 from llm.prompts import STRATEGY_GENERATOR_SYSTEM
+from strategy.artifacts import sync_strategy_artifacts
 from strategies.loader import list_strategies as list_plugin_strategies
 from strategies.loader import list_strategy_errors, load_strategy_path
 
@@ -84,7 +85,7 @@ def generate_and_discover_strategy(
 
     path = _save(code)
     load_strategy_path(path)
-    strategies = [item for item in list_plugin_strategies() if item.get("path") == str(path)]
+    strategies = [item for item in sync_strategy_artifacts(list_plugin_strategies()) if item.get("path") == str(path)]
     errors = [
         item for item in list_strategy_errors()
         if item.get("path") == str(path) or item.get("file_name") == path.name

@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from config import BASE_DIR, LLM_ENABLED
 from database.models import Promotion, SessionLocal
+from strategy.artifacts import mark_artifact_paper_passed
 from utils.telegram_utils import alert
 
 log = logging.getLogger(__name__)
@@ -32,11 +33,12 @@ _CHECK_INTERVAL_S = 3600   # poll gate every hour
 class Coordinator:
     """Wraps SelfLearner and fires a one-time promotion event when the gate passes."""
 
-    def __init__(self, learner, check_interval_s: int = _CHECK_INTERVAL_S) -> None:
+    def __init__(self, learner, check_interval_s: int = _CHECK_INTERVAL_S, runtime_artifact: dict | None = None) -> None:
         self._learner        = learner
         self._check_interval = check_interval_s
         self._promoted       = False   # True after first promotion fires
         self._learner_task: "asyncio.Task | None" = None
+        self._runtime_artifact = runtime_artifact or {}
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -83,12 +85,18 @@ class Coordinator:
         self._promoted = True
         metrics = self._learner._compute_paper_metrics()
         result = {
+            "artifact_id":          self._runtime_artifact.get("artifact_id"),
+            "strategy_name":        self._runtime_artifact.get("strategy_name"),
+            "strategy_version":     self._runtime_artifact.get("strategy_version"),
+            "strategy_code_hash":   self._runtime_artifact.get("strategy_code_hash"),
+            "strategy_provenance":  self._runtime_artifact.get("strategy_provenance"),
             "eval_number":          self._learner._eval_count,
             "consecutive_promotes": self._learner._consecutive_promotes(),
             "paper_metrics":        metrics,
             "confidence_score":     0.0,   # last LLM score not directly exposed; 0 is safe default
         }
         self._record_promotion(result)
+        mark_artifact_paper_passed(result.get("artifact_id"))
         self._write_promotion_entry(result)
         self._send_promotion_alert(result)
 
@@ -98,6 +106,11 @@ class Coordinator:
             with SessionLocal() as sess:
                 record = Promotion(
                     ts=datetime.now(tz=timezone.utc),
+                    artifact_id=result.get("artifact_id"),
+                    strategy_name=result.get("strategy_name"),
+                    strategy_version=result.get("strategy_version"),
+                    strategy_code_hash=result.get("strategy_code_hash"),
+                    strategy_provenance=result.get("strategy_provenance"),
                     eval_number=result.get("eval_number", 0),
                     consecutive_promotes=result.get("consecutive_promotes", 0),
                     sharpe=metrics.get("sharpe", 0.0),

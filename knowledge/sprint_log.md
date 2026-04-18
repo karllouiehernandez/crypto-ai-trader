@@ -15,6 +15,37 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 33 — Versioned Strategy Promotion Pipeline
+**Date started:** 2026-04-18
+**Date closed:** not closed
+**Agent:** Shared Codex + Claude Code stream
+**Goal:** Add a strict Jesse-style strategy lifecycle so generated drafts stay backtest-only, reviewed plugins can be promoted through paper/live by artifact identity, and runtime execution pins reviewed artifacts by code hash instead of by filename alone.
+**Status:** IN PROGRESS
+**GitHub issue:** not created — current integration still returns `403 Resource not accessible by integration`
+
+### Changes Made
+- [x] `strategy/artifacts.py` — NEW: code hash calculation, artifact registry, review/save flow, paper/live target selection, status transitions, runtime artifact validation
+- [x] `database/models.py` — NEW `StrategyArtifact` model plus artifact/hash/provenance columns on `BacktestRun`, `BacktestTrade`, `Trade`, `PortfolioSnapshot`, and `Promotion`
+- [x] `strategy/runtime.py` — separated backtest/default strategy selection from paper/live artifact resolution; runtime now validates promoted reviewed artifacts
+- [x] `backtester/service.py` — saved backtests now persist artifact identity and upgrade reviewed artifacts to `backtest_passed`
+- [x] `simulator/paper_trader.py`, `simulator/coordinator.py`, `run_live.py` — paper/live execution now carries artifact identity and fails closed if the promoted reviewed artifact is missing or hash-mismatched
+- [x] `dashboard/streamlit_app.py` — added `Review and Save`, `Promote to Paper`, and `Approve for Live` actions plus artifact-aware lifecycle UX and saved-run inspector metadata
+- [x] `dashboard/workbench.py` — artifact-aware workflow stages and strategy catalog columns
+- [x] `tests/test_strategy_artifacts.py` — NEW lifecycle regression tests
+- [x] Updated regression tests in `tests/test_backtester_service.py`, `tests/test_workbench_helpers.py`, and `tests/test_run_live.py`
+
+### Verification
+- `pytest tests/ -q` => **543 passed, 4 warnings**
+- `python -m py_compile strategy/artifacts.py strategy/runtime.py backtester/service.py simulator/paper_trader.py simulator/coordinator.py run_live.py dashboard/workbench.py dashboard/streamlit_app.py` => passed
+- `streamlit run dashboard/streamlit_app.py --server.headless true --server.port 8768` => startup verified
+
+### Handoff Notes
+- Treat Codex and Claude Code as one shared developer stream when continuing this sprint.
+- Do not spend time attributing local dirty files to one agent or the other.
+- `knowledge/experiment_log.md` may still be dirty due to a background runtime process and should remain untouched unless explicitly requested.
+
+---
+
 ## Sprint 30 — Ready-First Symbol UX + Background History Loading
 **Date started:** 2026-04-18
 **Date closed:** 2026-04-18

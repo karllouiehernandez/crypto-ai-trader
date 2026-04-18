@@ -13,6 +13,12 @@ from sqlalchemy.orm import Session
 
 from config import EMA_LOOKBACK, MIN_CANDLES_EMA200
 from database.models import Candle, SessionLocal, get_app_setting, init_db, set_app_setting
+from strategy.artifacts import (
+    get_active_runtime_artifact_id,
+    get_strategy_artifact,
+    sync_strategy_artifacts,
+    validate_runtime_artifact,
+)
 from strategy.base import StrategyBase
 from strategy.builtin import BUILTIN_STRATEGY_CLASSES
 from strategy.regime import Regime, detect_regime
@@ -24,9 +30,12 @@ from strategies.loader import list_strategy_errors, load_all
 
 log = logging.getLogger(__name__)
 
-ACTIVE_STRATEGY_NAME_KEY = "active_strategy_name"
-ACTIVE_STRATEGY_VERSION_KEY = "active_strategy_version"
-ACTIVE_STRATEGY_PARAMS_KEY = "active_strategy_params"
+LEGACY_ACTIVE_STRATEGY_NAME_KEY = "active_strategy_name"
+LEGACY_ACTIVE_STRATEGY_VERSION_KEY = "active_strategy_version"
+LEGACY_ACTIVE_STRATEGY_PARAMS_KEY = "active_strategy_params"
+ACTIVE_BACKTEST_STRATEGY_NAME_KEY = "active_backtest_strategy_name"
+ACTIVE_BACKTEST_STRATEGY_VERSION_KEY = "active_backtest_strategy_version"
+ACTIVE_BACKTEST_STRATEGY_PARAMS_KEY = "active_backtest_strategy_params"
 DEFAULT_STRATEGY_NAME = "regime_router_v1"
 
 
@@ -88,7 +97,7 @@ def list_available_strategies() -> list[dict]:
         )
 
     load_all()
-    plugins = list_plugin_strategies()
+    plugins = sync_strategy_artifacts(list_plugin_strategies())
     return sorted(
         builtins + plugins,
         key=lambda s: (
@@ -108,12 +117,24 @@ def _strategy_exists(name: str) -> bool:
 
 
 def get_active_strategy_config() -> dict:
-    """Return the persisted active strategy selection."""
+    """Return the persisted backtest/default strategy selection."""
     init_db()
     with SessionLocal() as sess:
-        name = get_app_setting(sess, ACTIVE_STRATEGY_NAME_KEY, DEFAULT_STRATEGY_NAME) or DEFAULT_STRATEGY_NAME
-        version = get_app_setting(sess, ACTIVE_STRATEGY_VERSION_KEY, "") or ""
-        params_raw = get_app_setting(sess, ACTIVE_STRATEGY_PARAMS_KEY, "{}") or "{}"
+        name = (
+            get_app_setting(sess, ACTIVE_BACKTEST_STRATEGY_NAME_KEY, None)
+            or get_app_setting(sess, LEGACY_ACTIVE_STRATEGY_NAME_KEY, DEFAULT_STRATEGY_NAME)
+            or DEFAULT_STRATEGY_NAME
+        )
+        version = (
+            get_app_setting(sess, ACTIVE_BACKTEST_STRATEGY_VERSION_KEY, None)
+            or get_app_setting(sess, LEGACY_ACTIVE_STRATEGY_VERSION_KEY, "")
+            or ""
+        )
+        params_raw = (
+            get_app_setting(sess, ACTIVE_BACKTEST_STRATEGY_PARAMS_KEY, None)
+            or get_app_setting(sess, LEGACY_ACTIVE_STRATEGY_PARAMS_KEY, "{}")
+            or "{}"
+        )
 
     if not _strategy_exists(name):
         name = DEFAULT_STRATEGY_NAME
@@ -137,7 +158,7 @@ def get_active_strategy_config() -> dict:
 
 
 def set_active_strategy_config(name: str, params: Optional[dict] = None) -> dict:
-    """Persist the selected strategy and return its saved config."""
+    """Persist the selected backtest/default strategy and return its saved config."""
     strategy = get_strategy(name)
     if strategy is None:
         raise ValueError(f"Unknown strategy: {name}")
@@ -145,12 +166,43 @@ def set_active_strategy_config(name: str, params: Optional[dict] = None) -> dict
     params = params or strategy.default_params()
     init_db()
     with SessionLocal() as sess:
-        set_app_setting(sess, ACTIVE_STRATEGY_NAME_KEY, strategy.name)
-        set_app_setting(sess, ACTIVE_STRATEGY_VERSION_KEY, strategy.version)
-        set_app_setting(sess, ACTIVE_STRATEGY_PARAMS_KEY, json.dumps(params))
+        set_app_setting(sess, ACTIVE_BACKTEST_STRATEGY_NAME_KEY, strategy.name)
+        set_app_setting(sess, ACTIVE_BACKTEST_STRATEGY_VERSION_KEY, strategy.version)
+        set_app_setting(sess, ACTIVE_BACKTEST_STRATEGY_PARAMS_KEY, json.dumps(params))
+        set_app_setting(sess, LEGACY_ACTIVE_STRATEGY_NAME_KEY, strategy.name)
+        set_app_setting(sess, LEGACY_ACTIVE_STRATEGY_VERSION_KEY, strategy.version)
+        set_app_setting(sess, LEGACY_ACTIVE_STRATEGY_PARAMS_KEY, json.dumps(params))
         sess.commit()
 
     return {"name": strategy.name, "version": strategy.version, "params": params}
+
+
+def get_active_runtime_artifact(run_mode: str) -> dict | None:
+    artifact_id = get_active_runtime_artifact_id(run_mode)
+    return get_strategy_artifact(artifact_id)
+
+
+def resolve_runtime_strategy_descriptor(run_mode: str) -> dict:
+    artifact_id = get_active_runtime_artifact_id(run_mode)
+    artifact, error = validate_runtime_artifact(artifact_id)
+    if error or artifact is None:
+        raise RuntimeError(error or "Runtime strategy artifact is not available.")
+
+    strategy = get_strategy(artifact["name"])
+    if strategy is None:
+        raise RuntimeError(
+            f"Runtime strategy `{artifact['name']}` could not be loaded from `{artifact['path']}`."
+        )
+    return {
+        "artifact_id": artifact["id"],
+        "strategy_name": artifact["name"],
+        "strategy_version": artifact.get("version") or strategy.version,
+        "strategy_params": strategy.default_params(),
+        "strategy_code_hash": artifact.get("code_hash", ""),
+        "strategy_provenance": artifact.get("provenance", ""),
+        "artifact_status": artifact.get("status", ""),
+        "path": artifact.get("path", ""),
+    }
 
 
 def _fetch_recent_candles(session: Session, symbol: str, lookback: int = EMA_LOOKBACK) -> list[Candle]:

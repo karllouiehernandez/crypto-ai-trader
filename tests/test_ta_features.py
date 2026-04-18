@@ -48,6 +48,11 @@ class TestAddIndicatorsColumns:
         result = add_indicators(empty)
         assert result.empty
 
+    def test_short_df_returns_empty_without_crashing(self):
+        short = _synthetic_ohlcv(10)
+        result = add_indicators(short)
+        assert result.empty
+
 
 # ── RSI ────────────────────────────────────────────────────────────────────────
 
