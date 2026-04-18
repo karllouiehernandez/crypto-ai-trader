@@ -21,6 +21,8 @@ _ARCHIVE_URL_TEMPLATE = (
     "{symbol}-{interval}-{day}.zip"
 )
 _ROWS_PER_REQ = 1_000
+_MICROSECOND_EPOCH_THRESHOLD = 10**15
+_MILLISECOND_EPOCH_THRESHOLD = 10**12
 
 
 def _normalise_symbol(symbol: str) -> str:
@@ -52,10 +54,20 @@ def _iterate_days(start: datetime, end: datetime) -> list[datetime]:
     return days
 
 
+def _parse_binance_epoch(value: Any) -> datetime:
+    """Handle Binance timestamps emitted in either milliseconds or microseconds."""
+    raw = int(value)
+    if raw >= _MICROSECOND_EPOCH_THRESHOLD:
+        return datetime.fromtimestamp(raw / 1_000_000, tz=timezone.utc)
+    if raw >= _MILLISECOND_EPOCH_THRESHOLD:
+        return datetime.fromtimestamp(raw / 1_000, tz=timezone.utc)
+    return datetime.fromtimestamp(raw, tz=timezone.utc)
+
+
 def _kline_to_row(symbol: str, kline: list[Any]) -> dict[str, Any]:
     return {
         "symbol": _normalise_symbol(symbol),
-        "open_time": datetime.fromtimestamp(int(kline[0]) / 1000, tz=timezone.utc),
+        "open_time": _parse_binance_epoch(kline[0]),
         "open": float(kline[1]),
         "high": float(kline[2]),
         "low": float(kline[3]),

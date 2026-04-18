@@ -11,6 +11,11 @@ from backtester.engine import build_equity_curve, run_backtest
 from backtester.metrics import acceptance_gate, compute_metrics
 from database.models import BacktestPreset, BacktestRun, BacktestTrade, SessionLocal, init_db
 from dashboard.workbench import normalise_preset_name, parse_metrics_json, parse_params_json
+from market_focus.selector import (
+    get_latest_study,
+    get_study_candidates,
+    run_weekly_study,
+)
 
 
 def run_and_persist_backtest(
@@ -243,3 +248,32 @@ def get_backtest_trades(run_id: int) -> pd.DataFrame:
             for row in rows
         ]
     )
+
+
+def run_market_focus_study(
+    strategy_name: str,
+    params: dict | None = None,
+    *,
+    backtest_days: int | None = None,
+    top_n: int | None = None,
+    universe_size: int | None = None,
+) -> dict:
+    """Run a weekly market focus study and return the result dict."""
+    kwargs = {}
+    if backtest_days is not None:
+        kwargs["backtest_days"] = backtest_days
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if universe_size is not None:
+        kwargs["universe_size"] = universe_size
+    return run_weekly_study(strategy_name, params, **kwargs)
+
+
+def get_latest_market_focus() -> dict | None:
+    """Return the latest completed market focus study header, or None."""
+    return get_latest_study()
+
+
+def get_market_focus_candidates(study_id: int) -> list[dict]:
+    """Return ranked candidates for a market focus study."""
+    return get_study_candidates(study_id)
