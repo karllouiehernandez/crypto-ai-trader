@@ -10,33 +10,46 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 28 closed) |
-| **Sprint completed** | Sprint 28 ✅ — Responsive Chart Indicator Overlays — 491 tests passing |
-| **Next sprint** | Sprint 29 — Historical Data Backfill + Audit |
-| **Blocking issues** | GitHub board/issue writes are blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
+| **Last updated** | 2026-04-18 (Sprint 29 closed) |
+| **Sprint completed** | Sprint 29 ✅ — Dynamic Binance USDT Universe + Historical Data Coverage — 500 tests passing |
+| **Next sprint** | Sprint 30 — User-prioritized follow-up (multi-exchange/data-provider expansion, symbol UX polish, or GitHub automation hardening) |
+| **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). Sprint 29 issue creation was attempted and failed with the same 403, so the exact manual issue/card text is recorded below. To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 28 complete. |
+| **Reason for handoff** | Sprint 29 complete. |
 
 ---
 
-## Resume Here — Sprint 29
+## Resume Here — Sprint 30
 
-**Sprint 28 complete.** The workbench now restores strategy studies on the responsive chart in both `Runtime Monitor` and `Backtest Lab`. 491 tests passing.
+**Sprint 29 complete.** The app now supports a dynamic Binance spot `USDT` symbol universe for research/backtesting/runtime selection, plus historical backfill and continuity audits for arbitrary symbols. 500 tests passing.
 
-### What was done in Sprint 28
-- **Overlay-capable responsive chart**: `dashboard/chart_component.py` — extended the Lightweight Charts renderer to support multi-pane layouts with a price pane plus synced RSI and MACD panes.
-- **Shared study payloads**: `dashboard/workbench.py` — chart payloads now serialize `EMA 9/21/55`, `EMA 200`, `Bollinger Bands`, `RSI`, and `MACD` on one shared contract for runtime and backtest.
-- **Workbench controls restored**: `dashboard/streamlit_app.py` — brought back chart-layer toggles for EMA, Bollinger Bands, RSI, and MACD while keeping the TradingView-like renderer and existing Plotly analytics.
-- **Indicator warmup handling**: `dashboard/streamlit_app.py` — backtest charts now compute studies from the broader local candle window before slicing the visible run range, so overlays do not start blank at the left edge.
-- **491 total passing** (+1 over Sprint 27)
+### What was done in Sprint 29
+- **Dynamic Binance symbol discovery**: `market_data/binance_symbols.py` — added a Binance metadata service that discovers active spot `USDT` pairs and sorts them by 24h quote volume.
+- **Persisted runtime watchlist**: `market_data/runtime_watchlist.py` — added a local watchlist service with `list_runtime_symbols()`, `set_runtime_symbols()`, `add_runtime_symbol()`, and `remove_runtime_symbol()` backed by `AppSetting`.
+- **Historical data coverage workflow**: `market_data/history.py` — added `backfill()`, `sync_recent()`, `ensure_symbol_history()`, `audit()`, `evaluate_candle_coverage()`, and fail-fast audit summaries using Binance archive data plus REST delta sync.
+- **CLI backfill/audit entrypoints**: `collectors/historical_loader.py` — now supports `backfill`, `audit`, and `sync_recent` commands for arbitrary symbols and keeps runtime bootstrap synced to the persisted watchlist.
+- **Dynamic runtime symbol activation**: `collectors/live_streamer.py` and `simulator/paper_trader.py` — runtime loops now read the persisted watchlist instead of treating `config.SYMBOLS` as the active universe.
+- **Workbench symbol freedom**: `dashboard/streamlit_app.py` — dashboard symbol selectors now use the discovered Binance universe, add a dedicated runtime watchlist manager, and expose audit/backfill controls before running backtests.
+- **Backtest fail-fast gap detection**: `backtester/engine.py`, `backtester/walk_forward.py`, and `run_backtest.py` — backtests now stop with a clear incomplete-history error instead of silently running on gapped windows.
+- **Market Focus alignment**: `market_focus/selector.py` — market-focus discovery now uses the same shared Binance symbol catalog instead of its own hardcoded ticker fetch path.
+- **500 total passing** (+9 over Sprint 28)
 
-### Sprint 29 Goal
-Build a reliable local historical-data workflow for backtesting before Jetson deployment. Recommended scope:
-1. Add explicit local backfill commands for historical candles over date ranges
-2. Add continuity auditing so backtests fail fast on missing windows
-3. Surface gap summaries clearly in the CLI/dashboard
-4. Keep simulation-first validation on this machine before moving to Jetson
+### Sprint 30 Direction
+No mandatory roadmap item is queued. The next agent should confirm the user’s priority, with likely options:
+1. Expand beyond Binance spot `USDT` into additional providers/exchanges
+2. Improve symbol-management UX and watchlist controls further
+3. Harden GitHub sprint/project automation once write-capable integration is available
+
+### GitHub Sprint Tracking — Manual Fallback
+- Attempted GitHub issue creation for Sprint 29 in `karllouiehernandez/crypto-ai-trader`
+- Result: `403 Resource not accessible by integration`
+- Manual issue title:
+  `Sprint 29 — Dynamic Binance USDT Universe + Historical Data Coverage`
+- Manual issue body:
+  `Goal: remove the hardcoded 3-symbol restriction and support any Binance spot USDT pair across analysis, backtesting, paper trading, and live trading, with a Binance-first historical-data workflow and persisted runtime watchlist. Scope: discover Binance spot USDT pairs from metadata; replace static runtime symbol assumptions with a persisted runtime watchlist; allow dashboard analysis/backtest flows to choose any supported Binance USDT symbol; add backfill/audit/sync_recent commands for arbitrary symbols; fail backtests fast when the requested window has candle gaps; keep runtime activation explicit so chart/backtest selection does not auto-enable paper/live trading. Acceptance: any active Binance spot USDT symbol can be selected in dashboard and backtest flows; streamer and paper/live runtime use an editable persisted watchlist; historical backfill and gap audit work for non-default symbols; backtests stop with a clear error on incomplete windows; regression suite remains green.`
+- Manual project-board card text:
+  `Sprint 29 — Dynamic Binance USDT Universe + Historical Data Coverage: dynamic Binance USDT discovery, persisted runtime watchlist, arbitrary-symbol backfill/audit/sync, fail-fast gap detection, dashboard/runtime integration.`
 
 ## Resume Here — Sprint 26 (COMPLETED)
 
