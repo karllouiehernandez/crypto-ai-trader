@@ -10,10 +10,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 30 — User-prioritized follow-up`
-- Status: Sprint 29 is closed; dynamic Binance `USDT` symbol discovery, persisted runtime watchlists, and historical backfill/audit coverage are in place
-- Baseline: `pytest tests/ -q` must show `500 passed`
-- GitHub tracking issue: Sprint 29 issue creation was attempted and failed with `403 Resource not accessible by integration`; exact manual issue/card text is recorded in `HANDOFF.md` and `knowledge/sprint_log.md`
+- Sprint: `Sprint 33 — TBD`
+- Status: Sprint 32 closed. Strategy Inspector tab is shipped; next priority is not defined yet.
+- Baseline: `pytest tests/ -q` currently shows `530 passed, 1 warning`
+- GitHub tracking: board/issue writes still blocked with `403`; use manual fallback
 
 ## Why This Exists
 
@@ -21,6 +21,20 @@ Read order for a new agent:
 
 ## Current State
 
+- Strategy Inspector is in place (Sprint 32):
+  - `dashboard/workbench.py` — `compute_win_loss_stats()`, `build_trader_summary()`, `get_strategy_source_code()`
+  - `dashboard/streamlit_app.py` — 5th `Inspect` tab with saved-run selector, trader summary metrics, gate narrative, equity curve, and strategy source viewer
+  - `tests/test_workbench_helpers.py` — 4 Sprint 32 regression tests
+- Strategy experiment plugins from Sprint 31 remain implemented and discoverable:
+  - `strategies/ema200_filtered_momentum.py`
+  - `strategies/mtf_confirmation_strategy.py`
+  - Both are still available in Backtest Lab and the new Inspect tab
+- Ready-First Symbol UX is in place (Sprint 30):
+  - `market_data/symbol_readiness.py` — `list_ready_symbols()`, `is_symbol_ready()`, `queue_symbol_load()`, `retry_failed_load()`, `list_load_jobs()`
+  - `list_load_jobs()` now uses a deterministic tie-break when queued timestamps match
+  - `market_data/background_loader.py` — daemon thread worker; started by `ensure_worker_running()` on dashboard load
+  - `database/models.py` — `SymbolLoadJob` table tracks load job status
+  - `dashboard/streamlit_app.py` — chart and Backtest Lab selectors show ready-only symbols; "Load New Symbol" sidebar expander with queue status and retry
 - Dynamic Binance spot `USDT` symbol discovery is in place:
   - `market_data/binance_symbols.py`
   - filters active spot `USDT` pairs from Binance metadata
@@ -44,7 +58,7 @@ Read order for a new agent:
   - `backtester/engine.py`
   - `backtester/walk_forward.py`
   - `run_backtest.py`
-- Workbench tabs are in place: `Strategies`, `Backtest Lab`, `Runtime Monitor`
+- Workbench tabs are in place: `Strategies`, `Backtest Lab`, `Runtime Monitor`, `Market Focus`, `Inspect`
 - Runtime and backtest now share one responsive chart renderer:
   - `dashboard/chart_component.py`
   - vendored `Lightweight Charts` asset under `dashboard/assets/`
@@ -85,10 +99,15 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 30 is not fixed yet. Likely next directions:
-- expand historical providers/exchanges beyond Binance spot `USDT`
-- improve watchlist and symbol-management UX
-- harden GitHub sprint/project automation once write access exists
+No queued Sprint 33 task is defined. Check GitHub Projects board `#1` or ask the user for the next priority.
+
+## Likely Files
+
+- `HANDOFF.md`
+- `knowledge/agent_resume.md`
+- `dashboard/streamlit_app.py`
+- `dashboard/workbench.py`
+- `tests/test_workbench_helpers.py`
 
 ## Constraints
 
@@ -100,8 +119,8 @@ Sprint 30 is not fixed yet. Likely next directions:
 
 ## Last Verified State
 
-- Tests: `500 passed, 1 warning`
-- Last sprint closed: `Sprint 29`
+- Tests: `530 passed, 1 warning`
+- Last sprint closed: `Sprint 32`
 
 ## Token-Saving Rule
 

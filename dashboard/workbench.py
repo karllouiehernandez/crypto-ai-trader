@@ -6,6 +6,7 @@ from bisect import bisect_right
 from collections import defaultdict
 import json
 import math
+import os
 from typing import Any
 
 import pandas as pd
@@ -962,3 +963,123 @@ def build_focus_candidate_frame(candidates: list[dict]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def compute_win_loss_stats(trades: pd.DataFrame) -> dict[str, float | int]:
+    """Pair sequential BUY->SELL rows and return basic win/loss stats."""
+    empty_stats: dict[str, float | int] = {
+        "win_count": 0,
+        "loss_count": 0,
+        "win_rate": 0.0,
+        "avg_win_pct": 0.0,
+        "avg_loss_pct": 0.0,
+        "total_pairs": 0,
+    }
+    if trades.empty or "side" not in trades.columns or "price" not in trades.columns:
+        return empty_stats
+
+    frame = trades.copy()
+    frame["side"] = frame["side"].astype(str).str.upper()
+    frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
+    frame = frame.dropna(subset=["price"]).reset_index(drop=True)
+    if len(frame) < 2:
+        return empty_stats
+
+    pair_returns: list[float] = []
+    idx = 0
+    while idx < len(frame) - 1:
+        buy_row = frame.iloc[idx]
+        sell_row = frame.iloc[idx + 1]
+        if buy_row["side"] == "BUY" and sell_row["side"] == "SELL" and float(buy_row["price"]) > 0:
+            buy_price = float(buy_row["price"])
+            sell_price = float(sell_row["price"])
+            pair_returns.append((sell_price - buy_price) / buy_price)
+            idx += 2
+            continue
+        idx += 1
+
+    if not pair_returns:
+        return empty_stats
+
+    wins = [value for value in pair_returns if value > 0]
+    losses = [value for value in pair_returns if value <= 0]
+    total_pairs = len(pair_returns)
+    win_count = len(wins)
+    loss_count = len(losses)
+    return {
+        "win_count": win_count,
+        "loss_count": loss_count,
+        "win_rate": win_count / total_pairs if total_pairs else 0.0,
+        "avg_win_pct": sum(wins) / len(wins) if wins else 0.0,
+        "avg_loss_pct": sum(losses) / len(losses) if losses else 0.0,
+        "total_pairs": total_pairs,
+    }
+
+
+def build_trader_summary(
+    run: dict,
+    equity_curve: pd.DataFrame,
+    starting_balance: float,
+) -> dict[str, Any]:
+    """Return trader-facing backtest labels and headline metrics."""
+    ending_equity = (
+        float(equity_curve["equity"].iloc[-1])
+        if not equity_curve.empty and "equity" in equity_curve.columns
+        else float(starting_balance)
+    )
+    gain_pct = ((ending_equity - float(starting_balance)) / float(starting_balance) * 100.0) if starting_balance else 0.0
+
+    sharpe = float(run.get("sharpe") or 0.0)
+    if sharpe > 2:
+        sharpe_label = "Excellent"
+    elif sharpe >= 1:
+        sharpe_label = "Good"
+    elif sharpe >= 0.5:
+        sharpe_label = "Marginal"
+    else:
+        sharpe_label = "Poor"
+
+    drawdown_raw = float(run.get("max_drawdown") or 0.0)
+    drawdown_pct = drawdown_raw * 100.0
+    if drawdown_pct < 5:
+        risk_label = "Low Risk"
+    elif drawdown_pct <= 15:
+        risk_label = "Moderate Risk"
+    else:
+        risk_label = "High Risk"
+
+    failures_raw = run.get("failures", [])
+    gate_failures: list[str] = []
+    if isinstance(failures_raw, str):
+        try:
+            parsed_failures = json.loads(failures_raw)
+        except json.JSONDecodeError:
+            parsed_failures = []
+        if isinstance(parsed_failures, list):
+            gate_failures = [str(item) for item in parsed_failures]
+    elif isinstance(failures_raw, list):
+        gate_failures = [str(item) for item in failures_raw]
+
+    return {
+        "gain_pct": gain_pct,
+        "profitable": gain_pct > 0,
+        "sharpe_label": sharpe_label,
+        "drawdown_pct": drawdown_pct,
+        "risk_label": risk_label,
+        "profit_factor": float(run.get("profit_factor") or 0.0),
+        "n_trades": int(run.get("n_trades") or 0),
+        "gate_passed": bool(run.get("gate_passed")),
+        "gate_failures": gate_failures,
+    }
+
+
+def get_strategy_source_code(item: dict) -> str:
+    """Return strategy source code when the strategy path is available on disk."""
+    strategy_path = str(item.get("path") or "").strip()
+    if strategy_path and os.path.exists(strategy_path):
+        with open(strategy_path, encoding="utf-8") as handle:
+            return handle.read()
+    return (
+        f"# Built-in strategy: {item.get('name')}\n"
+        "# Source code not available for built-in strategies.\n"
+    )

@@ -5,6 +5,74 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 31 — Strategy Experiments EXP-001 + EXP-002
+**Date started:** 2026-04-18
+**Date closed:** not closed
+**Agent:** Claude Code
+**Goal:** Implement EXP-001 (200 EMA trend filter on TRENDING/SQUEEZE) and EXP-002 (multi-timeframe confirmation) as new strategy plugins, run backtests, and document results in the KB.
+**Status:** IN PROGRESS
+**GitHub issue:** not created — current integration still returns `403 Resource not accessible by integration`
+
+---
+
+## Sprint 30 — Ready-First Symbol UX + Background History Loading
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Claude Code
+**Goal:** Make symbol selection user-friendly when a coin has no local data yet, without blocking the workbench or preloading one month for every Binance `USDT` pair.
+**Status:** CLOSED ✓
+**GitHub issue:** not created — current integration still returns `403 Resource not accessible by integration`, so manual fallback remains required
+
+### Changes Made
+- [x] `database/models.py` — added `SymbolLoadJob` ORM model (`symbol PK`, `status`, `queued_at`, `started_at`, `completed_at`, `error_msg`)
+- [x] `market_data/symbol_readiness.py` — NEW: `list_ready_symbols()`, `is_symbol_ready()`, `queue_symbol_load()`, `retry_failed_load()`, `list_load_jobs()`
+- [x] `market_data/background_loader.py` — NEW: daemon thread worker (`ensure_worker_running()`) that polls `SymbolLoadJob` for queued rows, calls `backfill` + `sync_recent`, writes `ready`/`failed` status to DB
+- [x] `dashboard/streamlit_app.py` — chart and Backtest Lab symbol selectors now use `ready_symbols` (symbols with local candle data) instead of the full Binance catalog; added "Load New Symbol" sidebar expander with full catalog, background-load queue, live queue status, and retry for failed jobs; `ensure_worker_running()` called on every page load
+- [x] `tests/test_market_data_services.py` — 10 new tests for readiness checks, job queuing, idempotency, failed-job reset, and job ordering
+
+### Test Results
+- Before: 500 tests passing
+- After: **510 tests passing** (+10 new) — 0 failures
+
+### Key Technical Decisions
+1. **"Ready" = any candle data exists** for that symbol — simplest definition, covers all pre-Sprint-30 data organically
+2. **Background daemon thread** (not async, not Celery) — simple, dependency-free, sufficient for paper-trading use case
+3. **Full Binance catalog preserved** in watchlist editor and strategy-generation form — only chart/backtest selectors restricted to ready symbols
+
+### Locked Product Decisions
+1. **On-demand background loading** is chosen.
+2. **Ready-first + load new** symbol UX is chosen.
+3. **30-day default initial load** is the readiness target.
+4. **No full-market preload** is an explicit non-goal.
+5. **In-app notifications only** are in scope for v1.
+
+### Expected Behavior
+- Main chart/backtest symbol dropdowns show only symbols that are already ready locally.
+- A separate searchable control lists all Binance spot `USDT` pairs and lets the user request a new symbol.
+- Requesting a symbol with no local data queues a background history load and shows a user notification.
+- The current chart/backtest symbol stays on the last ready symbol until the newly requested symbol finishes loading.
+- Once the load succeeds, the symbol appears in the ready list automatically.
+- Runtime watchlist activation remains explicit and must not auto-follow research/backtest selection.
+
+### Acceptance Notes
+- Selecting a new coin with no data should no longer feel broken or blocking.
+- Users must still be able to work immediately with symbols that already have data.
+- Background status must be visible.
+- Failed loads must be visible and retryable.
+- Chart/backtest symbol choice must remain separate from runtime watchlist activation.
+
+### Suggested Starting Files
+- `dashboard/streamlit_app.py`
+- `market_data/history.py`
+- `market_data/runtime_watchlist.py`
+- `database/models.py`
+
+### Notes
+- Sprint 29 remains the latest completed sprint.
+- This entry is planning-only and does **not** imply that Sprint 30 code already exists.
+
+---
+
 ## Sprint 29 — Dynamic Binance USDT Universe + Historical Data Coverage
 **Date started:** 2026-04-18
 **Date closed:** 2026-04-18
@@ -1059,3 +1127,28 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
   - SelfLearner never raises in run_loop (outer except catches all) ✓
   - No DB writes in confidence_gate (pure function) ✓
   - _write_kb_entry uses append mode -- no data loss on repeated calls ✓
+
+---
+
+## Sprint 32 — Strategy Inspector Tab
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Goal:** Add a 5th dashboard tab that lets users inspect saved backtests through a trader-friendly summary and a strategy source-code viewer.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/workbench.py`
+  - added `compute_win_loss_stats()` to pair sequential BUY→SELL trades and derive win/loss stats
+  - added `build_trader_summary()` to convert saved run metrics into trader-facing labels and gate details
+  - added `get_strategy_source_code()` to load plugin source or return a built-in placeholder
+- [x] `dashboard/streamlit_app.py`
+  - expanded the workbench tab set to `Strategies`, `Backtest Lab`, `Runtime Monitor`, `Market Focus`, `Inspect`
+  - added the `Inspect` tab with saved-run selection, gain/win-rate/sharpe/drawdown metrics, gate narrative, optional failure details, equity chart, and highlighted strategy source
+- [x] `tests/test_workbench_helpers.py`
+  - added 4 regression tests for the new helper functions
+- [x] `market_data/symbol_readiness.py`
+  - added a deterministic SQLite tie-break to `list_load_jobs()` ordering so the existing readiness test remains stable when queued timestamps tie
+
+### Outcome
+- `pytest tests/ -q` → **530 passed, 1 warning**
+- Sprint 32 user goal is complete and the dashboard workbench now exposes saved-run inspection without breaking the existing tab workflow.

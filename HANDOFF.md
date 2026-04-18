@@ -10,36 +10,32 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 29 closed) |
-| **Sprint completed** | Sprint 29 ✅ — Dynamic Binance USDT Universe + Historical Data Coverage — 500 tests passing |
-| **Next sprint** | Sprint 30 — User-prioritized follow-up (multi-exchange/data-provider expansion, symbol UX polish, or GitHub automation hardening) |
-| **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). Sprint 29 issue creation was attempted and failed with the same 403, so the exact manual issue/card text is recorded below. To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
+| **Last updated** | 2026-04-18 (Sprint 32 complete) |
+| **Sprint completed** | Sprint 32 ✅ — Strategy Inspector Tab — 530 tests passing |
+| **Next sprint** | Sprint 33 — TBD (check GitHub Projects board `#1` or ask the user for the next priority) |
+| **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 29 complete. |
+| **Reason for handoff** | Sprint 32 is implemented, tested, committed, and pushed. No follow-up sprint is defined yet. |
 
 ---
 
-## Resume Here — Sprint 30
+## Resume Here — Sprint 33 (TBD)
 
-**Sprint 29 complete.** The app now supports a dynamic Binance spot `USDT` symbol universe for research/backtesting/runtime selection, plus historical backfill and continuity audits for arbitrary symbols. 500 tests passing.
+**Sprint 32 complete.** The dashboard now has a 5th `Inspect` tab that keeps the Jesse-style workflow intact: backtest history stays in the workbench, traders get a plain-English result summary, and developers can inspect the exact strategy script used for the saved run.
 
-### What was done in Sprint 29
-- **Dynamic Binance symbol discovery**: `market_data/binance_symbols.py` — added a Binance metadata service that discovers active spot `USDT` pairs and sorts them by 24h quote volume.
-- **Persisted runtime watchlist**: `market_data/runtime_watchlist.py` — added a local watchlist service with `list_runtime_symbols()`, `set_runtime_symbols()`, `add_runtime_symbol()`, and `remove_runtime_symbol()` backed by `AppSetting`.
-- **Historical data coverage workflow**: `market_data/history.py` — added `backfill()`, `sync_recent()`, `ensure_symbol_history()`, `audit()`, `evaluate_candle_coverage()`, and fail-fast audit summaries using Binance archive data plus REST delta sync.
-- **CLI backfill/audit entrypoints**: `collectors/historical_loader.py` — now supports `backfill`, `audit`, and `sync_recent` commands for arbitrary symbols and keeps runtime bootstrap synced to the persisted watchlist.
-- **Dynamic runtime symbol activation**: `collectors/live_streamer.py` and `simulator/paper_trader.py` — runtime loops now read the persisted watchlist instead of treating `config.SYMBOLS` as the active universe.
-- **Workbench symbol freedom**: `dashboard/streamlit_app.py` — dashboard symbol selectors now use the discovered Binance universe, add a dedicated runtime watchlist manager, and expose audit/backfill controls before running backtests.
-- **Backtest fail-fast gap detection**: `backtester/engine.py`, `backtester/walk_forward.py`, and `run_backtest.py` — backtests now stop with a clear incomplete-history error instead of silently running on gapped windows.
-- **Market Focus alignment**: `market_focus/selector.py` — market-focus discovery now uses the same shared Binance symbol catalog instead of its own hardcoded ticker fetch path.
-- **500 total passing** (+9 over Sprint 28)
+### What was done in Sprint 32
+- **`dashboard/workbench.py`** — added `compute_win_loss_stats()`, `build_trader_summary()`, and `get_strategy_source_code()` as pure helpers for saved-run inspection.
+- **`dashboard/streamlit_app.py`** — added the 5th `Inspect` tab with saved-run selection, gain/win-rate/sharpe/drawdown metrics, gate-status narrative, optional gate-failure expander, equity-curve chart, and syntax-highlighted strategy source viewer.
+- **`tests/test_workbench_helpers.py`** — added 4 helper regression tests covering empty win/loss stats, mixed win/loss pairing, trader-summary labels, and built-in strategy source placeholders.
+- **`market_data/symbol_readiness.py`** — added a deterministic SQLite tie-breaker for `list_load_jobs()` ordering so the existing readiness test remains stable when queued timestamps tie.
+- **Verification** — `pytest tests/ -q` now passes with **530 passed, 1 warning**.
 
-### Sprint 30 Direction
-No mandatory roadmap item is queued. The next agent should confirm the user’s priority, with likely options:
-1. Expand beyond Binance spot `USDT` into additional providers/exchanges
-2. Improve symbol-management UX and watchlist controls further
-3. Harden GitHub sprint/project automation once write-capable integration is available
+### Next sprint
+No queued Sprint 33 item is defined in-repo. The next agent should:
+1. Check GitHub Projects board `#1` for the next sprint candidate.
+2. If no board item is authoritative, ask the user for the next priority.
+3. Keep `knowledge/experiment_log.md` untouched unless the user explicitly wants experiment execution/logging work.
 
 ### GitHub Sprint Tracking — Manual Fallback
 - Attempted GitHub issue creation for Sprint 29 in `karllouiehernandez/crypto-ai-trader`
@@ -101,6 +97,10 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 | Sprint 26 — CI/CD + Jetson + MCP + Telegram | ✅ CLOSED | Claude Code | 2026-04-18 |
 | Sprint 27 — Responsive Chart + Runtime Marker Clarity | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 28 — Responsive Chart Indicator Overlays | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 29 — Dynamic Binance USDT Universe + Historical Data Coverage | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 30 — Ready-First Symbol UX + Background History Loading | ✅ CLOSED | Claude Code | 2026-04-18 |
+| Sprint 31 — Strategy Experiments EXP-001 + EXP-002 | ✅ CLOSED | Claude Code | 2026-04-18 |
+| Sprint 32 — Strategy Inspector Tab | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 

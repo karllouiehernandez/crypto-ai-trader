@@ -33,9 +33,11 @@ from dashboard.workbench import (
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_focus_candidate_frame,
+    build_trader_summary,
     build_trading_chart_payload,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
+    compute_win_loss_stats,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
@@ -45,6 +47,7 @@ from dashboard.workbench import (
     format_params_summary,
     format_scenario_label,
     format_strategy_origin,
+    get_strategy_source_code,
     list_runtime_strategies,
     normalise_params,
     normalise_preset_name,
@@ -55,6 +58,7 @@ from dashboard.workbench import (
 from database.promotion_queries import query_promotions
 from database.models import init_db
 from llm.generator import generate_and_discover_strategy
+from market_data.background_loader import ensure_worker_running
 from market_data.binance_symbols import list_binance_spot_usdt_symbols
 from market_data.history import (
     audit as audit_history,
@@ -63,6 +67,12 @@ from market_data.history import (
     format_audit_summary,
 )
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
+from market_data.symbol_readiness import (
+    list_load_jobs as list_symbol_load_jobs,
+    list_ready_symbols,
+    queue_symbol_load,
+    retry_failed_load as retry_symbol_load,
+)
 
 # ── Regime config ─────────────────────────────────────────────────────────────
 _REGIME_EMOJI = {
@@ -101,6 +111,7 @@ _TF_LOOKBACK_DAYS = {
 }
 
 init_db()
+ensure_worker_running()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=10)
@@ -357,6 +368,25 @@ def load_symbol_audit(symbol: str, start_iso: str, end_iso: str) -> dict:
     return audit_history(symbol, start_iso, end_iso, interval="1m")
 
 
+@st.cache_data(ttl=15)
+def load_ready_symbols_cached() -> list[str]:
+    """Symbols with local candle data, ordered by Binance volume rank."""
+    ready = set(list_ready_symbols())
+    if not ready:
+        return list(SYMBOLS)
+    catalog = load_symbol_catalog()
+    ranked = [row["symbol"] for row in catalog if row["symbol"] in ready]
+    in_catalog = {row["symbol"] for row in catalog}
+    ranked.extend(sorted(s for s in ready if s not in in_catalog))
+    return ranked
+
+
+@st.cache_data(ttl=5)
+def load_symbol_jobs() -> list[dict]:
+    """Return symbol load jobs, most recent first."""
+    return list_symbol_load_jobs()
+
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Crypto-AI Trader", layout="wide", initial_sidebar_state="expanded")
 
@@ -372,14 +402,19 @@ st.markdown("""
 st.sidebar.title("⚙️ Controls")
 
 symbol_catalog = load_symbol_catalog()
-available_symbols = [row["symbol"] for row in symbol_catalog]
+available_symbols = [row["symbol"] for row in symbol_catalog]  # full Binance catalog
+ready_symbols = load_ready_symbols_cached()                     # symbols with local data
 runtime_watchlist = list_runtime_symbols()
 if not available_symbols:
     available_symbols = runtime_watchlist or list(SYMBOLS)
+if not ready_symbols:
+    ready_symbols = runtime_watchlist or list(SYMBOLS)
 if not runtime_watchlist:
     runtime_watchlist = list(SYMBOLS)
 if not available_symbols:
     available_symbols = ["BTCUSDT"]
+if not ready_symbols:
+    ready_symbols = ["BTCUSDT"]
 
 # Persist all user preferences in session_state so auto-refresh never resets them
 _DEFAULTS = {
@@ -400,8 +435,11 @@ for k, v in _DEFAULTS.items():
 
 if st.session_state["symbol"] not in available_symbols:
     available_symbols = [st.session_state["symbol"]] + [sym for sym in available_symbols if sym != st.session_state["symbol"]]
+# Reset saved symbol to first ready option if it has no local data
+if st.session_state.get("symbol") not in ready_symbols:
+    st.session_state["symbol"] = ready_symbols[0]
 
-symbol  = st.sidebar.selectbox("Symbol", available_symbols, key="symbol")
+symbol  = st.sidebar.selectbox("Symbol", ready_symbols, key="symbol")
 autoref = st.sidebar.checkbox("Auto-refresh (15 s)", key="autoref")
 
 st.sidebar.markdown("---")
@@ -438,6 +476,51 @@ if sync_symbol:
     load_symbol_audit.clear()
     st.success(f"Synced recent history for {symbol}.")
     st.rerun()
+
+st.sidebar.markdown("---")
+_ready_set = set(ready_symbols)
+_unloaded_symbols = [s for s in available_symbols if s not in _ready_set]
+with st.sidebar.expander(f"Load New Symbol ({len(_unloaded_symbols)} available)", expanded=False):
+    st.caption("Queue a background 30-day history load. The symbol appears in chart/backtest selectors once ready.")
+    if _unloaded_symbols:
+        _new_sym = st.selectbox(
+            "Search Binance USDT symbol",
+            _unloaded_symbols,
+            key="load_new_sym_picker",
+        )
+        if st.button("Queue Background Load", key="queue_new_load_btn", use_container_width=True):
+            _job = queue_symbol_load(_new_sym)
+            if _job["status"] == "queued":
+                st.info(f"Queued: **{_new_sym}** will appear in the symbol list once ready (~30 min).")
+            elif _job["status"] == "loading":
+                st.info(f"**{_new_sym}** is already loading.")
+            elif _job["status"] == "ready":
+                st.success(f"**{_new_sym}** is already ready — refresh to see it in selectors.")
+            load_ready_symbols_cached.clear()
+            load_symbol_jobs.clear()
+            st.rerun()
+    else:
+        st.caption("All discovered Binance symbols are already loaded.")
+
+    _jobs = load_symbol_jobs()
+    _active = [j for j in _jobs if j["status"] in ("queued", "loading", "failed")]
+    if _active:
+        st.markdown("**Load Queue**")
+        for _j in _active[:10]:
+            _icon = {"queued": "⏳", "loading": "🔄", "failed": "❌"}.get(_j["status"], "?")
+            st.caption(f"{_icon} **{_j['symbol']}** — {_j['status']}")
+            if _j["status"] == "failed":
+                if _j.get("error_msg"):
+                    st.caption(f"  {_j['error_msg'][:80]}")
+                if st.button("Retry", key=f"retry_load_{_j['symbol']}", use_container_width=True):
+                    retry_symbol_load(_j["symbol"])
+                    load_symbol_jobs.clear()
+                    st.rerun()
+    _recently_ready = [j for j in _jobs if j["status"] == "ready"][:5]
+    if _recently_ready:
+        st.markdown("**Recently Loaded**")
+        for _j in _recently_ready:
+            st.caption(f"✅ {_j['symbol']}")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**📉 Chart Layers**")
@@ -512,7 +595,9 @@ hero_cols[2].metric("Workflow Stage", focus_workflow_status["stage"])
 hero_cols[3].metric("Passing Backtests", str(focus_workflow_status["passed_runs"]))
 hero_cols[4].metric("Runtime View", f"{runtime_strategy_filter} · {runtime_mode_filter}")
 
-strategy_tab, backtest_tab, runtime_tab, focus_tab = st.tabs(["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus"])
+strategy_tab, backtest_tab, runtime_tab, focus_tab, inspect_tab = st.tabs(
+    ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect"]
+)
 
 with strategy_tab:
     st.markdown("### Strategies")
@@ -667,7 +752,7 @@ with backtest_tab:
     selector_cols = st.columns(2)
     _prefill_sym = st.session_state.pop("focus_prefill_symbol", None)
     _bt_sym_default = _prefill_sym if _prefill_sym else symbol
-    _bt_sym_options = available_symbols if _bt_sym_default in available_symbols else [_bt_sym_default] + list(available_symbols)
+    _bt_sym_options = ready_symbols if _bt_sym_default in ready_symbols else [_bt_sym_default] + list(ready_symbols)
     bt_symbol = selector_cols[0].selectbox(
         "Symbol",
         _bt_sym_options,
@@ -1445,6 +1530,96 @@ with focus_tab:
                 st.dataframe(_full_frame, hide_index=True, use_container_width=True)
     else:
         st.info("No study run yet. Use the panel above to run your first weekly study.")
+
+with inspect_tab:
+    st.markdown("### Strategy Inspector")
+    st.caption(
+        "Review a saved backtest in trader-friendly terms, then inspect the exact Python strategy source behind that run."
+    )
+
+    all_runs = list_backtest_runs()
+    if all_runs.empty:
+        st.info("No saved runs yet.")
+    else:
+        run_labels: dict[int, str] = {}
+        for _, row in all_runs.iterrows():
+            run_id = int(row["id"])
+            run_labels[run_id] = f"{row['strategy_name']} — {row['symbol']} ({row['status']})"
+
+        selected_run_id = st.selectbox(
+            "Saved run",
+            options=list(run_labels.keys()),
+            format_func=lambda run_id: run_labels[int(run_id)],
+            key="inspect_run_label",
+        )
+
+        selected_run = get_backtest_run(int(selected_run_id))
+        trades_df = get_backtest_trades(int(selected_run_id))
+
+        if selected_run is None:
+            st.warning("The selected run could not be loaded.")
+        else:
+            equity_curve = compute_trade_equity_curve(trades_df, starting_balance=STARTING_BALANCE_USD)
+            win_stats = compute_win_loss_stats(trades_df)
+            summary = build_trader_summary(selected_run, equity_curve, STARTING_BALANCE_USD)
+
+            metric_cols = st.columns(4)
+            metric_cols[0].metric("Total Gain", f"{summary['gain_pct']:+.2f}%")
+            metric_cols[1].metric("Win Rate", f"{win_stats['win_rate']:.0%}")
+            metric_cols[2].metric("Sharpe Ratio", f"{float(selected_run.get('sharpe') or 0.0):.2f}")
+            metric_cols[3].metric("Max Drawdown", f"{summary['drawdown_pct']:.2f}%")
+
+            gate_icon = "✅" if summary["gate_passed"] else "❌"
+            st.info(
+                f"{gate_icon} Gate {'passed' if summary['gate_passed'] else 'failed'}. "
+                f"Sharpe quality: {summary['sharpe_label']}. "
+                f"Risk profile: {summary['risk_label']}. "
+                f"Profit factor: {summary['profit_factor']:.2f}. "
+                f"Trades: {summary['n_trades']} total executions, "
+                f"{win_stats['total_pairs']} closed pairs, {win_stats['win_count']} wins, {win_stats['loss_count']} losses."
+            )
+
+            if summary["gate_failures"]:
+                with st.expander("Gate failure details", expanded=False):
+                    for failure in summary["gate_failures"]:
+                        st.write(f"- {failure}")
+
+            if not equity_curve.empty:
+                inspect_fig = go.Figure()
+                inspect_fig.add_trace(
+                    go.Scatter(
+                        x=equity_curve["step"],
+                        y=equity_curve["equity"],
+                        mode="lines",
+                        name="Equity",
+                        line=dict(color="#2962ff", width=2),
+                        fill="tozeroy",
+                        fillcolor="rgba(41,98,255,0.10)",
+                    )
+                )
+                inspect_fig.update_layout(
+                    title="Saved Run Equity Curve",
+                    height=250,
+                    paper_bgcolor="#0e1117",
+                    plot_bgcolor="#0e1117",
+                    font=dict(color="#d1d4dc"),
+                    margin=dict(l=10, r=10, t=40, b=10),
+                    xaxis=dict(gridcolor="#1e222d"),
+                    yaxis=dict(gridcolor="#1e222d"),
+                )
+                st.plotly_chart(inspect_fig, width="stretch")
+
+            st.markdown("---")
+            st.markdown("#### Strategy Algorithm")
+            inspect_catalog = list_available_strategies()
+            strat_item = next(
+                (item for item in inspect_catalog if item.get("name") == selected_run.get("strategy_name")),
+                None,
+            )
+            if strat_item is None:
+                st.warning(f"Strategy source could not be located for `{selected_run.get('strategy_name', 'unknown')}`.")
+            else:
+                st.code(get_strategy_source_code(strat_item), language="python")
 
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if autoref:
