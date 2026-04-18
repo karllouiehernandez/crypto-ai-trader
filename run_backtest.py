@@ -78,7 +78,11 @@ def _run_single(args) -> int:
     start = datetime.fromisoformat(args.start)
     end   = datetime.fromisoformat(args.end)
 
-    trades = run_backtest(args.symbol.upper(), start, end, strategy_name=args.strategy)
+    try:
+        trades = run_backtest(args.symbol.upper(), start, end, strategy_name=args.strategy)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
     if not trades:
         print("No trades generated.")
         return 0

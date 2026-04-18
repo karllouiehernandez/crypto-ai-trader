@@ -16,6 +16,7 @@ import logging
 import pandas as pd
 
 from database.models import Candle, SessionLocal
+from market_data.history import evaluate_candle_coverage, format_audit_summary
 from strategy.runtime import compute_strategy_decision, get_active_strategy_config, get_strategy_instance
 from strategy.signals import Signal
 from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD, SLIPPAGE_PCT
@@ -64,6 +65,10 @@ def run_backtest(
 
         if not candles:
             raise ValueError("No candles in the requested date range")
+
+        coverage = evaluate_candle_coverage(symbol, start, end, [c.open_time for c in candles], interval="1m")
+        if not coverage["is_complete"]:
+            raise ValueError(format_audit_summary(coverage))
 
         for c in candles:
             decision = compute_strategy_decision(

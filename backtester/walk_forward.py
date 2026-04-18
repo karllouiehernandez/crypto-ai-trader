@@ -84,13 +84,13 @@ def walk_forward(
 
         try:
             trades = run_backtest(symbol, oos_start, oos_end, strategy_name=strategy_name)
-        except ValueError:
-            # No candles in this OOS window — record as zero-trades result
+        except ValueError as exc:
+            # Missing or incomplete candles in this OOS window — record as failed result
             results.append({
                 "window": i, "oos_start": oos_start, "oos_end": oos_end,
                 "sharpe": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
                 "n_trades": 0, "passed": False,
-                "failures": ["No candles in OOS window"],
+                "failures": [str(exc) or "No candles in OOS window"],
                 "final_equity": 0.0,
             })
             continue

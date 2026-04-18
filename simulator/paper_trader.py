@@ -4,6 +4,7 @@ import asyncio, logging
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
+import config as _config
 from database.models import (
     Candle,
     SessionLocal,
@@ -17,11 +18,13 @@ from strategy.signals import Signal
 from strategy.risk import atr_position_size, DailyLossTracker, DrawdownCircuitBreaker
 from utils.telegram_utils import CALLBACK_QUEUE, send_telegram_alert, _token, _chat_id
 from config import (
-    SYMBOLS, POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD,
+    SYMBOLS,
+    POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD,
     DAILY_LOSS_LIMIT_PCT, DRAWDOWN_HALT_PCT, LLM_ENABLED,
     LIVE_TRADE_ENABLED,
     PORTFOLIO_SNAP_MIN,
 )
+from market_data.runtime_watchlist import list_runtime_symbols
 
 TICK_SECONDS = 1
 ATR_LOOKBACK = 20  # candles used to estimate ATR for position sizing
@@ -121,7 +124,7 @@ class PaperTrader:
         with SessionLocal() as sess:
             # Single pass: collect latest candle per symbol
             candles: Dict[str, object] = {}
-            for sym in SYMBOLS:
+            for sym in _current_runtime_symbols():
                 c = (
                     sess.query(Candle)
                         .filter(Candle.symbol == sym)
@@ -384,3 +387,14 @@ async def _fire_critique(
         critique_trade(sym, "SELL", entry_price, exit_price, pnl_pct, regime, {})
     except Exception:   # noqa: BLE001
         pass
+
+
+def _current_runtime_symbols() -> list[str]:
+    """Return the effective runtime symbol list, preserving legacy patched SYMBOLS in tests."""
+    try:
+        symbols = list_runtime_symbols()
+    except Exception:
+        symbols = []
+    if symbols == list(getattr(_config, "SYMBOLS", [])) and list(SYMBOLS) != list(getattr(_config, "SYMBOLS", [])):
+        return list(SYMBOLS)
+    return symbols or list(SYMBOLS)

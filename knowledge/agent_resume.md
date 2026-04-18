@@ -10,10 +10,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 29 — Historical Data Backfill + Audit`
-- Status: Sprint 28 is closed; next work is reliable local historical-data coverage for backtesting before Jetson deployment
-- Baseline: `pytest tests/ -q` must show `491 passed`
-- GitHub tracking issue: none created; current integration can read GitHub but board/issue writes are blocked with `403 Resource not accessible by integration`
+- Sprint: `Sprint 30 — User-prioritized follow-up`
+- Status: Sprint 29 is closed; dynamic Binance `USDT` symbol discovery, persisted runtime watchlists, and historical backfill/audit coverage are in place
+- Baseline: `pytest tests/ -q` must show `500 passed`
+- GitHub tracking issue: Sprint 29 issue creation was attempted and failed with `403 Resource not accessible by integration`; exact manual issue/card text is recorded in `HANDOFF.md` and `knowledge/sprint_log.md`
 
 ## Why This Exists
 
@@ -21,6 +21,29 @@ Read order for a new agent:
 
 ## Current State
 
+- Dynamic Binance spot `USDT` symbol discovery is in place:
+  - `market_data/binance_symbols.py`
+  - filters active spot `USDT` pairs from Binance metadata
+  - sorts by 24h quote volume for UI defaults and market focus
+- Runtime symbol activation is now separate from chart/backtest selection:
+  - `market_data/runtime_watchlist.py`
+  - persisted watchlist functions for paper/live runtime
+  - `config.SYMBOLS` is now only the seed/default, not the active universe
+- Historical data coverage workflow is now in place:
+  - `market_data/history.py`
+  - Binance archive backfill + REST delta sync
+  - continuity audit and formatted fail-fast error summaries
+- Runtime loops now read the persisted watchlist:
+  - `collectors/live_streamer.py`
+  - `simulator/paper_trader.py`
+- Dashboard symbol selectors are dynamic and searchable:
+  - `dashboard/streamlit_app.py`
+  - runtime watchlist manager is separate from research/backtest symbol selection
+  - Backtest Lab exposes history audit and backfill controls
+- Backtests now fail fast on incomplete candle windows:
+  - `backtester/engine.py`
+  - `backtester/walk_forward.py`
+  - `run_backtest.py`
 - Workbench tabs are in place: `Strategies`, `Backtest Lab`, `Runtime Monitor`
 - Runtime and backtest now share one responsive chart renderer:
   - `dashboard/chart_component.py`
@@ -62,11 +85,10 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 29 — build a trustworthy local historical-data workflow:
-- explicit backfill over date ranges
-- gap auditing before backtests
-- clear continuity/error messaging
-- local simulation-first validation before Jetson deployment
+Sprint 30 is not fixed yet. Likely next directions:
+- expand historical providers/exchanges beyond Binance spot `USDT`
+- improve watchlist and symbol-management UX
+- harden GitHub sprint/project automation once write access exists
 
 ## Constraints
 
@@ -78,8 +100,8 @@ Sprint 29 — build a trustworthy local historical-data workflow:
 
 ## Last Verified State
 
-- Tests: `491 passed, 1 warning`
-- Last sprint closed: `Sprint 28`
+- Tests: `500 passed, 1 warning`
+- Last sprint closed: `Sprint 29`
 
 ## Token-Saving Rule
 

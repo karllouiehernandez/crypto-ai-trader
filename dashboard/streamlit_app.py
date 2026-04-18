@@ -55,6 +55,14 @@ from dashboard.workbench import (
 from database.promotion_queries import query_promotions
 from database.models import init_db
 from llm.generator import generate_and_discover_strategy
+from market_data.binance_symbols import list_binance_spot_usdt_symbols
+from market_data.history import (
+    audit as audit_history,
+    backfill as backfill_history,
+    ensure_symbol_history,
+    format_audit_summary,
+)
+from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
 
 # ── Regime config ─────────────────────────────────────────────────────────────
 _REGIME_EMOJI = {
@@ -321,6 +329,34 @@ def render_strategy_param_control(strategy_name: str, field: dict, defaults: dic
     return st.text_input(label, key=key, help=help_text)
 
 
+@st.cache_data(ttl=300)
+def load_symbol_catalog() -> list[dict]:
+    """Return Binance spot USDT symbols, falling back to seeded runtime symbols on error."""
+    try:
+        catalog = list_binance_spot_usdt_symbols()
+        if catalog:
+            return catalog
+    except Exception:
+        pass
+    return [
+        {
+            "symbol": sym,
+            "base_asset": sym[:-4] if sym.endswith("USDT") else sym,
+            "quote_asset": "USDT",
+            "status": "UNKNOWN",
+            "quote_volume": 0.0,
+            "quote_volume_rank": idx + 1,
+        }
+        for idx, sym in enumerate(list_runtime_symbols() or SYMBOLS)
+    ]
+
+
+@st.cache_data(ttl=30)
+def load_symbol_audit(symbol: str, start_iso: str, end_iso: str) -> dict:
+    """Return continuity audit results for one symbol/date window."""
+    return audit_history(symbol, start_iso, end_iso, interval="1m")
+
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Crypto-AI Trader", layout="wide", initial_sidebar_state="expanded")
 
@@ -335,9 +371,19 @@ st.markdown("""
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 st.sidebar.title("⚙️ Controls")
 
+symbol_catalog = load_symbol_catalog()
+available_symbols = [row["symbol"] for row in symbol_catalog]
+runtime_watchlist = list_runtime_symbols()
+if not available_symbols:
+    available_symbols = runtime_watchlist or list(SYMBOLS)
+if not runtime_watchlist:
+    runtime_watchlist = list(SYMBOLS)
+if not available_symbols:
+    available_symbols = ["BTCUSDT"]
+
 # Persist all user preferences in session_state so auto-refresh never resets them
 _DEFAULTS = {
-    "symbol":        SYMBOLS[0],
+    "symbol":        runtime_watchlist[0] if runtime_watchlist else available_symbols[0],
     "autoref":       True,
     "show_trades":   True,
     "show_fast_emas": True,
@@ -352,8 +398,46 @@ for k, v in _DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-symbol  = st.sidebar.selectbox("Symbol", SYMBOLS, key="symbol")
+if st.session_state["symbol"] not in available_symbols:
+    available_symbols = [st.session_state["symbol"]] + [sym for sym in available_symbols if sym != st.session_state["symbol"]]
+
+symbol  = st.sidebar.selectbox("Symbol", available_symbols, key="symbol")
 autoref = st.sidebar.checkbox("Auto-refresh (15 s)", key="autoref")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Runtime Watchlist**")
+watchlist_selection = st.sidebar.multiselect(
+    "Paper/Live Symbols",
+    options=available_symbols,
+    default=[sym for sym in runtime_watchlist if sym in available_symbols] or runtime_watchlist,
+    key="runtime_watchlist_editor",
+)
+watchlist_cols = st.sidebar.columns(2)
+save_watchlist = watchlist_cols[0].button("Save Watchlist", width="stretch")
+sync_symbol = watchlist_cols[1].button("Sync Selected", width="stretch")
+
+if save_watchlist:
+    previous_watchlist = set(runtime_watchlist)
+    updated_watchlist = set_runtime_symbols(list(watchlist_selection))
+    added_symbols = [sym for sym in updated_watchlist if sym not in previous_watchlist]
+    if added_symbols:
+        with st.spinner(f"Syncing history for {', '.join(added_symbols)}..."):
+            for sym in added_symbols:
+                ensure_symbol_history(sym)
+    load_symbol_catalog.clear()
+    load_candles_raw.clear()
+    load_trades.clear()
+    load_equity.clear()
+    st.success("Runtime watchlist updated.")
+    st.rerun()
+
+if sync_symbol:
+    with st.spinner(f"Syncing history for {symbol}..."):
+        ensure_symbol_history(symbol)
+    load_candles_raw.clear()
+    load_symbol_audit.clear()
+    st.success(f"Synced recent history for {symbol}.")
+    st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**📉 Chart Layers**")
@@ -462,8 +546,8 @@ with strategy_tab:
             gen_cols = st.columns(2)
             gen_symbol = gen_cols[0].selectbox(
                 "Primary symbol",
-                SYMBOLS,
-                index=SYMBOLS.index(symbol),
+                available_symbols,
+                index=available_symbols.index(symbol) if symbol in available_symbols else 0,
                 key="gen_symbol",
                 disabled=not LLM_ENABLED,
             )
@@ -583,7 +667,7 @@ with backtest_tab:
     selector_cols = st.columns(2)
     _prefill_sym = st.session_state.pop("focus_prefill_symbol", None)
     _bt_sym_default = _prefill_sym if _prefill_sym else symbol
-    _bt_sym_options = SYMBOLS if _bt_sym_default in SYMBOLS else [_bt_sym_default] + list(SYMBOLS)
+    _bt_sym_options = available_symbols if _bt_sym_default in available_symbols else [_bt_sym_default] + list(available_symbols)
     bt_symbol = selector_cols[0].selectbox(
         "Symbol",
         _bt_sym_options,
@@ -695,6 +779,21 @@ with backtest_tab:
     date_cols = st.columns(2)
     bt_start = date_cols[0].date_input("Start", value=datetime.utcnow().date() - timedelta(days=30))
     bt_end = date_cols[1].date_input("End", value=datetime.utcnow().date())
+    bt_start_dt = datetime.combine(bt_start, datetime.min.time())
+    bt_end_dt = datetime.combine(bt_end, datetime.min.time())
+    audit_result = load_symbol_audit(bt_symbol, bt_start_dt.isoformat(), bt_end_dt.isoformat())
+    audit_cols = st.columns([4, 1])
+    if audit_result["is_complete"]:
+        audit_cols[0].success(format_audit_summary(audit_result))
+    else:
+        audit_cols[0].warning(format_audit_summary(audit_result))
+    if audit_cols[1].button("Backfill Range", width="stretch"):
+        with st.spinner(f"Backfilling {bt_symbol}..."):
+            backfill_history(bt_symbol, bt_start_dt, bt_end_dt, interval="1m")
+        load_candles_raw.clear()
+        load_symbol_audit.clear()
+        st.success(f"Backfill complete for {bt_symbol}.")
+        st.rerun()
     matched_preset_name = find_matching_preset_name(bt_params, presets_view)
     current_scenario_label = format_scenario_label(bt_params, matched_preset_name)
     st.caption(f"Scenario: **{current_scenario_label}**")
@@ -717,20 +816,26 @@ with backtest_tab:
             st.info(bt_workflow_status["next_step"])
 
     if run_backtest_now:
-        with st.spinner("Running backtest and persisting result..."):
-            result = run_and_persist_backtest(
-                bt_symbol,
-                datetime.combine(bt_start, datetime.min.time()),
-                datetime.combine(bt_end, datetime.min.time()),
-                bt_strategy,
-                params=bt_params,
-                preset_name=matched_preset_name,
-            )
-        st.session_state["selected_backtest_run_id"] = result["run_id"]
-        load_backtest_runs.clear()
-        load_backtest_run.clear()
-        load_backtest_trades.clear()
-        st.success(f"Backtest run #{result['run_id']} saved.")
+        try:
+            with st.spinner("Running backtest and persisting result..."):
+                result = run_and_persist_backtest(
+                    bt_symbol,
+                    bt_start_dt,
+                    bt_end_dt,
+                    bt_strategy,
+                    params=bt_params,
+                    preset_name=matched_preset_name,
+                )
+        except ValueError as exc:
+            st.error(str(exc))
+            result = None
+        if result is not None:
+            st.session_state["selected_backtest_run_id"] = result["run_id"]
+            load_backtest_runs.clear()
+            load_symbol_audit.clear()
+            load_backtest_run.clear()
+            load_backtest_trades.clear()
+            st.success(f"Backtest run #{result['run_id']} saved.")
 
     runs_df = load_backtest_runs()
     all_backtest_runs = runs_df
@@ -1004,6 +1109,11 @@ with runtime_tab:
         f"Viewing `{runtime_strategy_filter}` in `{runtime_mode_filter}` mode for runtime monitoring. "
         "Changing the active strategy affects dashboard backtests immediately and paper/live after restart."
     )
+    if symbol not in runtime_watchlist:
+        st.info(
+            f"`{symbol}` is available for research/backtests but is not in the runtime watchlist. "
+            "Add it in the sidebar to stream and trade it in paper/live."
+        )
     st.markdown("### 📈 " + symbol + " Chart")
     tf_cols = st.columns(len(_TF_OPTIONS))
     if "timeframe" not in st.session_state:

@@ -18,10 +18,13 @@ from typing import Optional
 from binance import AsyncClient
 import config                           # import whole module so we can getattr
 from config import (
-    SYMBOLS, LIVE_POLL_SECONDS,
+    SYMBOLS,
+    LIVE_POLL_SECONDS,
     BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET,
     TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
 )
+from market_data.history import ensure_symbol_history
+from market_data.runtime_watchlist import list_runtime_symbols
 
 # Optional switches
 ENABLE_TG_ALERTS         = getattr(config, "ENABLE_TG_ALERTS", False)
@@ -97,7 +100,7 @@ async def stream_symbol(sym: str, client: AsyncClient, retry: int = 0) -> None:
 
 
 async def main() -> None:
-    """Spin up one task per symbol, send Telegram startup ping, then wait."""
+    """Manage one streamer task per runtime-watchlist symbol."""
     init_db()
     log.info("try TELEGRAM")
 
@@ -107,9 +110,32 @@ async def main() -> None:
         BINANCE_API_KEY, BINANCE_API_SECRET, testnet=BINANCE_TESTNET,
     )
     try:
-        tasks = [asyncio.create_task(stream_symbol(sym, client)) for sym in SYMBOLS]
-        await asyncio.gather(*tasks)
+        tasks: dict[str, asyncio.Task] = {}
+        while True:
+            current_symbols = _current_runtime_symbols()
+
+            for sym in current_symbols:
+                if sym in tasks:
+                    continue
+                await asyncio.to_thread(ensure_symbol_history, sym)
+                tasks[sym] = asyncio.create_task(stream_symbol(sym, client))
+                log.info("Started live streamer task", extra={"symbol": sym})
+
+            removed = [sym for sym in tasks if sym not in current_symbols]
+            for sym in removed:
+                tasks[sym].cancel()
+                try:
+                    await tasks[sym]
+                except asyncio.CancelledError:
+                    pass
+                del tasks[sym]
+                log.info("Stopped live streamer task", extra={"symbol": sym})
+
+            await asyncio.sleep(max(5, LIVE_POLL_SECONDS))
     finally:
+        for task in tasks.values():
+            task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
         await client.close_connection()
 
 
@@ -118,3 +144,14 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         log.info("Live streamer stopped by user")
+
+
+def _current_runtime_symbols() -> list[str]:
+    """Return the active runtime watchlist, preserving legacy patched SYMBOLS in tests."""
+    try:
+        symbols = list_runtime_symbols()
+    except Exception:
+        symbols = []
+    if symbols == list(getattr(config, "SYMBOLS", [])) and list(SYMBOLS) != list(getattr(config, "SYMBOLS", [])):
+        return list(SYMBOLS)
+    return symbols or list(SYMBOLS)
