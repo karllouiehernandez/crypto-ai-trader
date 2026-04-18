@@ -51,6 +51,11 @@ def build_trading_chart_payload(
     timeframe: str = "",
     strategy_name: str = "",
     context_label: str = "",
+    show_fast_emas: bool = False,
+    show_ema_200: bool = False,
+    show_bbands: bool = False,
+    show_rsi: bool = False,
+    show_macd: bool = False,
 ) -> dict[str, Any]:
     """Serialize candles and trade markers for the responsive chart component."""
     frame = candles.copy() if isinstance(candles, pd.DataFrame) else pd.DataFrame()
@@ -67,8 +72,9 @@ def build_trading_chart_payload(
             },
         }
 
-    required_columns = ["open_time", "open", "high", "low", "close", "volume"]
-    frame = frame[[col for col in required_columns if col in frame.columns]].copy()
+    base_columns = ["open_time", "open", "high", "low", "close", "volume"]
+    study_columns = ["ema_9", "ema_21", "ema_55", "ema_200", "bb_hi", "bb_lo", "rsi_14", "macd", "macd_s"]
+    frame = frame[[col for col in base_columns + study_columns if col in frame.columns]].copy()
     frame["open_time"] = pd.to_datetime(frame["open_time"], errors="coerce")
     frame = frame.dropna(subset=["open_time", "open", "high", "low", "close", "volume"])
     if frame.empty:
@@ -111,10 +117,21 @@ def build_trading_chart_payload(
         chart_times,
         trades if isinstance(trades, pd.DataFrame) else pd.DataFrame(),
     )
+    overlays = {
+        "price": _build_price_overlays(
+            frame,
+            show_fast_emas=show_fast_emas,
+            show_ema_200=show_ema_200,
+            show_bbands=show_bbands,
+        ),
+        "rsi": _build_rsi_overlay(frame) if show_rsi else {"series": [], "bands": []},
+        "macd": _build_macd_overlay(frame) if show_macd else {"series": [], "histogram": []},
+    }
     return {
         "candles": candle_payload,
         "volume": volume_payload,
         "markers": markers,
+        "overlays": overlays,
         "meta": {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -186,6 +203,146 @@ def _build_chart_markers(chart_times: list[int], trades: pd.DataFrame) -> list[d
         markers.append(marker)
 
     return markers
+
+
+def _build_price_overlays(
+    frame: pd.DataFrame,
+    *,
+    show_fast_emas: bool,
+    show_ema_200: bool,
+    show_bbands: bool,
+) -> list[dict[str, Any]]:
+    """Serialize price-pane study overlays from an enriched candle frame."""
+    overlays: list[dict[str, Any]] = []
+
+    if show_fast_emas:
+        overlays.extend(
+            [
+                _build_line_overlay(frame, "ema_9", label="EMA 9", color="#ffb300", line_width=2),
+                _build_line_overlay(frame, "ema_21", label="EMA 21", color="#42a5f5", line_width=2),
+                _build_line_overlay(frame, "ema_55", label="EMA 55", color="#26a69a", line_width=2),
+            ]
+        )
+    if show_ema_200:
+        overlays.append(_build_line_overlay(frame, "ema_200", label="EMA 200", color="#e0e0e0", line_width=2))
+    if show_bbands:
+        overlays.extend(
+            [
+                _build_line_overlay(
+                    frame,
+                    "bb_hi",
+                    label="BB High",
+                    color="#7e8aa0",
+                    line_width=1,
+                    line_style="dashed",
+                ),
+                _build_line_overlay(
+                    frame,
+                    "bb_lo",
+                    label="BB Low",
+                    color="#7e8aa0",
+                    line_width=1,
+                    line_style="dashed",
+                ),
+            ]
+        )
+
+    return [overlay for overlay in overlays if overlay["data"]]
+
+
+def _build_rsi_overlay(frame: pd.DataFrame) -> dict[str, Any]:
+    """Serialize the RSI study pane."""
+    series = _build_line_overlay(frame, "rsi_14", label="RSI 14", color="#ffca28", line_width=2)
+    if not series["data"]:
+        return {"series": [], "bands": []}
+
+    times = [point["time"] for point in series["data"]]
+    bands = [
+        _build_constant_line(times, 70.0, label="Overbought", color="#ef5350", line_style="dashed"),
+        _build_constant_line(times, 50.0, label="Midline", color="#5c6b7a", line_style="dotted"),
+        _build_constant_line(times, 30.0, label="Oversold", color="#26a69a", line_style="dashed"),
+    ]
+    return {"series": [series], "bands": bands}
+
+
+def _build_macd_overlay(frame: pd.DataFrame) -> dict[str, Any]:
+    """Serialize the MACD study pane."""
+    macd_series = _build_line_overlay(frame, "macd", label="MACD", color="#29b6f6", line_width=2)
+    signal_series = _build_line_overlay(frame, "macd_s", label="Signal", color="#ffa726", line_width=2)
+
+    histogram: list[dict[str, Any]] = []
+    required = {"open_time", "macd", "macd_s"}
+    if required.issubset(frame.columns):
+        study = frame[list(required)].copy()
+        study["open_time"] = pd.to_datetime(study["open_time"], errors="coerce")
+        study["macd"] = pd.to_numeric(study["macd"], errors="coerce")
+        study["macd_s"] = pd.to_numeric(study["macd_s"], errors="coerce")
+        study = study.dropna(subset=["open_time", "macd", "macd_s"]).sort_values("open_time")
+        for _, row in study.iterrows():
+            hist_value = float(row["macd"]) - float(row["macd_s"])
+            histogram.append(
+                {
+                    "time": to_utc_epoch_seconds(row["open_time"]),
+                    "value": hist_value,
+                    "color": "#26a69a" if hist_value >= 0 else "#ef5350",
+                }
+            )
+
+    return {
+        "series": [series for series in [macd_series, signal_series] if series["data"]],
+        "histogram": histogram,
+    }
+
+
+def _build_line_overlay(
+    frame: pd.DataFrame,
+    column: str,
+    *,
+    label: str,
+    color: str,
+    line_width: int = 2,
+    line_style: str = "solid",
+) -> dict[str, Any]:
+    """Serialize one line study from an enriched candle frame."""
+    if "open_time" not in frame.columns or column not in frame.columns:
+        return {"label": label, "color": color, "lineWidth": line_width, "lineStyle": line_style, "data": []}
+
+    study = frame[["open_time", column]].copy()
+    study["open_time"] = pd.to_datetime(study["open_time"], errors="coerce")
+    study[column] = pd.to_numeric(study[column], errors="coerce")
+    study = study.dropna(subset=["open_time", column]).sort_values("open_time")
+
+    return {
+        "label": label,
+        "color": color,
+        "lineWidth": line_width,
+        "lineStyle": line_style,
+        "data": [
+            {
+                "time": to_utc_epoch_seconds(row["open_time"]),
+                "value": float(row[column]),
+            }
+            for _, row in study.iterrows()
+        ],
+    }
+
+
+def _build_constant_line(
+    times: list[int],
+    value: float,
+    *,
+    label: str,
+    color: str,
+    line_style: str,
+) -> dict[str, Any]:
+    """Serialize a horizontal guide line aligned to the study pane times."""
+    return {
+        "label": label,
+        "color": color,
+        "lineWidth": 1,
+        "lineStyle": line_style,
+        "data": [{"time": ts, "value": value} for ts in times],
+    }
 
 
 def compute_drawdown_curve(equity_curve: pd.DataFrame) -> pd.DataFrame:
