@@ -10,29 +10,65 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-18 (Sprint 34 closed) |
-| **Sprint completed** | Sprint 34 ✅ — Promotion Control Panel Hardening — 556 tests passing |
-| **Next sprint** | Sprint 35 — TBD. Check GitHub Projects board #1 or ask the user for the next priority. |
-| **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
+| **Last updated** | 2026-04-18 (Sprint 35 closed) |
+| **Sprint completed** | Sprint 35 ✅ — AI UI Testing Agent + Production Data Integrity Suite — 579 tests passing |
+| **Next sprint** | Sprint 36 — TBD. Check GitHub Projects board #1 or ask the user for the next priority. |
+| **Blocking issues** | To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 34 complete and pushed to master. |
+| **Reason for handoff** | Sprint 35 complete and pushed. |
 
 ---
 
-## Resume Here — Sprint 35
+## Resume Here — Sprint 36
 
-**Sprint 34 complete.** The dashboard now has a Promotion Control Panel with live artifact validation status, Deactivate Paper/Live buttons, rollback selectboxes pointing to eligible reviewed artifacts, and a full artifact registry audit table. 556 tests passing.
+**Sprint 35 complete.** The repo now has a two-pass production readiness test suite: UI checks via Playwright (~65 checks across all 5 tabs) and data integrity checks via direct DB queries (~10 checks). 579 tests passing.
 
-### What was done in Sprint 34
-- **`strategy/artifacts.py`** — `deactivate_runtime_artifact(run_mode)` and `list_all_strategy_artifacts()`
-- **`dashboard/workbench.py`** — `build_runtime_target_summary`, `build_artifact_registry_frame`, `list_rollback_candidates`
-- **`dashboard/streamlit_app.py`** — Validation at page load for both paper and live targets; hero-area warning banner when targets are invalid; Promotion Control Panel expander with paper/live status cards, Deactivate buttons, rollback selectors, and artifact registry table
-- **`tests/test_workbench_helpers.py`** — 8 new tests (workbench helpers)
-- **`tests/test_strategy_artifacts.py`** — 5 new tests (deactivate + list_all)
-- **556 total passing** (+13 over Sprint 33)
+### What was done in Sprint 35
 
-### Sprint 35 Goal
+**UI Testing Agent (`tools/ui_agent/`)**
+- **`browser.py`** — Playwright wrapper: 11 tool actions (screenshot, click_tab, click_button, fill_input, select_option, expand_expander, scroll_down, get_visible_text, report_finding, done), `TOOL_DEFINITIONS` schema, `dispatch()`
+- **`agent.py`** — Pure Playwright production test runner, 9 test groups, ~65 checks:
+  - App shell & navigation (all 5 tabs round-trip)
+  - Sidebar controls (symbol selector, auto-refresh, watchlist, chart layers, mode selector, Load New Symbol)
+  - Strategies tab (Promotion Control Panel expand/content, strategy selector, catalog table, expanders, buttons)
+  - Backtest Lab (selectors, date inputs, Run Backtest execution + result detection)
+  - Runtime Monitor (6 timeframe switches 1m→1d, mode switching paper/live/all, metrics)
+  - Symbol chart coverage (iterate up to 5 ready symbols, chart renders per symbol)
+  - Market Focus (study expander, sliders, Run Weekly Study button, ranked table)
+  - Inspect tab (run selector, 4 metrics, gate banner, equity chart, code viewer)
+  - Background data & history (audit banner, backfill button, Load New Symbol job queue)
+- **`data_checks.py`** (NEW) — 10 DB-level data integrity checks:
+  - Candle freshness (latest candle ≤10 min old per ready symbol)
+  - History depth (≥30 days per ready symbol)
+  - OHLCV sanity (no zero/null/inverted candles in last 500 rows)
+  - Candle continuity (no gaps >2 min in last 1h)
+  - Trade log integrity (no consecutive same-side trades = no open position leaks)
+  - Backtest metric sanity (Sharpe finite, n_trades ≥0, drawdown in [0,1])
+  - Backtest equity integrity (win+loss pairs consistent, P&L arithmetic valid)
+  - Position size compliance (notional per BUY ≤ POSITION_SIZE_PCT × STARTING_BALANCE)
+  - Active artifact integrity (file exists on disk, SHA-256 hash matches DB)
+  - Ready symbol DB coverage (every ready symbol has ≥1440 candles = 1 full day)
+- **`report.py`** — `build_report()`, `write_report()` — JSON + Markdown to `reports/`
+- **`run_ui_agent.py`** — CLI: `python run_ui_agent.py [--headed] [--data-only] [--ui-only]`
+- **`tests/test_ui_agent_smoke.py`** — 5 smoke tests for report helpers
+- **`tests/test_data_checks.py`** (NEW) — 18 unit tests for data check logic (mocked DB)
+- **`requirements.txt`** — added `playwright>=1.44.0`, `groq>=1.0.0`
+- **579 total passing** (+18 over Sprint 34)
+
+### How to run
+```bash
+# Full run (UI + data checks):
+python run_ui_agent.py --headed
+
+# Data checks only (no browser):
+python run_ui_agent.py --data-only
+
+# UI only:
+python run_ui_agent.py --ui-only --headed
+```
+
+### Sprint 36 Goal
 No queued roadmap item. Check GitHub Projects board `#1` or ask the user for the next priority.
 
 ## Just Closed — Sprint 33
@@ -124,6 +160,7 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 | Sprint 32 — Strategy Inspector Tab | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 33 — Versioned Strategy Promotion Pipeline | ✅ CLOSED | Shared Codex + Claude Code stream | 2026-04-18 |
 | Sprint 34 — Promotion Control Panel Hardening | ✅ CLOSED | Claude Code | 2026-04-18 |
+| Sprint 35 — AI UI Testing Agent + Production Data Integrity Suite | ✅ CLOSED | Claude Code | 2026-04-18 |
 
 ---
 

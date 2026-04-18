@@ -13,8 +13,8 @@ Read order for a new agent:
 
 - Sprint: `Sprint 36 — TBD`
 - Status: Sprint 35 closed. No queued item. Check GitHub Projects board #1 or ask the user.
-- Baseline: `pytest tests/ -q` shows `561 passed, 4 warnings`
-- GitHub tracking: issue #38 added to board successfully
+- Baseline: `pytest tests/ -q` shows `579 passed, 4 warnings`
+- GitHub tracking: issue #38 (Sprint 35) added to board successfully
 
 ## Why This Exists
 
@@ -26,12 +26,14 @@ Read order for a new agent:
   - Codex and Claude Code must act as one developer on this repo
   - Do not treat local dirty files as belonging to one specific agent unless the user explicitly asks for attribution
   - Continue from the current worktree as shared in-progress state
-- Sprint 35 AI UI Testing Agent is complete and pushed:
-  - `tools/ui_agent/browser.py` — Playwright wrapper, 11 tool actions, `TOOL_DEFINITIONS` schema, `dispatch()`
-  - `tools/ui_agent/agent.py` — Claude API agent loop, trader persona, vision + tool use, max 50 steps
+- Sprint 35 AI UI Testing Agent + Production Data Integrity Suite is complete and pushed:
+  - `tools/ui_agent/browser.py` — Playwright wrapper, 11 tool actions, `TOOL_DEFINITIONS`, `dispatch()`
+  - `tools/ui_agent/agent.py` — Pure Playwright 9-group test runner (~65 checks, no LLM)
+  - `tools/ui_agent/data_checks.py` — 10 DB-level data integrity checks (candle freshness, history depth, OHLCV sanity, continuity, trade integrity, backtest metrics, equity, position sizing, artifact hash, symbol coverage)
   - `tools/ui_agent/report.py` — `build_report()`, `write_report()` (JSON + Markdown to `reports/`)
-  - `run_ui_agent.py` — CLI: `python run_ui_agent.py [--headed] [--url ...] [--max-steps N]`
-  - `tests/test_ui_agent_smoke.py` — 5 smoke tests (+Sprint 35)
+  - `run_ui_agent.py` — CLI: `python run_ui_agent.py [--headed] [--data-only] [--ui-only]`
+  - `tests/test_ui_agent_smoke.py` — 5 smoke tests
+  - `tests/test_data_checks.py` — 18 unit tests for data check logic
 - Sprint 34 Promotion Control Panel is complete and pushed:
   - `strategy/artifacts.py` — `deactivate_runtime_artifact(run_mode)`, `list_all_strategy_artifacts()`
   - `dashboard/workbench.py` — `build_runtime_target_summary`, `build_artifact_registry_frame`, `list_rollback_candidates`
@@ -143,7 +145,7 @@ Sprint 35 is closed. No Sprint 36 item is queued. Check GitHub Projects board #1
 
 ## Last Verified State
 
-- Tests: `561 passed, 4 warnings`
+- Tests: `579 passed, 4 warnings`
 - Headless dashboard startup: verified after Sprint 34 changes
 - Last sprint closed: `Sprint 35`
 
