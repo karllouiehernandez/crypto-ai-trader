@@ -1127,3 +1127,28 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
   - SelfLearner never raises in run_loop (outer except catches all) ✓
   - No DB writes in confidence_gate (pure function) ✓
   - _write_kb_entry uses append mode -- no data loss on repeated calls ✓
+
+---
+
+## Sprint 32 — Strategy Inspector Tab
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Goal:** Add a 5th dashboard tab that lets users inspect saved backtests through a trader-friendly summary and a strategy source-code viewer.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/workbench.py`
+  - added `compute_win_loss_stats()` to pair sequential BUY→SELL trades and derive win/loss stats
+  - added `build_trader_summary()` to convert saved run metrics into trader-facing labels and gate details
+  - added `get_strategy_source_code()` to load plugin source or return a built-in placeholder
+- [x] `dashboard/streamlit_app.py`
+  - expanded the workbench tab set to `Strategies`, `Backtest Lab`, `Runtime Monitor`, `Market Focus`, `Inspect`
+  - added the `Inspect` tab with saved-run selection, gain/win-rate/sharpe/drawdown metrics, gate narrative, optional failure details, equity chart, and highlighted strategy source
+- [x] `tests/test_workbench_helpers.py`
+  - added 4 regression tests for the new helper functions
+- [x] `market_data/symbol_readiness.py`
+  - added a deterministic SQLite tie-break to `list_load_jobs()` ordering so the existing readiness test remains stable when queued timestamps tie
+
+### Outcome
+- `pytest tests/ -q` → **530 passed, 1 warning**
+- Sprint 32 user goal is complete and the dashboard workbench now exposes saved-run inspection without breaking the existing tab workflow.

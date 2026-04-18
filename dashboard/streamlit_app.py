@@ -33,9 +33,11 @@ from dashboard.workbench import (
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_focus_candidate_frame,
+    build_trader_summary,
     build_trading_chart_payload,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
+    compute_win_loss_stats,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
@@ -45,6 +47,7 @@ from dashboard.workbench import (
     format_params_summary,
     format_scenario_label,
     format_strategy_origin,
+    get_strategy_source_code,
     list_runtime_strategies,
     normalise_params,
     normalise_preset_name,
@@ -592,7 +595,9 @@ hero_cols[2].metric("Workflow Stage", focus_workflow_status["stage"])
 hero_cols[3].metric("Passing Backtests", str(focus_workflow_status["passed_runs"]))
 hero_cols[4].metric("Runtime View", f"{runtime_strategy_filter} · {runtime_mode_filter}")
 
-strategy_tab, backtest_tab, runtime_tab, focus_tab = st.tabs(["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus"])
+strategy_tab, backtest_tab, runtime_tab, focus_tab, inspect_tab = st.tabs(
+    ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect"]
+)
 
 with strategy_tab:
     st.markdown("### Strategies")
@@ -1525,6 +1530,96 @@ with focus_tab:
                 st.dataframe(_full_frame, hide_index=True, use_container_width=True)
     else:
         st.info("No study run yet. Use the panel above to run your first weekly study.")
+
+with inspect_tab:
+    st.markdown("### Strategy Inspector")
+    st.caption(
+        "Review a saved backtest in trader-friendly terms, then inspect the exact Python strategy source behind that run."
+    )
+
+    all_runs = list_backtest_runs()
+    if all_runs.empty:
+        st.info("No saved runs yet.")
+    else:
+        run_labels: dict[int, str] = {}
+        for _, row in all_runs.iterrows():
+            run_id = int(row["id"])
+            run_labels[run_id] = f"{row['strategy_name']} — {row['symbol']} ({row['status']})"
+
+        selected_run_id = st.selectbox(
+            "Saved run",
+            options=list(run_labels.keys()),
+            format_func=lambda run_id: run_labels[int(run_id)],
+            key="inspect_run_label",
+        )
+
+        selected_run = get_backtest_run(int(selected_run_id))
+        trades_df = get_backtest_trades(int(selected_run_id))
+
+        if selected_run is None:
+            st.warning("The selected run could not be loaded.")
+        else:
+            equity_curve = compute_trade_equity_curve(trades_df, starting_balance=STARTING_BALANCE_USD)
+            win_stats = compute_win_loss_stats(trades_df)
+            summary = build_trader_summary(selected_run, equity_curve, STARTING_BALANCE_USD)
+
+            metric_cols = st.columns(4)
+            metric_cols[0].metric("Total Gain", f"{summary['gain_pct']:+.2f}%")
+            metric_cols[1].metric("Win Rate", f"{win_stats['win_rate']:.0%}")
+            metric_cols[2].metric("Sharpe Ratio", f"{float(selected_run.get('sharpe') or 0.0):.2f}")
+            metric_cols[3].metric("Max Drawdown", f"{summary['drawdown_pct']:.2f}%")
+
+            gate_icon = "✅" if summary["gate_passed"] else "❌"
+            st.info(
+                f"{gate_icon} Gate {'passed' if summary['gate_passed'] else 'failed'}. "
+                f"Sharpe quality: {summary['sharpe_label']}. "
+                f"Risk profile: {summary['risk_label']}. "
+                f"Profit factor: {summary['profit_factor']:.2f}. "
+                f"Trades: {summary['n_trades']} total executions, "
+                f"{win_stats['total_pairs']} closed pairs, {win_stats['win_count']} wins, {win_stats['loss_count']} losses."
+            )
+
+            if summary["gate_failures"]:
+                with st.expander("Gate failure details", expanded=False):
+                    for failure in summary["gate_failures"]:
+                        st.write(f"- {failure}")
+
+            if not equity_curve.empty:
+                inspect_fig = go.Figure()
+                inspect_fig.add_trace(
+                    go.Scatter(
+                        x=equity_curve["step"],
+                        y=equity_curve["equity"],
+                        mode="lines",
+                        name="Equity",
+                        line=dict(color="#2962ff", width=2),
+                        fill="tozeroy",
+                        fillcolor="rgba(41,98,255,0.10)",
+                    )
+                )
+                inspect_fig.update_layout(
+                    title="Saved Run Equity Curve",
+                    height=250,
+                    paper_bgcolor="#0e1117",
+                    plot_bgcolor="#0e1117",
+                    font=dict(color="#d1d4dc"),
+                    margin=dict(l=10, r=10, t=40, b=10),
+                    xaxis=dict(gridcolor="#1e222d"),
+                    yaxis=dict(gridcolor="#1e222d"),
+                )
+                st.plotly_chart(inspect_fig, width="stretch")
+
+            st.markdown("---")
+            st.markdown("#### Strategy Algorithm")
+            inspect_catalog = list_available_strategies()
+            strat_item = next(
+                (item for item in inspect_catalog if item.get("name") == selected_run.get("strategy_name")),
+                None,
+            )
+            if strat_item is None:
+                st.warning(f"Strategy source could not be located for `{selected_run.get('strategy_name', 'unknown')}`.")
+            else:
+                st.code(get_strategy_source_code(strat_item), language="python")
 
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if autoref:

@@ -10,9 +10,9 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 32 — EXP-001/002 Backtest Results + Next Experiment`
-- Status: Sprint 31 closed; plugins are implemented and ready in the dashboard. Run backtests and record results.
-- Baseline: `pytest tests/ -q` must show `526 passed`
+- Sprint: `Sprint 33 — TBD`
+- Status: Sprint 32 closed. Strategy Inspector tab is shipped; next priority is not defined yet.
+- Baseline: `pytest tests/ -q` currently shows `530 passed, 1 warning`
 - GitHub tracking: board/issue writes still blocked with `403`; use manual fallback
 
 ## Why This Exists
@@ -21,13 +21,17 @@ Read order for a new agent:
 
 ## Current State
 
-- Strategy experiment plugins are implemented and discoverable (Sprint 31):
-  - `strategies/ema200_filtered_momentum.py` — EXP-001: momentum + breakout with EMA-200 trend filter (TRENDING + SQUEEZE)
-  - `strategies/mtf_confirmation_strategy.py` — EXP-002: mean-reversion with 1m/5m/15m RSI+BB confluence (RANGING)
-  - Both auto-discovered by strategy loader, available in Backtest Lab dropdown
-  - Backtest results pending user action in dashboard
+- Strategy Inspector is in place (Sprint 32):
+  - `dashboard/workbench.py` — `compute_win_loss_stats()`, `build_trader_summary()`, `get_strategy_source_code()`
+  - `dashboard/streamlit_app.py` — 5th `Inspect` tab with saved-run selector, trader summary metrics, gate narrative, equity curve, and strategy source viewer
+  - `tests/test_workbench_helpers.py` — 4 Sprint 32 regression tests
+- Strategy experiment plugins from Sprint 31 remain implemented and discoverable:
+  - `strategies/ema200_filtered_momentum.py`
+  - `strategies/mtf_confirmation_strategy.py`
+  - Both are still available in Backtest Lab and the new Inspect tab
 - Ready-First Symbol UX is in place (Sprint 30):
   - `market_data/symbol_readiness.py` — `list_ready_symbols()`, `is_symbol_ready()`, `queue_symbol_load()`, `retry_failed_load()`, `list_load_jobs()`
+  - `list_load_jobs()` now uses a deterministic tie-break when queued timestamps match
   - `market_data/background_loader.py` — daemon thread worker; started by `ensure_worker_running()` on dashboard load
   - `database/models.py` — `SymbolLoadJob` table tracks load job status
   - `dashboard/streamlit_app.py` — chart and Backtest Lab selectors show ready-only symbols; "Load New Symbol" sidebar expander with queue status and retry
@@ -54,7 +58,7 @@ Read order for a new agent:
   - `backtester/engine.py`
   - `backtester/walk_forward.py`
   - `run_backtest.py`
-- Workbench tabs are in place: `Strategies`, `Backtest Lab`, `Runtime Monitor`
+- Workbench tabs are in place: `Strategies`, `Backtest Lab`, `Runtime Monitor`, `Market Focus`, `Inspect`
 - Runtime and backtest now share one responsive chart renderer:
   - `dashboard/chart_component.py`
   - vendored `Lightweight Charts` asset under `dashboard/assets/`
@@ -95,14 +99,15 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 31 goal is not yet defined. Check GitHub Projects board #1 or ask the user for the next priority.
+No queued Sprint 33 task is defined. Check GitHub Projects board `#1` or ask the user for the next priority.
 
 ## Likely Files
 
+- `HANDOFF.md`
+- `knowledge/agent_resume.md`
 - `dashboard/streamlit_app.py`
-- `market_data/history.py`
-- `market_data/runtime_watchlist.py`
-- `database/models.py`
+- `dashboard/workbench.py`
+- `tests/test_workbench_helpers.py`
 
 ## Constraints
 
@@ -114,8 +119,8 @@ Sprint 31 goal is not yet defined. Check GitHub Projects board #1 or ask the use
 
 ## Last Verified State
 
-- Tests: `526 passed, 1 warning`
-- Last sprint closed: `Sprint 31`
+- Tests: `530 passed, 1 warning`
+- Last sprint closed: `Sprint 32`
 
 ## Token-Saving Rule
 

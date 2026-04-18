@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from database.models import Candle, SessionLocal, SymbolLoadJob, init_db
+from sqlalchemy import text
 
 
 def _normalise_symbol(symbol: str) -> str:
@@ -92,7 +93,7 @@ def list_load_jobs() -> list[dict]:
     with SessionLocal() as sess:
         jobs = (
             sess.query(SymbolLoadJob)
-            .order_by(SymbolLoadJob.queued_at.desc())
+            .order_by(SymbolLoadJob.queued_at.desc(), text("rowid DESC"))
             .all()
         )
         return [

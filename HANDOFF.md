@@ -9,42 +9,33 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-18 (Sprint 31 closed) |
-| **Sprint completed** | Sprint 31 ✅ — Strategy Experiments EXP-001 + EXP-002 — 526 tests passing |
-| **Next sprint** | Sprint 32 — Run EXP-001/002 backtests via dashboard and record results, then decide on promotions or new experiments |
+| **Last active agent** | Codex |
+| **Last updated** | 2026-04-18 (Sprint 32 complete) |
+| **Sprint completed** | Sprint 32 ✅ — Strategy Inspector Tab — 530 tests passing |
+| **Next sprint** | Sprint 33 — TBD (check GitHub Projects board `#1` or ask the user for the next priority) |
 | **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 30 complete. |
+| **Reason for handoff** | Sprint 32 is implemented, tested, committed, and pushed. No follow-up sprint is defined yet. |
 
 ---
 
-## Resume Here — Sprint 32
+## Resume Here — Sprint 33 (TBD)
 
-**Sprint 31 complete.** Two strategy experiment plugins are implemented and auto-discovered. Both appear in the dashboard Backtest Lab strategy dropdown and are ready for evaluation. 526 tests passing.
+**Sprint 32 complete.** The dashboard now has a 5th `Inspect` tab that keeps the Jesse-style workflow intact: backtest history stays in the workbench, traders get a plain-English result summary, and developers can inspect the exact strategy script used for the saved run.
 
-### What was done in Sprint 31
-- **`strategies/ema200_filtered_momentum.py`** (NEW) — EXP-001: momentum + breakout with 200 EMA trend filter. TRENDING: long only above EMA-200 with full EMA stack + ADX + pullback + volume; SQUEEZE: breakout only above EMA-200. Overrides `decide()` for regime-aware logic.
-- **`strategies/mtf_confirmation_strategy.py`** (NEW) — EXP-002: mean-reversion requiring 1m + 5m + 15m RSI/BB oversold/overbought agreement. RANGING only. Resamples using `df.resample()` on DatetimeIndex; minimum 300 1m rows required.
-- **`tests/test_sprint31_strategies.py`** (NEW) — 16 tests for both plugins: regime gates, EMA-200 gates, min-row guards, resampling guard, BUY/SELL signal triggers.
-- **`knowledge/sprint_log.md`** — Sprint 30 closed, Sprint 31 opened.
-- **`knowledge/experiment_log.md`** — EXP-001/002 marked IN PROGRESS with implementation method.
-- **526 total passing** (+16 over Sprint 30)
+### What was done in Sprint 32
+- **`dashboard/workbench.py`** — added `compute_win_loss_stats()`, `build_trader_summary()`, and `get_strategy_source_code()` as pure helpers for saved-run inspection.
+- **`dashboard/streamlit_app.py`** — added the 5th `Inspect` tab with saved-run selection, gain/win-rate/sharpe/drawdown metrics, gate-status narrative, optional gate-failure expander, equity-curve chart, and syntax-highlighted strategy source viewer.
+- **`tests/test_workbench_helpers.py`** — added 4 helper regression tests covering empty win/loss stats, mixed win/loss pairing, trader-summary labels, and built-in strategy source placeholders.
+- **`market_data/symbol_readiness.py`** — added a deterministic SQLite tie-breaker for `list_load_jobs()` ordering so the existing readiness test remains stable when queued timestamps tie.
+- **Verification** — `pytest tests/ -q` now passes with **530 passed, 1 warning**.
 
-### Sprint 32 Goal
-Run the EXP-001 and EXP-002 backtests and record results.
-
-**Steps:**
-1. Open Backtest Lab in dashboard
-2. Run `ema200_filtered_momentum` on BTCUSDT (last 30 days) — save the run
-3. Run `mtf_confirmation` on BTCUSDT (last 30 days) — save the run
-4. Compare both vs `rsi_mean_reversion_v1` baseline on the same window
-5. Record metrics (Sharpe, Max DD, PF, N Trades) in `knowledge/experiment_log.md`
-6. Update `knowledge/strategy_learnings.md` with conclusions
-7. Decide: promote winner to active, continue iterating, or discard
-
-**Or**: Check GitHub Projects board #1 for a different Sprint 32 priority.
+### Next sprint
+No queued Sprint 33 item is defined in-repo. The next agent should:
+1. Check GitHub Projects board `#1` for the next sprint candidate.
+2. If no board item is authoritative, ask the user for the next priority.
+3. Keep `knowledge/experiment_log.md` untouched unless the user explicitly wants experiment execution/logging work.
 
 ### GitHub Sprint Tracking — Manual Fallback
 - Attempted GitHub issue creation for Sprint 29 in `karllouiehernandez/crypto-ai-trader`
@@ -109,6 +100,7 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 | Sprint 29 — Dynamic Binance USDT Universe + Historical Data Coverage | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 30 — Ready-First Symbol UX + Background History Loading | ✅ CLOSED | Claude Code | 2026-04-18 |
 | Sprint 31 — Strategy Experiments EXP-001 + EXP-002 | ✅ CLOSED | Claude Code | 2026-04-18 |
+| Sprint 32 — Strategy Inspector Tab | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 

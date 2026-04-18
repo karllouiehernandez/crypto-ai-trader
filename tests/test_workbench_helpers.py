@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from dashboard.workbench import (
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
+    build_trader_summary,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     build_trading_chart_payload,
+    compute_win_loss_stats,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
@@ -19,6 +22,7 @@ from dashboard.workbench import (
     format_params_summary,
     format_scenario_label,
     format_strategy_origin,
+    get_strategy_source_code,
     list_runtime_strategies,
     normalise_preset_name,
     parse_metrics_json,
@@ -43,6 +47,48 @@ def test_compute_trade_equity_curve_buy_then_sell():
     )
     curve = compute_trade_equity_curve(trades, starting_balance=100.0)
     assert list(curve["equity"]) == [100.0, 90.0, 102.0]
+
+
+def test_compute_win_loss_stats_empty_returns_zeros():
+    stats = compute_win_loss_stats(pd.DataFrame())
+    assert stats["win_count"] == 0 and stats["total_pairs"] == 0
+
+
+def test_compute_win_loss_stats_one_win_one_loss():
+    trades = pd.DataFrame(
+        [
+            {"side": "BUY", "price": 100.0, "qty": 1.0},
+            {"side": "SELL", "price": 110.0, "qty": 1.0},
+            {"side": "BUY", "price": 110.0, "qty": 1.0},
+            {"side": "SELL", "price": 105.0, "qty": 1.0},
+        ]
+    )
+    stats = compute_win_loss_stats(trades)
+    assert stats["win_count"] == 1 and stats["loss_count"] == 1
+    assert abs(stats["win_rate"] - 0.5) < 0.001
+
+
+def test_build_trader_summary_labels():
+    run = {
+        "sharpe": 2.5,
+        "profit_factor": 1.8,
+        "max_drawdown": 0.04,
+        "n_trades": 30,
+        "gate_passed": True,
+        "failures": "[]",
+    }
+    equity = pd.DataFrame({"equity": [100.0, 115.0]})
+    summary = build_trader_summary(run, equity, starting_balance=100.0)
+    assert summary["gain_pct"] == pytest.approx(15.0)
+    assert summary["sharpe_label"] == "Excellent"
+    assert summary["risk_label"] == "Low Risk"
+    assert summary["gate_passed"] is True
+
+
+def test_get_strategy_source_code_no_path_returns_placeholder():
+    item = {"name": "builtin_test", "path": ""}
+    source = get_strategy_source_code(item)
+    assert "builtin_test" in source and "not available" in source
 
 
 def test_compute_drawdown_curve_tracks_peak_to_trough():
