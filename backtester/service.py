@@ -16,6 +16,8 @@ from market_focus.selector import (
     get_study_candidates,
     run_weekly_study,
 )
+from strategy.artifacts import mark_artifact_backtest_result
+from strategy.runtime import list_available_strategies
 
 
 def run_and_persist_backtest(
@@ -30,6 +32,10 @@ def run_and_persist_backtest(
     init_db()
     params = parse_params_json(json.dumps(params or {}))
     preset_name = normalise_preset_name(preset_name) or None
+    strategy_meta = next(
+        (item for item in list_available_strategies() if item.get("name") == strategy_name),
+        None,
+    )
     trades = run_backtest(symbol, start, end, strategy_name=strategy_name, params=params)
     equity_curve = build_equity_curve(trades)
     metrics = compute_metrics(trades, equity_curve)
@@ -44,8 +50,11 @@ def run_and_persist_backtest(
             symbol=symbol,
             start_ts=start,
             end_ts=end,
+            artifact_id=strategy_meta.get("artifact_id") if strategy_meta else None,
             strategy_name=strategy_name,
             strategy_version=strategy_version,
+            strategy_code_hash=str(strategy_meta.get("artifact_code_hash") or "") if strategy_meta else "",
+            strategy_provenance=str(strategy_meta.get("provenance") or strategy_meta.get("source") or "") if strategy_meta else "",
             preset_name=preset_name,
             params_json=json.dumps(params, sort_keys=True),
             metrics_json=json.dumps({**metrics, "passed": passed, "failures": failures}),
@@ -63,12 +72,17 @@ def run_and_persist_backtest(
                     side=row["side"],
                     qty=float(row["qty"]),
                     price=float(row["price"]),
+                    artifact_id=strategy_meta.get("artifact_id") if strategy_meta else None,
                     regime=row.get("regime"),
                     strategy_name=row.get("strategy_name", strategy_name),
                     strategy_version=row.get("strategy_version"),
+                    strategy_code_hash=str(strategy_meta.get("artifact_code_hash") or "") if strategy_meta else "",
+                    strategy_provenance=str(strategy_meta.get("provenance") or strategy_meta.get("source") or "") if strategy_meta else "",
                 )
             )
         sess.commit()
+
+    mark_artifact_backtest_result(strategy_meta.get("artifact_id") if strategy_meta else None, passed)
 
     return {
         "run_id": run.id,
@@ -99,8 +113,11 @@ def list_backtest_runs(limit: int = 100) -> pd.DataFrame:
             "symbol": row.symbol,
             "start_ts": row.start_ts,
             "end_ts": row.end_ts,
+            "artifact_id": row.artifact_id,
             "strategy_name": row.strategy_name,
             "strategy_version": row.strategy_version,
+            "strategy_code_hash": row.strategy_code_hash or "",
+            "strategy_provenance": row.strategy_provenance or "",
             "preset_name": row.preset_name,
             "status": row.status,
             "params": parse_params_json(row.params_json),
@@ -124,8 +141,11 @@ def get_backtest_run(run_id: int) -> dict | None:
         "symbol": row.symbol,
         "start_ts": row.start_ts,
         "end_ts": row.end_ts,
+        "artifact_id": row.artifact_id,
         "strategy_name": row.strategy_name,
         "strategy_version": row.strategy_version,
+        "strategy_code_hash": row.strategy_code_hash or "",
+        "strategy_provenance": row.strategy_provenance or "",
         "preset_name": row.preset_name,
         "status": row.status,
         "params": parse_params_json(row.params_json),
@@ -241,9 +261,12 @@ def get_backtest_trades(run_id: int) -> pd.DataFrame:
                 "side": row.side,
                 "qty": row.qty,
                 "price": row.price,
+                "artifact_id": row.artifact_id,
                 "regime": row.regime,
                 "strategy_name": row.strategy_name,
                 "strategy_version": row.strategy_version,
+                "strategy_code_hash": row.strategy_code_hash or "",
+                "strategy_provenance": row.strategy_provenance or "",
             }
             for row in rows
         ]

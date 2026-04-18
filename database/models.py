@@ -39,8 +39,11 @@ class Trade(Base):
     price  = Column(Float, nullable=False)
     fee    = Column(Float, nullable=False)
     pnl    = Column(Float, nullable=False)
+    artifact_id = Column(Integer, nullable=True, index=True)
     strategy_name = Column(String(128), nullable=True)
     strategy_version = Column(String(32), nullable=True)
+    strategy_code_hash = Column(String(64), nullable=True)
+    strategy_provenance = Column(String(32), nullable=True)
     run_mode = Column(String(16), nullable=True)
     regime = Column(String(32), nullable=True)
 
@@ -58,8 +61,11 @@ class PortfolioSnapshot(Base):
     id         = Column(Integer, primary_key=True, autoincrement=True)
     ts         = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
     run_mode   = Column(String(16), nullable=False)
+    artifact_id = Column(Integer, nullable=True, index=True)
     strategy_name = Column(String(128), nullable=False)
     strategy_version = Column(String(32), nullable=True)
+    strategy_code_hash = Column(String(64), nullable=True)
+    strategy_provenance = Column(String(32), nullable=True)
     balance    = Column(Float, nullable=False)
     equity     = Column(Float, nullable=False)
     unreal_pnl = Column(Float, nullable=False)
@@ -74,6 +80,11 @@ class Promotion(Base):
     __tablename__ = "promotions"
     id                   = Column(Integer, primary_key=True, autoincrement=True)
     ts                   = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
+    artifact_id          = Column(Integer, nullable=True, index=True)
+    strategy_name        = Column(String(128), nullable=True)
+    strategy_version     = Column(String(32), nullable=True)
+    strategy_code_hash   = Column(String(64), nullable=True)
+    strategy_provenance  = Column(String(32), nullable=True)
     eval_number          = Column(Integer, nullable=False)
     consecutive_promotes = Column(Integer, nullable=False)
     sharpe               = Column(Float, nullable=False)
@@ -90,8 +101,11 @@ class BacktestRun(Base):
     symbol           = Column(String(32), nullable=False)
     start_ts         = Column(DateTime(timezone=True), nullable=False)
     end_ts           = Column(DateTime(timezone=True), nullable=False)
+    artifact_id      = Column(Integer, nullable=True, index=True)
     strategy_name    = Column(String(128), nullable=False)
     strategy_version = Column(String(32), nullable=True)
+    strategy_code_hash = Column(String(64), nullable=True)
+    strategy_provenance = Column(String(32), nullable=True)
     preset_name      = Column(String(128), nullable=True)
     params_json      = Column(String, nullable=False, default="{}")
     metrics_json     = Column(String, nullable=False, default="{}")
@@ -121,9 +135,29 @@ class BacktestTrade(Base):
     side          = Column(String(4), nullable=False)
     qty           = Column(Float, nullable=False)
     price         = Column(Float, nullable=False)
+    artifact_id   = Column(Integer, nullable=True, index=True)
     regime        = Column(String(32), nullable=True)
     strategy_name = Column(String(128), nullable=False)
     strategy_version = Column(String(32), nullable=True)
+    strategy_code_hash = Column(String(64), nullable=True)
+    strategy_provenance = Column(String(32), nullable=True)
+
+
+class StrategyArtifact(Base):
+    __tablename__ = "strategy_artifacts"
+    id                     = Column(Integer, primary_key=True, autoincrement=True)
+    created_at             = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
+    name                   = Column(String(128), nullable=False, index=True)
+    version                = Column(String(32), nullable=False)
+    path                   = Column(String(512), nullable=False)
+    provenance             = Column(String(32), nullable=False)
+    code_hash              = Column(String(64), nullable=False)
+    status                 = Column(String(32), nullable=False, default="draft")
+    reviewed_from_artifact_id = Column(Integer, nullable=True, index=True)
+
+    __table_args__ = (
+        sa.UniqueConstraint("name", "version", "code_hash", name="uix_strategy_artifact_identity"),
+    )
 
 class WeeklyFocusStudy(Base):
     __tablename__ = "weekly_focus_studies"
@@ -185,10 +219,25 @@ def _ensure_runtime_schema(bind) -> None:
     if "trades" in existing_tables:
         existing_columns = {col["name"] for col in inspector.get_columns("trades")}
         migrations = {
+            "artifact_id": "ALTER TABLE trades ADD COLUMN artifact_id INTEGER",
             "strategy_name": "ALTER TABLE trades ADD COLUMN strategy_name VARCHAR(128)",
             "strategy_version": "ALTER TABLE trades ADD COLUMN strategy_version VARCHAR(32)",
+            "strategy_code_hash": "ALTER TABLE trades ADD COLUMN strategy_code_hash VARCHAR(64)",
+            "strategy_provenance": "ALTER TABLE trades ADD COLUMN strategy_provenance VARCHAR(32)",
             "run_mode": "ALTER TABLE trades ADD COLUMN run_mode VARCHAR(16)",
             "regime": "ALTER TABLE trades ADD COLUMN regime VARCHAR(32)",
+        }
+        with bind.begin() as conn:
+            for column, ddl in migrations.items():
+                if column not in existing_columns:
+                    conn.execute(text(ddl))
+
+    if "portfolio_snapshots" in existing_tables:
+        existing_columns = {col["name"] for col in inspector.get_columns("portfolio_snapshots")}
+        migrations = {
+            "artifact_id": "ALTER TABLE portfolio_snapshots ADD COLUMN artifact_id INTEGER",
+            "strategy_code_hash": "ALTER TABLE portfolio_snapshots ADD COLUMN strategy_code_hash VARCHAR(64)",
+            "strategy_provenance": "ALTER TABLE portfolio_snapshots ADD COLUMN strategy_provenance VARCHAR(32)",
         }
         with bind.begin() as conn:
             for column, ddl in migrations.items():
@@ -198,7 +247,36 @@ def _ensure_runtime_schema(bind) -> None:
     if "backtest_runs" in existing_tables:
         existing_columns = {col["name"] for col in inspector.get_columns("backtest_runs")}
         migrations = {
+            "artifact_id": "ALTER TABLE backtest_runs ADD COLUMN artifact_id INTEGER",
             "preset_name": "ALTER TABLE backtest_runs ADD COLUMN preset_name VARCHAR(128)",
+            "strategy_code_hash": "ALTER TABLE backtest_runs ADD COLUMN strategy_code_hash VARCHAR(64)",
+            "strategy_provenance": "ALTER TABLE backtest_runs ADD COLUMN strategy_provenance VARCHAR(32)",
+        }
+        with bind.begin() as conn:
+            for column, ddl in migrations.items():
+                if column not in existing_columns:
+                    conn.execute(text(ddl))
+
+    if "backtest_trades" in existing_tables:
+        existing_columns = {col["name"] for col in inspector.get_columns("backtest_trades")}
+        migrations = {
+            "artifact_id": "ALTER TABLE backtest_trades ADD COLUMN artifact_id INTEGER",
+            "strategy_code_hash": "ALTER TABLE backtest_trades ADD COLUMN strategy_code_hash VARCHAR(64)",
+            "strategy_provenance": "ALTER TABLE backtest_trades ADD COLUMN strategy_provenance VARCHAR(32)",
+        }
+        with bind.begin() as conn:
+            for column, ddl in migrations.items():
+                if column not in existing_columns:
+                    conn.execute(text(ddl))
+
+    if "promotions" in existing_tables:
+        existing_columns = {col["name"] for col in inspector.get_columns("promotions")}
+        migrations = {
+            "artifact_id": "ALTER TABLE promotions ADD COLUMN artifact_id INTEGER",
+            "strategy_name": "ALTER TABLE promotions ADD COLUMN strategy_name VARCHAR(128)",
+            "strategy_version": "ALTER TABLE promotions ADD COLUMN strategy_version VARCHAR(32)",
+            "strategy_code_hash": "ALTER TABLE promotions ADD COLUMN strategy_code_hash VARCHAR(64)",
+            "strategy_provenance": "ALTER TABLE promotions ADD COLUMN strategy_provenance VARCHAR(32)",
         }
         with bind.begin() as conn:
             for column, ddl in migrations.items():
@@ -226,8 +304,11 @@ def upsert_portfolio(session, balance: float, equity: float, unreal_pnl: float):
 def snapshot_portfolio(
     session,
     run_mode: str,
+    artifact_id: int | None,
     strategy_name: str,
     strategy_version: str | None,
+    strategy_code_hash: str | None,
+    strategy_provenance: str | None,
     balance: float,
     equity: float,
     unreal_pnl: float,
@@ -236,8 +317,11 @@ def snapshot_portfolio(
         PortfolioSnapshot(
             ts=datetime.now(tz=timezone.utc),
             run_mode=run_mode,
+            artifact_id=artifact_id,
             strategy_name=strategy_name,
             strategy_version=strategy_version,
+            strategy_code_hash=strategy_code_hash,
+            strategy_provenance=strategy_provenance,
             balance=balance,
             equity=equity,
             unreal_pnl=unreal_pnl,

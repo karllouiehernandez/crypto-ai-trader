@@ -1,7 +1,7 @@
 # HANDOFF.md — Agent Resume Point
 
 This file is the **single source of truth** for where development is right now.
-Both Claude Code and GitHub Copilot Pro agents must read this file first and update it last.
+Both Codex and Claude Code must read this file first and update it last, and they must treat the repo as one continuous shared developer stream.
 
 ---
 
@@ -10,32 +10,43 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 32 complete) |
-| **Sprint completed** | Sprint 32 ✅ — Strategy Inspector Tab — 530 tests passing |
-| **Next sprint** | Sprint 33 — TBD (check GitHub Projects board `#1` or ask the user for the next priority) |
+| **Last updated** | 2026-04-18 (Sprint 33 in progress) |
+| **Sprint completed** | Sprint 32 ✅ — Strategy Inspector Tab |
+| **Next sprint** | Sprint 33 — Versioned Strategy Promotion Pipeline |
 | **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 32 is implemented, tested, committed, and pushed. No follow-up sprint is defined yet. |
+| **Reason for handoff** | Sprint 33 is implemented in the local worktree and verified, but not yet committed/pushed. The next agent should continue from the shared in-progress state without distinguishing Codex-vs-Claude authorship. |
 
 ---
 
-## Resume Here — Sprint 33 (TBD)
+## Resume Here — Sprint 33
 
-**Sprint 32 complete.** The dashboard now has a 5th `Inspect` tab that keeps the Jesse-style workflow intact: backtest history stays in the workbench, traders get a plain-English result summary, and developers can inspect the exact strategy script used for the saved run.
+**Sprint 33 is in progress.** The repo now has a local, verified implementation of a versioned strategy promotion pipeline so the platform is deployed once while strategy artifacts move through `generated draft -> reviewed plugin -> backtest -> paper -> live`.
 
-### What was done in Sprint 32
-- **`dashboard/workbench.py`** — added `compute_win_loss_stats()`, `build_trader_summary()`, and `get_strategy_source_code()` as pure helpers for saved-run inspection.
-- **`dashboard/streamlit_app.py`** — added the 5th `Inspect` tab with saved-run selection, gain/win-rate/sharpe/drawdown metrics, gate-status narrative, optional gate-failure expander, equity-curve chart, and syntax-highlighted strategy source viewer.
-- **`tests/test_workbench_helpers.py`** — added 4 helper regression tests covering empty win/loss stats, mixed win/loss pairing, trader-summary labels, and built-in strategy source placeholders.
-- **`market_data/symbol_readiness.py`** — added a deterministic SQLite tie-breaker for `list_load_jobs()` ordering so the existing readiness test remains stable when queued timestamps tie.
-- **Verification** — `pytest tests/ -q` now passes with **530 passed, 1 warning**.
+### What was done in Sprint 33
+- **Artifact registry + persistence**
+  - `database/models.py` now includes `StrategyArtifact` plus artifact/hash/provenance fields on backtest runs, backtest trades, runtime trades, portfolio snapshots, and promotions.
+  - `strategy/artifacts.py` is new and owns code-hash calculation, artifact registration, generated-draft review/save, paper/live target selection, promotion status changes, and runtime hash validation.
+- **Runtime enforcement**
+  - `strategy/runtime.py` now treats the old active strategy selector as the backtest/default strategy and resolves reviewed promoted artifacts separately for `paper` and `live`.
+  - `run_live.py` now resolves the promoted runtime artifact, logs paper/live targets at startup, and fails closed if the selected reviewed artifact is missing or hash-mismatched.
+  - `simulator/paper_trader.py` and `simulator/coordinator.py` now track `artifact_id`, `strategy_code_hash`, and `strategy_provenance` so paper trades, portfolio snapshots, and promotion events are tied to the exact reviewed artifact.
+- **Workbench UX**
+  - `dashboard/streamlit_app.py` now exposes `Review and Save`, `Promote to Paper`, and `Approve for Live` actions in the `Strategies` tab.
+  - Generated drafts remain backtest-only; reviewed plugins with a passing saved backtest can become the paper target; only paper-passed reviewed plugins can be approved for live.
+  - `dashboard/workbench.py` now surfaces artifact-aware lifecycle stages and strategy catalog columns, and the `Inspect` tab now shows artifact identity, provenance, code hash, and a warning when the current file no longer matches the saved run hash.
+- **Backtest integration**
+  - `backtester/service.py` now persists artifact identity with saved runs and upgrades reviewed artifacts to `backtest_passed` when a saved run passes.
+- **Regression coverage**
+  - Added/updated tests in `tests/test_strategy_artifacts.py`, `tests/test_backtester_service.py`, `tests/test_workbench_helpers.py`, and `tests/test_run_live.py`.
+  - Current verification: `pytest tests/ -q` => **543 passed, 4 warnings**
+  - Headless dashboard startup verified: `streamlit run dashboard/streamlit_app.py --server.headless true --server.port 8768`
 
-### Next sprint
-No queued Sprint 33 item is defined in-repo. The next agent should:
-1. Check GitHub Projects board `#1` for the next sprint candidate.
-2. If no board item is authoritative, ask the user for the next priority.
-3. Keep `knowledge/experiment_log.md` untouched unless the user explicitly wants experiment execution/logging work.
+### What’s next
+1. Review the shared dirty worktree as one continuous in-progress change set. Do **not** split it into “Codex changes” versus “Claude changes”.
+2. Commit/push Sprint 33 once the user confirms the working tree should be finalized together.
+3. After commit/push, update this handoff again to move Sprint 33 from in-progress to closed.
 
 ### GitHub Sprint Tracking — Manual Fallback
 - Attempted GitHub issue creation for Sprint 29 in `karllouiehernandez/crypto-ai-trader`
@@ -112,6 +123,7 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 3. Read only the code files and KB files relevant to the active sprint
 4. Read `knowledge/sprint_log.md` only if historical context is actually needed
 5. Begin work on the "Resume Here" sprint
+6. Treat Codex and Claude Code as one shared developer. Local dirty files are shared project state unless a technical conflict proves otherwise.
 
 ### When you END a session (or hit rate limit / cooldown):
 1. Update the **Current State** table above (agent name, date, sprint completed/in-progress)
@@ -125,6 +137,11 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 - Agent switching should prefer `HANDOFF.md` + `knowledge/agent_resume.md` + targeted source files
 - Only pull historical sprint entries when a decision depends on older implementation details
 
+### Shared-Agent Rule
+- Codex and Claude Code must act as one developer stream for this repo.
+- Do not spend time attributing uncommitted changes to one agent or the other unless the user explicitly asks for forensic attribution.
+- Treat the current worktree as shared in-progress state and continue from it carefully without reverting unrelated local changes.
+
 ### Handoff note format (add below if mid-sprint):
 ```markdown
 ## In Progress — [AGENT NAME] left off here
@@ -135,6 +152,14 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 **What's next:** (exact next step for the incoming agent)
 **Partial work notes:** (anything the next agent needs to know)
 ```
+
+## In Progress — Codex left off here
+
+**Sprint:** Sprint 33 — Versioned Strategy Promotion Pipeline
+**Last file edited:** `dashboard/streamlit_app.py`
+**What was done:** Implemented the artifact registry, reviewed-plugin promotion flow, paper/live runtime enforcement, and dashboard lifecycle actions. Verified the integrated branch with `543 passed, 4 warnings` and a successful headless Streamlit startup.
+**What's next:** Review the unified dirty worktree, then commit and push Sprint 33 as one shared change set if the user wants the sprint finalized.
+**Partial work notes:** The worktree includes older shared dirty files such as `knowledge/experiment_log.md`; treat them as shared repo state, not as belonging to a specific agent. `run_live.py` now requires a promoted reviewed artifact for `paper` or `live`.
 
 ---
 

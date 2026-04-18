@@ -511,6 +511,9 @@ def strategy_workflow_status(
 
     provenance = str(meta.get("provenance") or meta.get("source") or "plugin").lower()
     is_active = bool(active_strategy_name and strategy_name == active_strategy_name)
+    artifact_status = str(meta.get("artifact_status") or "").lower()
+    is_active_paper = bool(meta.get("active_paper_artifact"))
+    is_active_live = bool(meta.get("active_live_artifact"))
 
     if provenance == "builtin":
         stage = "Built-in"
@@ -525,6 +528,21 @@ def strategy_workflow_status(
         else:
             stage = "Draft"
             next_step = "Review the generated file, then run a backtest before considering paper trading."
+    elif artifact_status == "live_active" or is_active_live:
+        stage = "Live Active"
+        next_step = "Monitor runtime behavior and only re-approve live after any reviewed file change."
+    elif artifact_status == "live_approved":
+        stage = "Live Approved"
+        next_step = "Enable live runtime when ready, then monitor the approved reviewed plugin in Runtime Monitor."
+    elif artifact_status == "paper_passed":
+        stage = "Paper Passed"
+        next_step = "Approve this reviewed plugin for live trading when you are comfortable with the forward paper results."
+    elif artifact_status == "paper_active" or is_active_paper:
+        stage = "Paper Active"
+        next_step = "Keep monitoring paper results; once the paper gate passes you can approve this reviewed plugin for live."
+    elif artifact_status == "backtest_passed":
+        stage = "Backtest Passed"
+        next_step = "Promote this reviewed plugin to paper trading to start forward evaluation."
     else:
         if passed_runs > 0:
             stage = "Reviewed Candidate"
@@ -545,6 +563,9 @@ def strategy_workflow_status(
         "run_count": run_count,
         "passed_runs": passed_runs,
         "failed_runs": failed_runs,
+        "artifact_status": artifact_status,
+        "active_paper_artifact": is_active_paper,
+        "active_live_artifact": is_active_live,
     }
 
 
@@ -554,12 +575,18 @@ def build_strategy_catalog_frame(
     active_strategy_name: str = "",
 ) -> pd.DataFrame:
     """Return a dashboard-ready strategy catalog table."""
+    runs = runs if runs is not None else pd.DataFrame()
     rows = [
         {
+            "artifact_id": item.get("artifact_id"),
             "display_name": item.get("display_name", item.get("name", "")),
             "name": item.get("name", ""),
             "origin": format_strategy_origin(item),
             "workflow_stage": strategy_workflow_status(item, runs, active_strategy_name)["stage"],
+            "artifact_status": item.get("artifact_status", ""),
+            "paper_target": "Yes" if item.get("active_paper_artifact") else "",
+            "live_target": "Yes" if item.get("active_live_artifact") else "",
+            "latest_passing_run": _latest_passing_run_label(item, runs),
             "version": item.get("version", ""),
             "regimes": ", ".join(item.get("regimes", [])) or "All",
             "file": item.get("file_name", ""),
@@ -569,6 +596,33 @@ def build_strategy_catalog_frame(
         for item in catalog
     ]
     return pd.DataFrame(rows)
+
+
+def _latest_passing_run_label(meta: dict[str, Any], runs: pd.DataFrame | None) -> str:
+    if runs is None or runs.empty or "status" not in runs.columns:
+        return ""
+
+    passing = runs[runs["status"].fillna("").astype(str).str.lower() == "passed"].copy()
+    if passing.empty:
+        return ""
+
+    artifact_id = meta.get("artifact_id")
+    if artifact_id and "artifact_id" in passing.columns:
+        passing = passing[passing["artifact_id"] == artifact_id]
+    elif "strategy_name" in passing.columns:
+        passing = passing[passing["strategy_name"] == meta.get("name")]
+    if passing.empty:
+        return ""
+
+    if "created_at" in passing.columns:
+        passing["created_at"] = pd.to_datetime(passing["created_at"], errors="coerce")
+        passing = passing.sort_values("created_at", ascending=False, na_position="last")
+    latest = passing.iloc[0]
+    run_id = latest.get("id")
+    symbol = latest.get("symbol", "")
+    if pd.notna(run_id):
+        return f"#{int(run_id)} {symbol}".strip()
+    return str(symbol or "")
 
 
 def filter_backtest_runs(
@@ -1068,7 +1122,7 @@ def build_trader_summary(
         "risk_label": risk_label,
         "profit_factor": float(run.get("profit_factor") or 0.0),
         "n_trades": int(run.get("n_trades") or 0),
-        "gate_passed": bool(run.get("gate_passed")),
+        "gate_passed": bool(run.get("gate_passed") or run.get("passed") or str(run.get("status") or "").lower() == "passed"),
         "gate_failures": gate_failures,
     }
 

@@ -33,12 +33,14 @@ log = logging.getLogger(__name__)
 
 
 class PaperTrader:
-    def __init__(self):
+    def __init__(self, strategy_descriptor: dict | None = None):
         init_db()
         self.cash: float = STARTING_BALANCE_USD
         self.positions: Dict[str, float] = {}
         self.cost_basis: Dict[str, float] = {}  # tracks buy cost per symbol for P&L
         self.realised: float = 0.0
+        self._latest_prices: Dict[str, float] = {}
+        self._last_trade_ts: Optional[datetime] = None
 
         equity = STARTING_BALANCE_USD
         self._daily_tracker = DailyLossTracker(start_equity=equity)
@@ -49,9 +51,13 @@ class PaperTrader:
         self._force_halt = False          # set True/False via /halt and /resume Telegram commands
         self._last_regime: Dict[str, str] = {}   # sym → regime string for critique context
         self._last_processed_candle: Dict[str, datetime] = {}
-        active = get_active_strategy_config()
-        self._strategy_name = active["name"]
-        self._strategy_version = active["version"]
+        active = strategy_descriptor or get_active_strategy_config()
+        self._strategy_name = active.get("strategy_name") or active.get("name", "")
+        self._strategy_version = active.get("strategy_version") or active.get("version", "")
+        self._strategy_params = dict(active.get("strategy_params") or active.get("params") or {})
+        self._strategy_artifact_id = active.get("artifact_id")
+        self._strategy_code_hash = str(active.get("strategy_code_hash") or "")
+        self._strategy_provenance = str(active.get("strategy_provenance") or "")
         self._last_snapshot_minute: Optional[datetime] = None
 
     # ── equity helpers ─────────────────────────────────────────────────────────
@@ -135,6 +141,7 @@ class PaperTrader:
                     candles[sym] = c
 
             prices = {sym: c.close for sym, c in candles.items()}
+            self._latest_prices = dict(prices)
             self._update_risk_state(prices)
             self._persist_portfolio_state(prices)
 
@@ -150,7 +157,12 @@ class PaperTrader:
                     if last_processed == candle_open_time:
                         continue
 
-                decision = compute_strategy_decision(sess, candle, strategy_name=self._strategy_name)
+                decision = compute_strategy_decision(
+                    sess,
+                    candle,
+                    strategy_name=self._strategy_name,
+                    strategy_params=self._strategy_params,
+                )
                 self._last_regime[sym] = decision.regime.value
                 if decision.signal == Signal.BUY:
                     atr = self._compute_atr(sess, sym)
@@ -334,14 +346,42 @@ class PaperTrader:
                 snapshot_portfolio(
                     sess,
                     run_mode="live" if LIVE_TRADE_ENABLED else "paper",
+                    artifact_id=self._strategy_artifact_id,
                     strategy_name=self._strategy_name,
                     strategy_version=self._strategy_version,
+                    strategy_code_hash=self._strategy_code_hash,
+                    strategy_provenance=self._strategy_provenance,
                     balance=self.cash,
                     equity=equity,
                     unreal_pnl=unreal_pnl,
                 )
                 self._last_snapshot_minute = minute_bucket
             sess.commit()
+
+    def get_status_snapshot(self) -> dict:
+        """Return a read-only runtime status snapshot for operator-facing heartbeats."""
+        latest_prices = dict(self._latest_prices)
+        last_candle_ts = max(self._last_processed_candle.values()) if self._last_processed_candle else None
+        halted = self._daily_tracker.is_halted or self._drawdown_cb.is_halted or self._force_halt
+        return {
+            "run_mode": "live" if LIVE_TRADE_ENABLED else "paper",
+            "strategy_name": self._strategy_name,
+            "strategy_version": self._strategy_version,
+            "artifact_id": self._strategy_artifact_id,
+            "strategy_code_hash": self._strategy_code_hash,
+            "strategy_provenance": self._strategy_provenance,
+            "symbols": _current_runtime_symbols(),
+            "cash": self.cash,
+            "equity": self._equity(latest_prices),
+            "realized_pnl": self.realised,
+            "open_position_count": len(self.positions),
+            "last_processed_candle_ts": last_candle_ts,
+            "last_trade_ts": self._last_trade_ts,
+            "force_halt": self._force_halt,
+            "trading_halted": halted,
+            "daily_loss_halted": self._daily_tracker.is_halted,
+            "drawdown_halted": self._drawdown_cb.is_halted,
+        }
 
     def _record_trade(
         self,
@@ -353,23 +393,28 @@ class PaperTrader:
         pnl: float,
         regime: str,
     ) -> None:
+        trade_ts = datetime.now(tz=timezone.utc)
         with SessionLocal() as sess:
             sess.add(
                 Trade(
-                    ts=datetime.now(tz=timezone.utc),
+                    ts=trade_ts,
                     symbol=symbol,
                     side=side,
                     qty=qty,
                     price=price,
                     fee=fee,
                     pnl=pnl,
+                    artifact_id=self._strategy_artifact_id,
                     strategy_name=self._strategy_name,
                     strategy_version=self._strategy_version,
+                    strategy_code_hash=self._strategy_code_hash,
+                    strategy_provenance=self._strategy_provenance,
                     run_mode="live" if LIVE_TRADE_ENABLED else "paper",
                     regime=regime,
                 )
             )
             sess.commit()
+        self._last_trade_ts = trade_ts
 
 
 # ── Module-level fire-and-forget critique ─────────────────────────────────────

@@ -14,9 +14,17 @@ from strategy.ta_features import add_indicators
 from strategy.regime import detect_regime, Regime
 from strategy.runtime import (
     get_active_strategy_config,
+    get_active_runtime_artifact,
     list_available_strategies,
     list_available_strategy_errors,
     set_active_strategy_config,
+)
+from strategy.artifacts import (
+    approve_artifact_for_live,
+    compute_strategy_code_hash,
+    promote_artifact_to_paper,
+    get_strategy_artifact,
+    review_generated_strategy,
 )
 from backtester.service import (
     get_backtest_run,
@@ -138,7 +146,7 @@ def resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return resampled
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def load_trades(sym: str) -> pd.DataFrame:
     try:
         con = sqlite3.connect(DB_PATH)
@@ -153,7 +161,7 @@ def load_trades(sym: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def load_equity() -> pd.DataFrame:
     try:
         con = sqlite3.connect(DB_PATH)
@@ -387,6 +395,365 @@ def load_symbol_jobs() -> list[dict]:
     return list_symbol_load_jobs()
 
 
+def render_runtime_monitor_panel(
+    symbol: str,
+    runtime_strategy_filter: str,
+    runtime_mode_filter: str,
+    active_strategy_name: str,
+    runtime_watchlist: list[str],
+    autoref_enabled: bool,
+    show_trades: bool,
+    show_fast_emas: bool,
+    show_ema_200: bool,
+    show_bbands: bool,
+    show_rsi: bool,
+    show_macd: bool,
+) -> None:
+    """Render the runtime monitor body; can be called from a fragment for partial refresh."""
+    runtime_trades_all = load_trades(symbol)
+    runtime_equity_all = load_equity()
+
+    st.markdown("### Runtime Monitor")
+    st.caption(
+        f"Viewing `{runtime_strategy_filter}` in `{runtime_mode_filter}` mode for runtime monitoring. "
+        "Changing the active strategy affects dashboard backtests immediately and paper/live after restart."
+    )
+    refresh_status = "Auto-refresh on" if autoref_enabled else "Auto-refresh paused"
+    st.caption(f"{refresh_status} · last updated {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    if symbol not in runtime_watchlist:
+        st.info(
+            f"`{symbol}` is available for research/backtests but is not in the runtime watchlist. "
+            "Add it in the sidebar to stream and trade it in paper/live."
+        )
+    st.markdown("### 📈 " + symbol + " Chart")
+    tf_cols = st.columns(len(_TF_OPTIONS))
+    if "timeframe" not in st.session_state:
+        st.session_state.timeframe = "1h"
+
+    for i, tf in enumerate(_TF_OPTIONS):
+        btn_type = "primary" if st.session_state.timeframe == tf else "secondary"
+        if tf_cols[i].button(tf, key=f"tf_{tf}", type=btn_type, width="stretch"):
+            st.session_state.timeframe = tf
+
+    timeframe = st.session_state.timeframe
+    lookback = _TF_LOOKBACK_DAYS[timeframe]
+    resample = _TF_RESAMPLE[timeframe]
+
+    raw = load_candles_raw(symbol, lookback)
+    if not raw.empty and resample:
+        ohlcv = resample_ohlcv(raw, resample)
+    elif not raw.empty:
+        ohlcv = raw.copy()
+    else:
+        ohlcv = pd.DataFrame()
+
+    df = add_indicators(ohlcv) if not ohlcv.empty else ohlcv
+    tr = filter_runtime_data(runtime_trades_all, runtime_strategy_filter, runtime_mode_filter)
+    eq = filter_runtime_data(runtime_equity_all, runtime_strategy_filter, runtime_mode_filter)
+    runtime_stats = runtime_summary(tr, eq)
+    mode_table = runtime_mode_table(
+        filter_runtime_data(runtime_trades_all, runtime_strategy_filter, "All"),
+        filter_runtime_data(runtime_equity_all, runtime_strategy_filter, "All"),
+    )
+    pnl_curve = compute_cumulative_trade_pnl(tr)
+
+    regime = None
+    if not df.empty and len(df) >= 2:
+        try:
+            regime = detect_regime(df)
+        except Exception:
+            pass
+
+    chart_df = enrich_chart_studies(ohlcv) if not ohlcv.empty else pd.DataFrame()
+
+    st.caption("Responsive chart shows the active studies directly on the workbench: EMA overlays, Bollinger Bands, RSI, MACD, and runtime trade markers.")
+    if runtime_mode_filter == "All":
+        st.info("Trade markers are aggregated across paper and live. Switch Runtime Mode to `paper` or `live` to inspect one stream.")
+    regime_label = _REGIME_EMOJI.get(regime, "") if regime else ""
+    runtime_chart_payload = build_trading_chart_payload(
+        chart_df,
+        tr if show_trades else pd.DataFrame(),
+        symbol=symbol,
+        timeframe=timeframe,
+        strategy_name=runtime_strategy_filter,
+        context_label=f"{runtime_mode_filter.upper()} {regime_label}".strip(),
+        show_fast_emas=show_fast_emas,
+        show_ema_200=show_ema_200,
+        show_bbands=show_bbands,
+        show_rsi=show_rsi,
+        show_macd=show_macd,
+    )
+    if runtime_chart_payload["candles"]:
+        render_responsive_chart(
+            runtime_chart_payload,
+            chart_id=f"runtime-{symbol}-{timeframe}-{runtime_strategy_filter}-{runtime_mode_filter}",
+            height=680,
+        )
+    else:
+        st.info("No data — run `python run_live.py` to load candles.")
+
+    overview_cols = st.columns(6)
+    overview_cols[0].metric("Strategy View", runtime_strategy_filter)
+    overview_cols[1].metric("Mode Filter", runtime_mode_filter)
+    overview_cols[2].metric(
+        "Last Snapshot",
+        pd.to_datetime(runtime_stats["last_snapshot_ts"]).strftime("%Y-%m-%d %H:%M")
+        if runtime_stats.get("last_snapshot_ts") is not None else "—",
+    )
+    overview_cols[3].metric(
+        "Last Trade",
+        pd.to_datetime(runtime_stats["last_trade_ts"]).strftime("%Y-%m-%d %H:%M")
+        if runtime_stats.get("last_trade_ts") is not None else "—",
+    )
+    overview_cols[4].metric("Realized P&L", f"{runtime_stats['realized_pnl']:+,.2f}")
+    overview_cols[5].metric("Trades", str(runtime_stats["trade_count"]))
+
+    summary_cols = st.columns(5)
+    summary_cols[0].metric("Equity", f"${runtime_stats['equity']:,.2f}")
+    summary_cols[1].metric("Balance", f"${runtime_stats['balance']:,.2f}")
+    summary_cols[2].metric("Unreal P&L", f"{runtime_stats['unreal_pnl']:+,.2f}")
+    summary_cols[3].metric("Last Side", str(runtime_stats["last_trade_side"]))
+    summary_cols[4].metric("Last Regime", str(runtime_stats["last_trade_regime"]))
+
+    if not mode_table.empty:
+        st.markdown("### Mode Comparison")
+        display_mode_table = mode_table.copy()
+        for ts_col in ["last_trade_ts", "last_snapshot_ts"]:
+            if ts_col in display_mode_table.columns:
+                display_mode_table[ts_col] = pd.to_datetime(display_mode_table[ts_col]).dt.strftime("%Y-%m-%d %H:%M:%S")
+                display_mode_table[ts_col] = display_mode_table[ts_col].fillna("—")
+        st.dataframe(display_mode_table, width="stretch", hide_index=True)
+
+    if not eq.empty and "equity" in eq.columns:
+        eq_left, eq_right = st.columns(2)
+        with eq_left:
+            eq_fig = go.Figure()
+            mode_palette = {"paper": "#2962ff", "live": "#00c853"}
+            grouped_equity = eq.groupby(eq["run_mode"].fillna("paper")) if "run_mode" in eq.columns else [("paper", eq)]
+            latest_x = []
+            for mode, mode_eq in grouped_equity:
+                if mode_eq.empty:
+                    continue
+                latest_x.extend(mode_eq["ts"].tolist())
+                eq_fig.add_trace(go.Scatter(
+                    x=mode_eq["ts"],
+                    y=mode_eq["equity"],
+                    name=f"{mode.title()} Equity",
+                    line=dict(color=mode_palette.get(str(mode), "#2962ff"), width=2),
+                    fill="tozeroy" if runtime_mode_filter != "All" else None,
+                    fillcolor="rgba(41,98,255,0.08)" if str(mode) == "paper" else "rgba(0,200,83,0.08)",
+                ))
+            start_line_x = [min(latest_x), max(latest_x)] if latest_x else []
+            if start_line_x:
+                eq_fig.add_trace(go.Scatter(
+                    x=start_line_x, y=[STARTING_BALANCE_USD] * 2,
+                    name="Starting Balance", line=dict(color="gray", dash="dot", width=1)
+                ))
+            eq_fig.update_layout(
+                title="Runtime Equity",
+                height=240,
+                paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+                font=dict(color="#d1d4dc"),
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis=dict(gridcolor="#1e222d"),
+                yaxis=dict(gridcolor="#1e222d"),
+            )
+            st.plotly_chart(eq_fig, width="stretch")
+
+        with eq_right:
+            dd_fig = go.Figure()
+            grouped_equity = eq.groupby(eq["run_mode"].fillna("paper")) if "run_mode" in eq.columns else [("paper", eq)]
+            for mode, mode_eq in grouped_equity:
+                if mode_eq.empty:
+                    continue
+                runtime_equity = mode_eq[["ts", "equity"]].dropna().copy()
+                runtime_equity["step"] = range(len(runtime_equity))
+                runtime_drawdown = compute_drawdown_curve(runtime_equity.rename(columns={"equity": "equity", "step": "step"}))
+                dd_fig.add_trace(go.Scatter(
+                    x=runtime_equity["ts"],
+                    y=runtime_drawdown["drawdown"],
+                    name=f"{str(mode).title()} Drawdown",
+                    line=dict(color=mode_palette.get(str(mode), "#ff7043"), width=2),
+                    fill="tozeroy" if runtime_mode_filter != "All" else None,
+                    fillcolor="rgba(255,112,67,0.12)",
+                ))
+            dd_fig.update_layout(
+                title="Runtime Drawdown",
+                height=240,
+                paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+                font=dict(color="#d1d4dc"),
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis=dict(gridcolor="#1e222d"),
+                yaxis=dict(gridcolor="#1e222d", tickformat=".1%"),
+            )
+            st.plotly_chart(dd_fig, width="stretch")
+
+    if not pnl_curve.empty:
+        st.markdown("### Realized P&L Curve")
+        pnl_fig = go.Figure()
+        for mode, mode_curve in pnl_curve.groupby("run_mode"):
+            pnl_fig.add_trace(go.Scatter(
+                x=mode_curve["ts"],
+                y=mode_curve["cumulative_pnl"],
+                name=f"{str(mode).title()} P&L",
+                mode="lines+markers",
+                line=dict(width=2),
+            ))
+        pnl_fig.update_layout(
+            height=240,
+            paper_bgcolor="#0e1117",
+            plot_bgcolor="#0e1117",
+            font=dict(color="#d1d4dc"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            xaxis=dict(gridcolor="#1e222d"),
+            yaxis=dict(gridcolor="#1e222d"),
+        )
+        st.plotly_chart(pnl_fig, width="stretch")
+
+    st.markdown("### Recent Execution Context")
+    if not tr.empty:
+        recent_trades = tr.sort_values("ts", ascending=False).head(12).copy()
+        if "ts" in recent_trades.columns:
+            recent_trades["ts"] = pd.to_datetime(recent_trades["ts"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+        ordered_cols = [
+            col for col in ["ts", "run_mode", "side", "qty", "price", "pnl", "regime", "strategy_version"]
+            if col in recent_trades.columns
+        ]
+        st.dataframe(recent_trades[ordered_cols], width="stretch", hide_index=True)
+    else:
+        st.info("No runtime trades recorded yet for the selected strategy/mode.")
+
+
+def render_runtime_monitor_sidebar(
+    symbol: str,
+    runtime_strategy_filter: str,
+    runtime_mode_filter: str,
+) -> None:
+    """Render the live runtime summary in the sidebar."""
+    runtime_trades_all = load_trades(symbol)
+    runtime_equity_all = load_equity()
+    timeframe = st.session_state.get("timeframe", "1h")
+    if timeframe not in _TF_LOOKBACK_DAYS:
+        timeframe = "1h"
+    lookback = _TF_LOOKBACK_DAYS[timeframe]
+    resample = _TF_RESAMPLE[timeframe]
+
+    raw = load_candles_raw(symbol, lookback)
+    if not raw.empty and resample:
+        ohlcv = resample_ohlcv(raw, resample)
+    elif not raw.empty:
+        ohlcv = raw.copy()
+    else:
+        ohlcv = pd.DataFrame()
+
+    df = add_indicators(ohlcv) if not ohlcv.empty else ohlcv
+    eq = filter_runtime_data(runtime_equity_all, runtime_strategy_filter, runtime_mode_filter)
+
+    regime = None
+    if not df.empty and len(df) >= 2:
+        try:
+            regime = detect_regime(df)
+            last = df.iloc[-1]
+            st.markdown("---")
+            st.markdown("### 📊 Current Regime")
+            st.markdown(f"**{_REGIME_EMOJI[regime]}**")
+            st.markdown(f"Strategy route: **{_REGIME_STRATEGY[regime]}**")
+            st.caption(f"Runtime view strategy: {runtime_strategy_filter}")
+            st.markdown("---")
+            st.metric("Last Price", f"${last.close:,.4f}")
+            chg = ((last.close - df.iloc[-2].close) / df.iloc[-2].close * 100) if len(df) >= 2 else 0
+            st.metric("Change", f"{chg:+.2f}%")
+            st.markdown("---")
+            st.metric("RSI-14", f"{last.rsi_14:.1f}" if "rsi_14" in df.columns else "—")
+            st.metric("ADX-14", f"{last.adx_14:.1f}" if "adx_14" in df.columns else "—")
+            st.metric("BB Width", f"{last.bb_width:.4f}" if "bb_width" in df.columns else "—")
+        except Exception:
+            pass
+
+    st.markdown("---")
+    if not eq.empty and "equity" in eq.columns:
+        st.metric(
+            "Equity (USD)",
+            f"${eq.equity.iloc[-1]:,.2f}",
+            delta=f"{eq.equity.iloc[-1] - STARTING_BALANCE_USD:+.2f}",
+        )
+    else:
+        st.metric("Equity (USD)", f"${STARTING_BALANCE_USD:,.2f}")
+
+    st.markdown("---")
+    st.markdown("### 🤖 AI Promotion Gate")
+    try:
+        promo_df = load_promotions()
+        if not promo_df.empty:
+            latest = promo_df.iloc[0]
+            ts_str = pd.to_datetime(latest["ts"]).strftime("%Y-%m-%d")
+            st.success(f"🚀 PROMOTED  ·  {ts_str}")
+            st.metric("Sharpe", f"{latest['sharpe']:.2f}")
+            st.metric("Max Drawdown", f"{latest['max_dd']:.1%}")
+            st.metric("Profit Factor", f"{latest['profit_factor']:.2f}")
+            if LIVE_TRADE_ENABLED:
+                st.warning("⚡ LIVE_TRADE_ENABLED=true")
+            else:
+                st.caption("Set LIVE_TRADE_ENABLED=true in .env to enable real orders")
+        else:
+            st.info("⏳ Not yet promoted")
+            st.caption("Requires 3 consecutive PROMOTE_TO_LIVE evaluations")
+    except Exception:
+        st.caption("Promotion data unavailable")
+
+
+def build_runtime_monitor_renderer(run_every: str | None):
+    """Return a runtime panel renderer that can optionally rerun on a timer."""
+    @st.fragment(run_every=run_every)
+    def _render(
+        symbol: str,
+        runtime_strategy_filter: str,
+        runtime_mode_filter: str,
+        active_strategy_name: str,
+        runtime_watchlist: list[str],
+        autoref_enabled: bool,
+        show_trades: bool,
+        show_fast_emas: bool,
+        show_ema_200: bool,
+        show_bbands: bool,
+        show_rsi: bool,
+        show_macd: bool,
+    ) -> None:
+        render_runtime_monitor_panel(
+            symbol,
+            runtime_strategy_filter,
+            runtime_mode_filter,
+            active_strategy_name,
+            runtime_watchlist,
+            autoref_enabled,
+            show_trades,
+            show_fast_emas,
+            show_ema_200,
+            show_bbands,
+            show_rsi,
+            show_macd,
+        )
+
+    return _render
+
+
+def build_runtime_monitor_sidebar_renderer(run_every: str | None):
+    """Return a sidebar runtime renderer that can optionally rerun on a timer."""
+    @st.fragment(run_every=run_every)
+    def _render(
+        symbol: str,
+        runtime_strategy_filter: str,
+        runtime_mode_filter: str,
+    ) -> None:
+        render_runtime_monitor_sidebar(
+            symbol,
+            runtime_strategy_filter,
+            runtime_mode_filter,
+        )
+
+    return _render
+
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Crypto-AI Trader", layout="wide", initial_sidebar_state="expanded")
 
@@ -533,6 +900,8 @@ show_macd = st.sidebar.checkbox("MACD", key="show_macd")
 st.sidebar.caption("Responsive chart shows candles, volume, EMA/BB overlays, RSI, MACD, and BUY/SELL markers.")
 
 active_strategy = get_active_strategy_config()
+active_paper_artifact = get_active_runtime_artifact("paper")
+active_live_artifact = get_active_runtime_artifact("live")
 strategy_catalog = load_strategy_catalog()
 strategy_errors = load_strategy_errors()
 all_backtest_runs = load_backtest_runs()
@@ -579,6 +948,13 @@ st.sidebar.markdown("### Strategy")
 st.sidebar.markdown(f"Active: **{active_strategy['name']}**")
 if active_strategy.get("version"):
     st.sidebar.caption(f"Version: {active_strategy['version']}")
+with st.sidebar:
+    _runtime_sidebar_renderer = build_runtime_monitor_sidebar_renderer("15s" if autoref else None)
+    _runtime_sidebar_renderer(
+        symbol,
+        runtime_strategy_filter,
+        runtime_mode_filter,
+    )
 
 focus_strategy_name = st.session_state.get("strategy_focus_name", default_strategy_name)
 focus_strategy_meta = strategy_lookup.get(focus_strategy_name) if focus_strategy_name else None
@@ -589,11 +965,14 @@ st.caption(
     "One flow: discover or generate a strategy, evaluate it in backtests, then monitor the same identity in paper/live."
 )
 hero_cols = st.columns(5)
-hero_cols[0].metric("Active Strategy", active_strategy["name"])
+hero_cols[0].metric("Backtest Default", active_strategy["name"])
 hero_cols[1].metric("Focus Strategy", focus_strategy_name or "—")
 hero_cols[2].metric("Workflow Stage", focus_workflow_status["stage"])
 hero_cols[3].metric("Passing Backtests", str(focus_workflow_status["passed_runs"]))
-hero_cols[4].metric("Runtime View", f"{runtime_strategy_filter} · {runtime_mode_filter}")
+hero_cols[4].metric(
+    "Runtime Targets",
+    f"P:{active_paper_artifact['name'] if active_paper_artifact else '—'} · L:{active_live_artifact['name'] if active_live_artifact else '—'}",
+)
 
 strategy_tab, backtest_tab, runtime_tab, focus_tab, inspect_tab = st.tabs(
     ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect"]
@@ -699,7 +1078,7 @@ with strategy_tab:
                 st.code(generation_result["code"], language="python")
 
     selected_strategy = st.selectbox(
-        "Select active strategy",
+        "Select backtest/default strategy",
         strategy_names,
         index=default_strategy_index,
         format_func=lambda name: next((item["display_name"] for item in strategy_catalog if item["name"] == name), name),
@@ -709,18 +1088,45 @@ with strategy_tab:
     selected_meta = strategy_lookup.get(selected_strategy)
     if selected_meta:
         workflow_status = strategy_workflow_status(selected_meta, all_backtest_runs, active_strategy["name"])
+        selected_artifact_id = selected_meta.get("artifact_id")
+        matching_runs = all_backtest_runs.copy() if not all_backtest_runs.empty else pd.DataFrame()
+        if not matching_runs.empty:
+            if selected_artifact_id and "artifact_id" in matching_runs.columns:
+                matching_runs = matching_runs[matching_runs["artifact_id"] == selected_artifact_id]
+            else:
+                matching_runs = matching_runs[matching_runs["strategy_name"] == selected_strategy]
+        passed_matching_runs = (
+            matching_runs[matching_runs["status"].fillna("").astype(str).str.lower() == "passed"]
+            if not matching_runs.empty and "status" in matching_runs.columns else pd.DataFrame()
+        )
+        latest_passing_run = passed_matching_runs.sort_values("created_at", ascending=False).head(1) if not passed_matching_runs.empty and "created_at" in passed_matching_runs.columns else passed_matching_runs.head(1)
+
         st.caption(selected_meta["description"])
         meta_cols = st.columns(4)
         meta_cols[0].metric("Origin", format_strategy_origin(selected_meta))
         meta_cols[1].metric("Version", selected_meta["version"])
         meta_cols[2].metric("Regimes", ", ".join(selected_meta["regimes"]) or "All")
         meta_cols[3].metric("Workflow Stage", workflow_status["stage"])
+        lifecycle_cols = st.columns(4)
+        lifecycle_cols[0].metric("Artifact Status", selected_meta.get("artifact_status", "") or "—")
+        lifecycle_cols[1].metric("Paper Target", "Yes" if selected_meta.get("active_paper_artifact") else "No")
+        lifecycle_cols[2].metric("Live Target", "Yes" if selected_meta.get("active_live_artifact") else "No")
+        lifecycle_cols[3].metric(
+            "Latest Passing Run",
+            (
+                f"#{int(latest_passing_run.iloc[0]['id'])}"
+                if not latest_passing_run.empty and pd.notna(latest_passing_run.iloc[0].get("id"))
+                else "—"
+            ),
+        )
         if selected_meta.get("file_name"):
             st.caption(f"File: `{selected_meta['file_name']}`")
         if selected_meta.get("path"):
             st.caption(f"Path: `{selected_meta['path']}`")
         if selected_meta.get("modified_at"):
             st.caption(f"Last modified: {selected_meta['modified_at']}")
+        if selected_meta.get("artifact_code_hash"):
+            st.caption(f"Artifact: `#{selected_meta['artifact_id']}` · hash `{selected_meta['artifact_code_hash'][:12]}` · provenance `{selected_meta.get('provenance', '')}`")
         review_cols = st.columns(3)
         review_cols[0].metric("Backtest Runs", str(workflow_status["run_count"]))
         review_cols[1].metric("Passed Runs", str(workflow_status["passed_runs"]))
@@ -730,15 +1136,85 @@ with strategy_tab:
             st.warning("Generated plugin draft. Keep it in draft status until it passes backtesting and is reviewed as a stable plugin.")
         if selected_meta.get("default_params"):
             st.json(selected_meta["default_params"], expanded=False)
-    if st.button("Set Active Strategy", type="primary", width="stretch"):
-        saved = set_active_strategy_config(selected_strategy)
-        load_strategy_catalog.clear()
-        load_strategy_errors.clear()
-        st.cache_data.clear()
-        st.success(
-            f"Active strategy saved: {saved['name']} ({saved['version']}). "
-            "Restart paper/live processes to apply the change outside dashboard backtests."
+
+        review_name = ""
+        if selected_meta.get("is_generated"):
+            default_review_name = selected_meta["name"]
+            if default_review_name.startswith("generated_"):
+                default_review_name = default_review_name.removeprefix("generated_") or "reviewed_strategy_v1"
+            review_name = st.text_input(
+                "Reviewed plugin name",
+                value=default_review_name,
+                key=f"review_name_{selected_strategy}",
+                help="Creates a stable reviewed plugin filename and rewrites the strategy name so the draft and reviewed copy can coexist.",
+            )
+
+        action_cols = st.columns(4)
+        if action_cols[0].button("Set Backtest Default", type="primary", width="stretch"):
+            saved = set_active_strategy_config(selected_strategy)
+            load_strategy_catalog.clear()
+            load_strategy_errors.clear()
+            st.cache_data.clear()
+            st.success(
+                f"Backtest default saved: {saved['name']} ({saved['version']}). "
+                "Paper/live runtime now use promoted reviewed artifacts instead of this selector."
+            )
+
+        review_disabled = not (selected_meta.get("is_generated") and selected_meta.get("artifact_id"))
+        if action_cols[1].button("Review and Save", width="stretch", disabled=review_disabled):
+            try:
+                reviewed = review_generated_strategy(int(selected_meta["artifact_id"]), review_name)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                load_strategy_catalog.clear()
+                load_strategy_errors.clear()
+                st.cache_data.clear()
+                st.session_state["strategy_focus_pending"] = reviewed["strategy"]["name"]
+                st.success(
+                    f"Reviewed plugin saved as `{reviewed['strategy']['name']}` "
+                    f"(artifact #{reviewed['artifact']['id']})."
+                )
+                st.rerun()
+
+        can_promote_paper = (
+            selected_meta.get("provenance") == "plugin"
+            and selected_meta.get("artifact_id")
+            and not passed_matching_runs.empty
         )
+        if action_cols[2].button("Promote to Paper", width="stretch", disabled=not can_promote_paper):
+            try:
+                promoted = promote_artifact_to_paper(int(selected_meta["artifact_id"]))
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                load_strategy_catalog.clear()
+                st.cache_data.clear()
+                st.success(f"Paper target set to `{selected_strategy}` (artifact #{promoted['id']}).")
+                st.rerun()
+
+        can_approve_live = (
+            selected_meta.get("provenance") == "plugin"
+            and selected_meta.get("artifact_id")
+            and str(selected_meta.get("artifact_status") or "").lower() in {"paper_passed", "live_approved", "live_active"}
+        )
+        if action_cols[3].button("Approve for Live", width="stretch", disabled=not can_approve_live):
+            try:
+                approved = approve_artifact_for_live(int(selected_meta["artifact_id"]))
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                load_strategy_catalog.clear()
+                st.cache_data.clear()
+                st.success(f"Live target approved for `{selected_strategy}` (artifact #{approved['id']}).")
+                st.rerun()
+
+        if selected_meta.get("is_generated"):
+            st.caption("Paper/live promotion is disabled for generated drafts. Save a reviewed plugin copy first.")
+        elif selected_meta.get("provenance") == "plugin" and passed_matching_runs.empty:
+            st.caption("Promote to Paper unlocks after this exact reviewed artifact has at least one passing saved backtest.")
+        if str(selected_meta.get("artifact_status") or "").lower() not in {"paper_passed", "live_approved", "live_active"}:
+            st.caption("Approve for Live unlocks after the active paper artifact passes its paper evaluation gate.")
 
     catalog_df = build_strategy_catalog_frame(strategy_catalog, all_backtest_runs, active_strategy["name"])
     st.dataframe(catalog_df, width="stretch", hide_index=True)
@@ -1188,261 +1664,21 @@ with backtest_tab:
         st.info("No backtest runs have been saved yet. Run the selected strategy to start its evaluation history.")
 
 with runtime_tab:
-    # ── Timeframe selector (horizontal buttons) ───────────────────────────────────
-    st.markdown("### Runtime Monitor")
-    st.caption(
-        f"Viewing `{runtime_strategy_filter}` in `{runtime_mode_filter}` mode for runtime monitoring. "
-        "Changing the active strategy affects dashboard backtests immediately and paper/live after restart."
+    _runtime_renderer = build_runtime_monitor_renderer("15s" if autoref else None)
+    _runtime_renderer(
+        symbol,
+        runtime_strategy_filter,
+        runtime_mode_filter,
+        active_strategy["name"],
+        runtime_watchlist,
+        autoref,
+        show_trades,
+        show_fast_emas,
+        show_ema_200,
+        show_bbands,
+        show_rsi,
+        show_macd,
     )
-    if symbol not in runtime_watchlist:
-        st.info(
-            f"`{symbol}` is available for research/backtests but is not in the runtime watchlist. "
-            "Add it in the sidebar to stream and trade it in paper/live."
-        )
-    st.markdown("### 📈 " + symbol + " Chart")
-    tf_cols = st.columns(len(_TF_OPTIONS))
-    if "timeframe" not in st.session_state:
-        st.session_state.timeframe = "1h"
-
-    for i, tf in enumerate(_TF_OPTIONS):
-        btn_type = "primary" if st.session_state.timeframe == tf else "secondary"
-        if tf_cols[i].button(tf, key=f"tf_{tf}", type=btn_type, width="stretch"):
-            st.session_state.timeframe = tf
-
-    timeframe = st.session_state.timeframe
-    lookback  = _TF_LOOKBACK_DAYS[timeframe]
-    resample  = _TF_RESAMPLE[timeframe]
-
-    # ── Load & resample data ──────────────────────────────────────────────────────
-    raw = load_candles_raw(symbol, lookback)
-    if not raw.empty and resample:
-        ohlcv = resample_ohlcv(raw, resample)
-    elif not raw.empty:
-        ohlcv = raw.copy()
-    else:
-        ohlcv = pd.DataFrame()
-
-    df = add_indicators(ohlcv) if not ohlcv.empty else ohlcv
-    tr = filter_runtime_data(runtime_trades_all, runtime_strategy_filter, runtime_mode_filter)
-    eq = filter_runtime_data(runtime_equity_all, runtime_strategy_filter, runtime_mode_filter)
-    runtime_stats = runtime_summary(tr, eq)
-    mode_table = runtime_mode_table(
-        filter_runtime_data(runtime_trades_all, runtime_strategy_filter, "All"),
-        filter_runtime_data(runtime_equity_all, runtime_strategy_filter, "All"),
-    )
-    pnl_curve = compute_cumulative_trade_pnl(tr)
-
-    # ── Sidebar: regime & metrics ─────────────────────────────────────────────────
-    regime = None
-    if not df.empty and len(df) >= 2:
-        try:
-            regime = detect_regime(df)
-            last   = df.iloc[-1]
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("### 📊 Current Regime")
-            st.sidebar.markdown(f"**{_REGIME_EMOJI[regime]}**")
-            st.sidebar.markdown(f"Strategy route: **{_REGIME_STRATEGY[regime]}**")
-            st.sidebar.caption(f"Runtime view strategy: {runtime_strategy_filter}")
-            st.sidebar.markdown("---")
-
-            # Live price
-            st.sidebar.metric("Last Price", f"${last.close:,.4f}")
-            chg = ((last.close - df.iloc[-2].close) / df.iloc[-2].close * 100) if len(df) >= 2 else 0
-            st.sidebar.metric("Change", f"{chg:+.2f}%")
-            st.sidebar.markdown("---")
-            st.sidebar.metric("RSI-14",   f"{last.rsi_14:.1f}"   if "rsi_14"   in df.columns else "—")
-            st.sidebar.metric("ADX-14",   f"{last.adx_14:.1f}"   if "adx_14"   in df.columns else "—")
-            st.sidebar.metric("BB Width", f"{last.bb_width:.4f}" if "bb_width" in df.columns else "—")
-        except Exception:
-            pass
-
-    st.sidebar.markdown("---")
-    if not eq.empty:
-        st.sidebar.metric("Equity (USD)", f"${eq.equity.iloc[-1]:,.2f}",
-                          delta=f"{eq.equity.iloc[-1] - STARTING_BALANCE_USD:+.2f}")
-    else:
-        st.sidebar.metric("Equity (USD)", f"${STARTING_BALANCE_USD:,.2f}")
-
-    # ── Sidebar: AI Promotion Gate ────────────────────────────────────────────────
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🤖 AI Promotion Gate")
-    try:
-        promo_df = load_promotions()
-        if not promo_df.empty:
-            latest = promo_df.iloc[0]
-            ts_str = pd.to_datetime(latest["ts"]).strftime("%Y-%m-%d")
-            st.sidebar.success(f"🚀 PROMOTED  ·  {ts_str}")
-            st.sidebar.metric("Sharpe",        f"{latest['sharpe']:.2f}")
-            st.sidebar.metric("Max Drawdown",  f"{latest['max_dd']:.1%}")
-            st.sidebar.metric("Profit Factor", f"{latest['profit_factor']:.2f}")
-            if LIVE_TRADE_ENABLED:
-                st.sidebar.warning("⚡ LIVE_TRADE_ENABLED=true")
-            else:
-                st.sidebar.caption("Set LIVE_TRADE_ENABLED=true in .env to enable real orders")
-        else:
-            st.sidebar.info("⏳ Not yet promoted")
-            st.sidebar.caption("Requires 3 consecutive PROMOTE_TO_LIVE evaluations")
-    except Exception:
-        st.sidebar.caption("Promotion data unavailable")
-
-    chart_df = enrich_chart_studies(ohlcv) if not ohlcv.empty else pd.DataFrame()
-
-    st.caption("Responsive chart shows the active studies directly on the workbench: EMA overlays, Bollinger Bands, RSI, MACD, and runtime trade markers.")
-    if runtime_mode_filter == "All":
-        st.info("Trade markers are aggregated across paper and live. Switch Runtime Mode to `paper` or `live` to inspect one stream.")
-    regime_label = _REGIME_EMOJI.get(regime, "") if regime else ""
-    runtime_chart_payload = build_trading_chart_payload(
-        chart_df,
-        tr if show_trades else pd.DataFrame(),
-        symbol=symbol,
-        timeframe=timeframe,
-        strategy_name=runtime_strategy_filter,
-        context_label=f"{runtime_mode_filter.upper()} {regime_label}".strip(),
-        show_fast_emas=show_fast_emas,
-        show_ema_200=show_ema_200,
-        show_bbands=show_bbands,
-        show_rsi=show_rsi,
-        show_macd=show_macd,
-    )
-    if runtime_chart_payload["candles"]:
-        render_responsive_chart(
-            runtime_chart_payload,
-            chart_id=f"runtime-{symbol}-{timeframe}-{runtime_strategy_filter}-{runtime_mode_filter}",
-            height=680,
-        )
-    else:
-        st.info("No data — run `python run_live.py` to load candles.")
-
-    overview_cols = st.columns(6)
-    overview_cols[0].metric("Strategy View", runtime_strategy_filter)
-    overview_cols[1].metric("Mode Filter", runtime_mode_filter)
-    overview_cols[2].metric(
-        "Last Snapshot",
-        pd.to_datetime(runtime_stats["last_snapshot_ts"]).strftime("%Y-%m-%d %H:%M")
-        if runtime_stats.get("last_snapshot_ts") is not None else "—",
-    )
-    overview_cols[3].metric(
-        "Last Trade",
-        pd.to_datetime(runtime_stats["last_trade_ts"]).strftime("%Y-%m-%d %H:%M")
-        if runtime_stats.get("last_trade_ts") is not None else "—",
-    )
-    overview_cols[4].metric("Realized P&L", f"{runtime_stats['realized_pnl']:+,.2f}")
-    overview_cols[5].metric("Trades", str(runtime_stats["trade_count"]))
-
-    summary_cols = st.columns(5)
-    summary_cols[0].metric("Equity", f"${runtime_stats['equity']:,.2f}")
-    summary_cols[1].metric("Balance", f"${runtime_stats['balance']:,.2f}")
-    summary_cols[2].metric("Unreal P&L", f"{runtime_stats['unreal_pnl']:+,.2f}")
-    summary_cols[3].metric("Last Side", str(runtime_stats["last_trade_side"]))
-    summary_cols[4].metric("Last Regime", str(runtime_stats["last_trade_regime"]))
-
-    if not mode_table.empty:
-        st.markdown("### Mode Comparison")
-        display_mode_table = mode_table.copy()
-        for ts_col in ["last_trade_ts", "last_snapshot_ts"]:
-            if ts_col in display_mode_table.columns:
-                display_mode_table[ts_col] = pd.to_datetime(display_mode_table[ts_col]).dt.strftime("%Y-%m-%d %H:%M:%S")
-                display_mode_table[ts_col] = display_mode_table[ts_col].fillna("—")
-        st.dataframe(display_mode_table, width="stretch", hide_index=True)
-
-    if not eq.empty and "equity" in eq.columns:
-        eq_left, eq_right = st.columns(2)
-        with eq_left:
-            eq_fig = go.Figure()
-            mode_palette = {"paper": "#2962ff", "live": "#00c853"}
-            grouped_equity = eq.groupby(eq["run_mode"].fillna("paper")) if "run_mode" in eq.columns else [("paper", eq)]
-            latest_x = []
-            for mode, mode_eq in grouped_equity:
-                if mode_eq.empty:
-                    continue
-                latest_x.extend(mode_eq["ts"].tolist())
-                eq_fig.add_trace(go.Scatter(
-                    x=mode_eq["ts"],
-                    y=mode_eq["equity"],
-                    name=f"{mode.title()} Equity",
-                    line=dict(color=mode_palette.get(str(mode), "#2962ff"), width=2),
-                    fill="tozeroy" if runtime_mode_filter != "All" else None,
-                    fillcolor="rgba(41,98,255,0.08)" if str(mode) == "paper" else "rgba(0,200,83,0.08)",
-                ))
-            start_line_x = [min(latest_x), max(latest_x)] if latest_x else []
-            if start_line_x:
-                eq_fig.add_trace(go.Scatter(
-                    x=start_line_x, y=[STARTING_BALANCE_USD]*2,
-                    name="Starting Balance", line=dict(color="gray", dash="dot", width=1)
-                ))
-            eq_fig.update_layout(
-                title="Runtime Equity",
-                height=240,
-                paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
-                font=dict(color="#d1d4dc"),
-                margin=dict(l=10, r=10, t=40, b=10),
-                xaxis=dict(gridcolor="#1e222d"),
-                yaxis=dict(gridcolor="#1e222d"),
-            )
-            st.plotly_chart(eq_fig, width="stretch")
-
-        with eq_right:
-            dd_fig = go.Figure()
-            grouped_equity = eq.groupby(eq["run_mode"].fillna("paper")) if "run_mode" in eq.columns else [("paper", eq)]
-            for mode, mode_eq in grouped_equity:
-                if mode_eq.empty:
-                    continue
-                runtime_equity = mode_eq[["ts", "equity"]].dropna().copy()
-                runtime_equity["step"] = range(len(runtime_equity))
-                runtime_drawdown = compute_drawdown_curve(runtime_equity.rename(columns={"equity": "equity", "step": "step"}))
-                dd_fig.add_trace(go.Scatter(
-                    x=runtime_equity["ts"],
-                    y=runtime_drawdown["drawdown"],
-                    name=f"{str(mode).title()} Drawdown",
-                    line=dict(color=mode_palette.get(str(mode), "#ff7043"), width=2),
-                    fill="tozeroy" if runtime_mode_filter != "All" else None,
-                    fillcolor="rgba(255,112,67,0.12)",
-                ))
-            dd_fig.update_layout(
-                title="Runtime Drawdown",
-                height=240,
-                paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
-                font=dict(color="#d1d4dc"),
-                margin=dict(l=10, r=10, t=40, b=10),
-                xaxis=dict(gridcolor="#1e222d"),
-                yaxis=dict(gridcolor="#1e222d", tickformat=".1%"),
-            )
-            st.plotly_chart(dd_fig, width="stretch")
-
-    if not pnl_curve.empty:
-        st.markdown("### Realized P&L Curve")
-        pnl_fig = go.Figure()
-        for mode, mode_curve in pnl_curve.groupby("run_mode"):
-            pnl_fig.add_trace(go.Scatter(
-                x=mode_curve["ts"],
-                y=mode_curve["cumulative_pnl"],
-                name=f"{str(mode).title()} P&L",
-                mode="lines+markers",
-                line=dict(width=2),
-            ))
-        pnl_fig.update_layout(
-            height=240,
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            font=dict(color="#d1d4dc"),
-            margin=dict(l=10, r=10, t=40, b=10),
-            xaxis=dict(gridcolor="#1e222d"),
-            yaxis=dict(gridcolor="#1e222d"),
-        )
-        st.plotly_chart(pnl_fig, width="stretch")
-
-    st.markdown("### Recent Execution Context")
-    if not tr.empty:
-        recent_trades = tr.sort_values("ts", ascending=False).head(12).copy()
-        if "ts" in recent_trades.columns:
-            recent_trades["ts"] = pd.to_datetime(recent_trades["ts"]).dt.strftime("%Y-%m-%d %H:%M:%S")
-        ordered_cols = [
-            col for col in ["ts", "run_mode", "side", "qty", "price", "pnl", "regime", "strategy_version"]
-            if col in recent_trades.columns
-        ]
-        st.dataframe(recent_trades[ordered_cols], width="stretch", hide_index=True)
-    else:
-        st.info("No runtime trades recorded yet for the selected strategy/mode.")
 
 # ── Market Focus tab ─────────────────────────────────────────────────────────
 with focus_tab:
@@ -1559,9 +1795,16 @@ with inspect_tab:
         if selected_run is None:
             st.warning("The selected run could not be loaded.")
         else:
+            run_artifact = get_strategy_artifact(selected_run.get("artifact_id"))
             equity_curve = compute_trade_equity_curve(trades_df, starting_balance=STARTING_BALANCE_USD)
             win_stats = compute_win_loss_stats(trades_df)
             summary = build_trader_summary(selected_run, equity_curve, STARTING_BALANCE_USD)
+
+            artifact_caption = (
+                f"Artifact #{selected_run.get('artifact_id')} · provenance `{selected_run.get('strategy_provenance') or 'unknown'}` · "
+                f"hash `{str(selected_run.get('strategy_code_hash') or '')[:12] or '—'}`"
+            )
+            st.caption(artifact_caption)
 
             metric_cols = st.columns(4)
             metric_cols[0].metric("Total Gain", f"{summary['gain_pct']:+.2f}%")
@@ -1611,22 +1854,19 @@ with inspect_tab:
 
             st.markdown("---")
             st.markdown("#### Strategy Algorithm")
-            inspect_catalog = list_available_strategies()
-            strat_item = next(
-                (item for item in inspect_catalog if item.get("name") == selected_run.get("strategy_name")),
+            strat_item = run_artifact or next(
+                (item for item in list_available_strategies() if item.get("name") == selected_run.get("strategy_name")),
                 None,
             )
             if strat_item is None:
                 st.warning(f"Strategy source could not be located for `{selected_run.get('strategy_name', 'unknown')}`.")
             else:
+                if run_artifact and run_artifact.get("path"):
+                    current_hash = ""
+                    try:
+                        current_hash = compute_strategy_code_hash(run_artifact["path"])
+                    except OSError:
+                        current_hash = ""
+                    if current_hash and current_hash != str(selected_run.get("strategy_code_hash") or ""):
+                        st.warning("The current plugin file no longer matches the saved run hash. Review the artifact history before trusting this source as an exact historical copy.")
                 st.code(get_strategy_source_code(strat_item), language="python")
-
-# ── Auto-refresh ──────────────────────────────────────────────────────────────
-if autoref:
-    import time
-    placeholder = st.empty()
-    for remaining in range(15, 0, -1):
-        placeholder.caption(f"⏱ Auto-refresh in {remaining}s  •  Toggle off in sidebar to pause")
-        time.sleep(1)
-    placeholder.empty()
-    st.rerun()

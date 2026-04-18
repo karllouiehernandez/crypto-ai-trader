@@ -183,6 +183,48 @@ def test_run_and_persist_backtest_saves_preset_name():
     assert loaded["preset_name"] == "Pullback A"
 
 
+def test_run_and_persist_backtest_persists_artifact_identity():
+    init_db()
+    trades = pd.DataFrame(
+        [
+            {
+                "time": datetime(2024, 4, 1, tzinfo=timezone.utc),
+                "side": "BUY",
+                "qty": 1.0,
+                "price": 100.0,
+                "regime": "RANGING",
+                "strategy_name": "reviewed_candidate_v1",
+                "strategy_version": "1.0.0",
+            }
+        ]
+    )
+    strategy_meta = {
+        "name": "reviewed_candidate_v1",
+        "artifact_id": 321,
+        "artifact_code_hash": "abc123",
+        "provenance": "plugin",
+    }
+    with patch("backtester.service.list_available_strategies", return_value=[strategy_meta]), \
+         patch("backtester.service.run_backtest", return_value=trades), \
+         patch("backtester.service.build_equity_curve", return_value=pd.Series([100.0, 101.0])), \
+         patch("backtester.service.compute_metrics", return_value={"sharpe": 1.2, "max_drawdown": 0.1, "profit_factor": 1.8, "n_trades": 1.0}), \
+         patch("backtester.service.acceptance_gate", return_value=(True, [])), \
+         patch("backtester.service.mark_artifact_backtest_result") as mock_mark:
+        result = run_and_persist_backtest(
+            "BTCUSDT",
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 2, tzinfo=timezone.utc),
+            "reviewed_candidate_v1",
+        )
+
+    loaded = get_backtest_run(result["run_id"])
+    assert loaded is not None
+    assert loaded["artifact_id"] == 321
+    assert loaded["strategy_code_hash"] == "abc123"
+    assert loaded["strategy_provenance"] == "plugin"
+    mock_mark.assert_called_once_with(321, True)
+
+
 def test_save_backtest_preset_creates_and_lists_preset():
     init_db()
     saved = save_backtest_preset(

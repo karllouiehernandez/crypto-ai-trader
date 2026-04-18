@@ -411,3 +411,39 @@ class TestRiskIntegration:
         cash_only_qty    = atr_position_size(cash_only_equity, atr)
         assert trader.positions.get("BTCUSDT", 0) == pytest.approx(expected_qty, rel=1e-6)
         assert trader.positions["BTCUSDT"] > cash_only_qty  # larger than cash-only estimate
+
+
+class TestStatusSnapshot:
+    def test_status_snapshot_reports_runtime_fields(self):
+        trader = PaperTrader()
+        trader.cash = 900.0
+        trader.realised = 12.5
+        trader.positions["BTCUSDT"] = 1.5
+        trader._latest_prices["BTCUSDT"] = 100.0
+        trader._last_processed_candle["BTCUSDT"] = datetime(2026, 4, 18, 4, 29)
+        trader._last_trade_ts = datetime(2026, 4, 18, 4, 30, tzinfo=timezone.utc)
+        trader._force_halt = True
+
+        with patch("simulator.paper_trader._current_runtime_symbols", return_value=["BTCUSDT"]):
+            snapshot = trader.get_status_snapshot()
+
+        assert snapshot["run_mode"] in {"paper", "live"}
+        assert snapshot["strategy_name"] == trader._strategy_name
+        assert snapshot["symbols"] == ["BTCUSDT"]
+        assert snapshot["cash"] == 900.0
+        assert snapshot["equity"] == pytest.approx(1050.0)
+        assert snapshot["realized_pnl"] == 12.5
+        assert snapshot["open_position_count"] == 1
+        assert snapshot["last_processed_candle_ts"] == datetime(2026, 4, 18, 4, 29)
+        assert snapshot["last_trade_ts"] == datetime(2026, 4, 18, 4, 30, tzinfo=timezone.utc)
+        assert snapshot["force_halt"] is True
+        assert snapshot["trading_halted"] is True
+
+    @pytest.mark.asyncio
+    async def test_auto_buy_updates_last_trade_ts(self):
+        trader = PaperTrader()
+
+        with patch("simulator.paper_trader.send_telegram_alert"):
+            await trader._auto_buy("BTCUSDT", 100.0)
+
+        assert trader._last_trade_ts is not None

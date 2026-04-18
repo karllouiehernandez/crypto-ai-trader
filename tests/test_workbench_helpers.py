@@ -172,6 +172,47 @@ def test_strategy_workflow_status_marks_reviewed_plugin_with_passing_run():
     assert status["passed_runs"] == 1
 
 
+def test_strategy_workflow_status_uses_artifact_lifecycle_flags():
+    status = strategy_workflow_status(
+        {
+            "name": "reviewed_candidate_v1",
+            "provenance": "plugin",
+            "artifact_status": "paper_passed",
+            "active_paper_artifact": True,
+            "active_live_artifact": False,
+        },
+        pd.DataFrame(),
+        active_strategy_name="regime_router_v1",
+    )
+    assert status["stage"] == "Paper Passed"
+    assert status["active_paper_artifact"] is True
+
+
+def test_build_strategy_catalog_frame_includes_runtime_target_columns():
+    frame = build_strategy_catalog_frame(
+        [
+            {
+                "name": "reviewed_candidate_v1",
+                "display_name": "Reviewed Candidate",
+                "provenance": "plugin",
+                "version": "1.0.0",
+                "regimes": ["TRENDING"],
+                "artifact_id": 7,
+                "artifact_status": "paper_active",
+                "active_paper_artifact": True,
+                "active_live_artifact": False,
+                "file_name": "reviewed_candidate_v1.py",
+                "load_status": "loaded",
+                "modified_at": "2026-04-18T01:02:03+00:00",
+            }
+        ],
+        runs=pd.DataFrame(),
+        active_strategy_name="regime_router_v1",
+    )
+    assert frame.loc[0, "paper_target"] == "Yes"
+    assert frame.loc[0, "artifact_status"] == "paper_active"
+
+
 def test_filter_backtest_runs_filters_by_strategy_name():
     frame = pd.DataFrame(
         [

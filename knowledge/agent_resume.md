@@ -1,6 +1,7 @@
 # Agent Resume Pack
 
 Use this file for agent switching. It is the compact handoff intended for Codex, Claude Code, and GitHub Copilot Pro.
+Codex and Claude Code must treat the repo as one continuous shared developer stream.
 
 Read order for a new agent:
 1. `HANDOFF.md`
@@ -10,9 +11,9 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 33 — TBD`
-- Status: Sprint 32 closed. Strategy Inspector tab is shipped; next priority is not defined yet.
-- Baseline: `pytest tests/ -q` currently shows `530 passed, 1 warning`
+- Sprint: `Sprint 33 — Versioned Strategy Promotion Pipeline`
+- Status: In progress locally. Artifact lifecycle, promotion actions, and runtime enforcement are implemented and verified, but not yet committed/pushed.
+- Baseline: `pytest tests/ -q` currently shows `543 passed, 4 warnings`
 - GitHub tracking: board/issue writes still blocked with `403`; use manual fallback
 
 ## Why This Exists
@@ -21,10 +22,19 @@ Read order for a new agent:
 
 ## Current State
 
-- Strategy Inspector is in place (Sprint 32):
-  - `dashboard/workbench.py` — `compute_win_loss_stats()`, `build_trader_summary()`, `get_strategy_source_code()`
-  - `dashboard/streamlit_app.py` — 5th `Inspect` tab with saved-run selector, trader summary metrics, gate narrative, equity curve, and strategy source viewer
-  - `tests/test_workbench_helpers.py` — 4 Sprint 32 regression tests
+- Shared-agent rule:
+  - Codex and Claude Code must act as one developer on this repo
+  - Do not treat local dirty files as belonging to one specific agent unless the user explicitly asks for attribution
+  - Continue from the current worktree as shared in-progress state
+- Sprint 33 artifact lifecycle is implemented locally:
+  - `strategy/artifacts.py` — new source of truth for code hashes, artifact registration, review/save, paper/live target selection, and runtime validation
+  - `database/models.py` — `StrategyArtifact` model plus artifact/hash/provenance fields persisted on backtest runs, backtest trades, trades, portfolio snapshots, and promotions
+  - `strategy/runtime.py` — backtest/default strategy remains separate from paper/live artifact selection; runtime now resolves promoted reviewed artifacts
+  - `backtester/service.py` — saved backtests now persist artifact identity and upgrade reviewed artifacts to `backtest_passed`
+  - `simulator/paper_trader.py`, `simulator/coordinator.py`, `run_live.py` — paper/live execution now carry artifact identity and fail closed when the promoted reviewed artifact is invalid or hash-mismatched
+  - `dashboard/streamlit_app.py` — `Review and Save`, `Promote to Paper`, and `Approve for Live` actions added; `Inspect` now shows saved-run artifact identity and code-hash mismatch warnings
+  - `dashboard/workbench.py` — artifact-aware workflow stages and catalog columns
+  - `tests/test_strategy_artifacts.py` — new lifecycle regression coverage
 - Strategy experiment plugins from Sprint 31 remain implemented and discoverable:
   - `strategies/ema200_filtered_momentum.py`
   - `strategies/mtf_confirmation_strategy.py`
@@ -99,7 +109,10 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-No queued Sprint 33 task is defined. Check GitHub Projects board `#1` or ask the user for the next priority.
+Finalize Sprint 33 from the existing shared worktree:
+1. Review the full diff as one unified change set
+2. Commit and push Sprint 33 if the user wants it finalized
+3. After push, update handoff files again to mark Sprint 33 closed
 
 ## Likely Files
 
@@ -113,13 +126,15 @@ No queued Sprint 33 task is defined. Check GitHub Projects board `#1` or ask the
 
 - `knowledge/experiment_log.md` may remain dirty because a background runtime process writes to it
 - Do not edit, stage, or revert `knowledge/experiment_log.md` unless you intentionally stop that process
+- Treat pre-existing dirty files as shared state from the combined Codex/Claude stream, not as separate ownership buckets
 - Keep the Jesse-like workflow intact
 - Prefer pure helpers in `dashboard/workbench.py` over embedding ranking/formatting logic directly in Streamlit
 - Keep the responsive chart self-contained and locally bundled; do not introduce a Node build step
 
 ## Last Verified State
 
-- Tests: `530 passed, 1 warning`
+- Tests: `543 passed, 4 warnings`
+- Headless dashboard startup: verified on port `8768`
 - Last sprint closed: `Sprint 32`
 
 ## Token-Saving Rule
