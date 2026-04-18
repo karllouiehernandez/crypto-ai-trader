@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "crypto-trader": {
+      "command": "python",
+      "args": ["run_mcp_server.py"],
+      "env": {
+        "MCP_ALLOW_WRITES": "false"
+      }
+    }
+  }
+}

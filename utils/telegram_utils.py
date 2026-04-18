@@ -41,21 +41,27 @@ CALLBACK_QUEUE: asyncio.Queue[Tuple[str, str]] = asyncio.Queue()
 
 def send_telegram_alert(token: str, chat_id: str, message: str,
                         reply_markup: Optional[dict] = None):
-    """Low‑level sender with basic error logging."""
+    """Low-level sender with retry on 429 / transient errors (3 attempts)."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
+    payload: dict = {
         "chat_id": chat_id,
-        "text"   : message,
+        "text": message,
         "parse_mode": "Markdown",
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    try:
-        r = requests.post(url, json=payload, timeout=10)
-        if r.status_code != 200:
-            logging.error(f"Telegram HTTP {r.status_code}: {r.text}")
-    except requests.RequestException as e:
-        logging.error(f"Telegram send failed: {e}")
+    for attempt in range(3):
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code == 429:
+                time.sleep(2)
+                continue
+            if r.status_code != 200:
+                logging.error(f"Telegram HTTP {r.status_code}: {r.text}")
+            return
+        except requests.RequestException as e:
+            if attempt == 2:
+                logging.error(f"Telegram send failed after 3 attempts: {e}")
 
 
 def alert(message: str):
@@ -105,13 +111,22 @@ offset = 0  # last update_id processed
 async def start_callback_poll(poll_interval: float = 2.0):
     global offset
     logging.info("Telegram callback poller started")
+    loop = asyncio.get_event_loop()
+
     while True:
         try:
-            resp = requests.get(f"{_api_url()}/getUpdates", params={"timeout": 0, "offset": offset+1}, timeout=10)
+            resp = requests.get(
+                f"{_api_url()}/getUpdates",
+                params={"timeout": 0, "offset": offset + 1},
+                timeout=10,
+            )
             resp.raise_for_status()
             data = resp.json()
+
             for upd in data.get("result", []):
                 offset = upd["update_id"]
+
+                # ── button callback ──────────────────────────────────────────
                 cq = upd.get("callback_query")
                 if cq and "data" in cq:
                     data_str = cq["data"]  # e.g. "BUY:ETHUSDT"
@@ -119,11 +134,70 @@ async def start_callback_poll(poll_interval: float = 2.0):
                         action, symbol = data_str.split(":")
                     except ValueError:
                         continue
-                    logging.info(f"[TELEGRAM] {action} {symbol}")
+                    logging.info(f"[TELEGRAM] button {action} {symbol}")
                     await CALLBACK_QUEUE.put((action, symbol))
-                    # answer callback so button becomes "checked"
-                    requests.post(f"{_api_url()}/answerCallbackQuery",
-                                  json={"callback_query_id": cq["id"], "text": "👌 Received"})
+                    requests.post(
+                        f"{_api_url()}/answerCallbackQuery",
+                        json={"callback_query_id": cq["id"], "text": "👌 Received"},
+                    )
+                    continue
+
+                # ── text command ─────────────────────────────────────────────
+                msg = upd.get("message", {})
+                text = msg.get("text", "")
+                if not text.startswith("/"):
+                    continue
+
+                from utils.telegram_commands import parse_command, format_command_response
+                command, args = parse_command(text)
+                logging.info(f"[TELEGRAM] command /{command} args={args}")
+
+                # control commands route through CALLBACK_QUEUE so PaperTrader
+                # processes them safely inside its own async loop
+                if command == "halt":
+                    await CALLBACK_QUEUE.put(("HALT", ""))
+                    send_telegram_alert(_token(), _chat_id(), "🛑 Halt request queued.")
+                    continue
+                if command == "resume":
+                    await CALLBACK_QUEUE.put(("RESUME", ""))
+                    send_telegram_alert(_token(), _chat_id(), "▶️ Resume request queued.")
+                    continue
+                if command == "buy" and args:
+                    await CALLBACK_QUEUE.put(("BUY", args[0].upper()))
+                    send_telegram_alert(_token(), _chat_id(), f"🛒 Buy queued for {args[0].upper()}.")
+                    continue
+                if command == "sell" and args:
+                    await CALLBACK_QUEUE.put(("SELL", args[0].upper()))
+                    send_telegram_alert(_token(), _chat_id(), f"💰 Sell queued for {args[0].upper()}.")
+                    continue
+
+                # slow command: backtest — acknowledge first, run in executor
+                if command == "backtest":
+                    if len(args) < 3:
+                        send_telegram_alert(
+                            _token(), _chat_id(),
+                            "Usage: /backtest SYMBOL YYYY-MM-DD YYYY-MM-DD [STRATEGY]",
+                        )
+                        continue
+                    symbol, start, end = args[0], args[1], args[2]
+                    strat = args[3] if len(args) > 3 else None
+                    send_telegram_alert(
+                        _token(), _chat_id(),
+                        f"⏳ Running backtest {symbol} {start}→{end}...",
+                    )
+                    from utils.telegram_commands import handle_backtest
+                    result_str = await loop.run_in_executor(
+                        None, handle_backtest, symbol, start, end, strat
+                    )
+                    send_telegram_alert(_token(), _chat_id(), result_str)
+                    continue
+
+                # all other commands: run synchronously (fast)
+                response = await loop.run_in_executor(
+                    None, format_command_response, command, args
+                )
+                send_telegram_alert(_token(), _chat_id(), response)
+
         except Exception as e:
             logging.error(f"Telegram poll error: {e}")
         await asyncio.sleep(poll_interval)

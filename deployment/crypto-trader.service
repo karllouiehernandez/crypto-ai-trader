@@ -1,0 +1,27 @@
+[Unit]
+Description=Crypto AI Trader (paper trading)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/crypto_ai_trader
+ExecStart=/home/jetson/crypto_ai_trader/.venv/bin/python run_live.py
+EnvironmentFile=/home/jetson/crypto_ai_trader/.env
+Restart=on-failure
+RestartSec=30s
+
+# Memory guard — OOM-kill if RSS exceeds limit
+MemoryMax=900M
+MemorySwapMax=2G
+
+# Logging via journald (view with: journalctl -fu crypto-trader)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-trader
+
+[Install]
+WantedBy=multi-user.target

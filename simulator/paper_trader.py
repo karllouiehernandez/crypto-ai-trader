@@ -43,6 +43,7 @@ class PaperTrader:
 
         self._coordinator = None          # optional; set externally before run()
         self._binance_client = None       # set by run_live.py when LIVE_TRADE_ENABLED=True
+        self._force_halt = False          # set True/False via /halt and /resume Telegram commands
         self._last_regime: Dict[str, str] = {}   # sym → regime string for critique context
         active = get_active_strategy_config()
         self._strategy_name = active["name"]
@@ -92,7 +93,21 @@ class PaperTrader:
     async def _consume_callbacks(self):
         while True:
             action, symbol = await CALLBACK_QUEUE.get()
-            if self._trading_halted():
+
+            if action == "HALT":
+                self._force_halt = True
+                from utils.telegram_utils import alert
+                alert("🛑 Trading halted by Telegram command.")
+                log.warning("Trading force-halted via Telegram.")
+                continue
+            if action == "RESUME":
+                self._force_halt = False
+                from utils.telegram_utils import alert
+                alert("▶️ Trading resumed by Telegram command.")
+                log.info("Trading resumed via Telegram.")
+                continue
+
+            if self._trading_halted() or getattr(self, "_force_halt", False):
                 log.warning("Manual %s for %s ignored — trading halted.", action, symbol,
                             extra={"action": action, "symbol": symbol, "reason": "halt"})
                 continue

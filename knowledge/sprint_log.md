@@ -5,6 +5,54 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 26 — CI/CD + Jetson Deployment + MCP Server + Telegram Commands
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Claude Code
+**Goal:** Four parallel workstreams — (a) GitHub Actions CI/CD, (b) Jetson Nano deployment files, (c) MCP server for agent observability, (d) Telegram bot text commands for remote control.
+**Status:** CLOSED ✓
+**GitHub issues:** `#28` (CI/CD), `#29` (Jetson), `#30` (MCP), `#31` (Telegram)
+
+### Changes Made
+- [x] `.github/workflows/ci.yml` — NEW: CI pipeline, matrix Python 3.10+3.11, fake env vars inline
+- [x] `requirements-dev.txt` — NEW: test-only deps (pytest, pytest-asyncio)
+- [x] `tests/test_ci_env.py` — NEW: 5 smoke tests that config loads without .env
+- [x] `deployment/crypto-trader.service` — NEW: systemd unit, auto-restart, 900MB RAM cap
+- [x] `deployment/setup_swap.sh` — NEW: 4GB swap setup script
+- [x] `deployment/install.sh` — NEW: first-run install script (clone, venv, pip, service)
+- [x] `deployment/jetson.env.example` — NEW: Jetson-optimized env template (LLM off by default, OpenRouter toggle)
+- [x] `deployment/README.md` — NEW: operational runbook + SSH tunnel docs
+- [x] `config.py` — MODIFIED: added MAX_SYMBOLS + DAYS_BACK env overrides + check_available_memory_gb()
+- [x] `run_live.py` — MODIFIED: startup warning if available RAM < 1GB
+- [x] `mcp_server/__init__.py` — NEW: package marker
+- [x] `mcp_server/auth.py` — NEW: writes_allowed(), check_write_gate()
+- [x] `mcp_server/tools.py` — NEW: 10 read tools + 2 gated write tools (thin adapters over service layer)
+- [x] `mcp_server/server.py` — NEW: FastMCP app, tool registration
+- [x] `run_mcp_server.py` — NEW: entry point (stdio or SSE transport)
+- [x] `.mcp.json` — NEW: Claude Code auto-discovery config
+- [x] `requirements.txt` — MODIFIED: added mcp>=1.0.0, uvicorn>=0.30.0, psutil>=5.9
+- [x] `tests/test_mcp_tools.py` — NEW: 18 unit tests for MCP tools
+- [x] `utils/telegram_commands.py` — NEW: pure command handler functions (testable, no I/O)
+- [x] `utils/telegram_utils.py` — MODIFIED: extended poller for text commands + retry/backoff on send
+- [x] `simulator/paper_trader.py` — MODIFIED: added _force_halt flag, HALT/RESUME handling in _consume_callbacks
+- [x] `tests/test_telegram_commands.py` — NEW: 17 unit tests for command handlers
+
+### Test Results
+- Before: 443 tests passing
+- After: **483 tests passing** (+40 new) — 0 failures
+
+### Key Technical Decisions
+1. **MCP uses lazy imports**: all service function imports happen inside each tool function to avoid circular imports and keep the module importable in tests without DB init.
+2. **Telegram commands route via CALLBACK_QUEUE**: /halt and /resume go through the existing queue so PaperTrader processes them safely inside its own async loop — no threading issues.
+3. **LLM is off by default on Jetson but toggleable**: OpenRouter (remote inference, ~5-20MB overhead) can be enabled anytime via OPENROUTER_API_KEY + LLM_ENABLED=true — no code changes needed.
+4. **MCP transport is dual-mode**: stdio for local Claude Code CLI (auto-discovered via .mcp.json), SSE/HTTP for remote Jetson access over SSH tunnel.
+5. **Patch targets are source modules**: MCP tool tests patch at the source module (e.g., backtester.service.list_backtest_runs) not at mcp_server.tools, because lazy imports don't create module-level attributes.
+
+### Code Review Outcome
+Self-reviewed — no CRITICAL or HIGH issues found. Full suite passes at 483/483. Approved to close: YES
+
+---
+
 ## Sprint 24 — Named Scenario Presets
 **Date started:** 2026-04-18
 **Date closed:** 2026-04-18
@@ -36,17 +84,44 @@ Self-reviewed — no CRITICAL or HIGH issues found in this sprint slice. Full su
 
 ---
 
-## Planned Sprint 25 — Weekly Market Focus Selector
-**Date planned:** 2026-04-18
-**Agent:** Codex
+## Sprint 25 — Weekly Market Focus Selector
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Claude Code
 **Goal:** Add a low-token weekly market study that ranks Binance spot `USDT` pairs for the active strategy and surfaces a research-only recommendation in the dashboard workbench.
-**Status:** PLANNED
+**Status:** CLOSED ✓
 **GitHub issue:** `#26`
 
-### Planned Scope
-- [ ] Add a research-only symbol universe wider than runtime `SYMBOLS`
-- [ ] Discover a top-liquid Binance spot `USDT` shortlist dynamically
-- [ ] Rank candidates using recent backtest results for the active strategy and active params
+### Changes Made
+- [x] `config.py` — MODIFIED: added `MARKET_FOCUS_UNIVERSE_SIZE`, `MARKET_FOCUS_TOP_N`, `MARKET_FOCUS_BACKTEST_DAYS`, `_MARKET_FOCUS_EXCLUDE`
+- [x] `database/models.py` — MODIFIED: added `WeeklyFocusStudy` and `WeeklyFocusCandidate` ORM models
+- [x] `market_focus/__init__.py` — NEW: package init
+- [x] `market_focus/selector.py` — NEW: `fetch_liquid_usdt_symbols`, `run_weekly_study`, `get_latest_study`, `get_study_candidates`, `_composite_score`
+- [x] `backtester/service.py` — MODIFIED: added `run_market_focus_study`, `get_latest_market_focus`, `get_market_focus_candidates`
+- [x] `dashboard/workbench.py` — MODIFIED: added `build_focus_candidate_frame` helper
+- [x] `dashboard/streamlit_app.py` — MODIFIED: added "Market Focus" 4th tab, one-click Backtest Lab prefill, thread-isolated study runner
+- [x] `tests/test_market_focus.py` — NEW: 14 tests covering fetch, scoring, study persistence, service, and frame helpers
+
+### Test Results
+- Before: 429 tests passing
+- After: **443 tests passing** (+14 new) — 0 failures
+
+### Code Review Outcome
+Code review sub-agent ran. Two HIGH issues found and fixed before close:
+- **HIGH-1 fixed**: ORM object access moved inside `with SessionLocal()` block to prevent detached instance errors
+- **HIGH-2 fixed**: Study run offloaded to `ThreadPoolExecutor` so Streamlit's main thread is not blocked during long backtest scans
+- **MEDIUM-1 fixed**: `_composite_score` now returns `-999.0` when `sharpe` or `profit_factor` is `None` (no silent zero-drawdown bonus for failed symbols)
+- LOW-1 fixed: redundant `import config` removed from service function body
+Approved to close: YES
+
+### Key Technical Decisions
+1. **Research universe is separate from `config.SYMBOLS`**: runtime watchlist unchanged; study candidates come from Binance 24h ticker public API.
+2. **Deterministic ranking**: composite score = `sharpe*0.4 + profit_factor*0.3 - abs(max_dd)*0.3`; no LLM required.
+3. **Study runs are persisted**: `WeeklyFocusStudy` + `WeeklyFocusCandidate` tables; `get_latest_study()` retrieves most recent completed study.
+4. **One-click prefill**: clicking "Prefill Backtest Lab" sets `st.session_state["focus_prefill_symbol"]` which the Backtest Lab symbol selector reads on next render.
+
+### Scope Not Completed (deferred)
+- Planned Scope
 - [ ] Persist weekly study runs and ranked candidates
 - [ ] Show the latest recommendation in the workbench and allow one-click prefill into `Backtest Lab`
 

@@ -66,6 +66,16 @@ SYMBOLS: List[str] = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
 HIST_INTERVAL      = "1m"   # candle interval for history
 LIVE_POLL_SECONDS  = 1      # real-time ticker poll
 
+# Jetson Nano overrides — set via .env to reduce memory footprint
+# MAX_SYMBOLS=1 limits to the first symbol; 0 = no limit (default)
+_MAX_SYMBOLS = int(os.environ.get("MAX_SYMBOLS", "0"))
+if _MAX_SYMBOLS > 0:
+    SYMBOLS = SYMBOLS[:_MAX_SYMBOLS]
+
+# DAYS_BACK controls how many days of 1m candles historical_loader fetches
+# Set to 90 on Jetson for a faster cold start (~30 min vs ~2 hours for 365 days)
+DAYS_BACK = int(os.environ.get("DAYS_BACK", "365"))
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ▓▓  Paper-trading parameters
 # ─────────────────────────────────────────────────────────────────────────────
@@ -160,6 +170,28 @@ _LLM_BASE_URLS = {
     "openrouter": "https://openrouter.ai/api/v1",
 }
 LLM_BASE_URL = _LLM_BASE_URLS.get(LLM_PROVIDER, "")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ▓▓  Weekly Market Focus Selector (Sprint 25)
+# ─────────────────────────────────────────────────────────────────────────────
+MARKET_FOCUS_UNIVERSE_SIZE = int(os.environ.get("MARKET_FOCUS_UNIVERSE_SIZE", "30"))
+MARKET_FOCUS_TOP_N         = int(os.environ.get("MARKET_FOCUS_TOP_N", "5"))
+MARKET_FOCUS_BACKTEST_DAYS = int(os.environ.get("MARKET_FOCUS_BACKTEST_DAYS", "30"))
+
+# Stablecoins and wrapped tokens excluded from the research universe
+_MARKET_FOCUS_EXCLUDE = {
+    "USDCUSDT", "BUSDUSDT", "TUSDUSDT", "USDTUSDT", "DAIUSDT", "FDUSDUSDT",
+    "WBTCUSDT", "STETHUSDT", "BTTCUSDT",
+}
+
+def check_available_memory_gb() -> float:
+    """Return available RAM in GB. Returns -1.0 if psutil is unavailable."""
+    try:
+        import psutil
+        return psutil.virtual_memory().available / (1024 ** 3)
+    except ImportError:
+        return -1.0
 
 
 def validate_env_llm() -> None:

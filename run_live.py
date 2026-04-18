@@ -8,6 +8,7 @@ import logging
 from config import (
     validate_env, LLM_ENABLED, LIVE_TRADE_ENABLED,
     BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET,
+    check_available_memory_gb,
 )
 from collectors.historical_loader import main as load_history
 from collectors.live_streamer     import main as live_stream
@@ -63,4 +64,12 @@ async def boot():
 
 if __name__ == "__main__":
     validate_env()                # fail fast with clear error if .env is missing
+    avail_gb = check_available_memory_gb()
+    if 0 < avail_gb < 1.0:
+        log.warning(
+            "LOW MEMORY WARNING: Only %.1fGB RAM available. "
+            "Consider reducing MAX_SYMBOLS=1 in .env and ensuring swap is enabled. "
+            "See deployment/README.md for Jetson Nano setup.",
+            avail_gb,
+        )
     asyncio.run(boot())
