@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
+from collections import defaultdict
 import json
 import math
 from typing import Any
@@ -29,6 +31,161 @@ def compute_trade_equity_curve(
             equity += notionals
         rows.append({"step": step, "equity": equity})
     return pd.DataFrame(rows)
+
+
+def to_utc_epoch_seconds(value: Any) -> int:
+    """Return a timestamp-like value as whole UTC epoch seconds."""
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    else:
+        ts = ts.tz_convert("UTC")
+    return int(ts.timestamp())
+
+
+def build_trading_chart_payload(
+    candles: pd.DataFrame,
+    trades: pd.DataFrame | None = None,
+    *,
+    symbol: str = "",
+    timeframe: str = "",
+    strategy_name: str = "",
+    context_label: str = "",
+) -> dict[str, Any]:
+    """Serialize candles and trade markers for the responsive chart component."""
+    frame = candles.copy() if isinstance(candles, pd.DataFrame) else pd.DataFrame()
+    if frame.empty:
+        return {
+            "candles": [],
+            "volume": [],
+            "markers": [],
+            "meta": {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "strategy_name": strategy_name,
+                "context_label": context_label,
+            },
+        }
+
+    required_columns = ["open_time", "open", "high", "low", "close", "volume"]
+    frame = frame[[col for col in required_columns if col in frame.columns]].copy()
+    frame["open_time"] = pd.to_datetime(frame["open_time"], errors="coerce")
+    frame = frame.dropna(subset=["open_time", "open", "high", "low", "close", "volume"])
+    if frame.empty:
+        return {
+            "candles": [],
+            "volume": [],
+            "markers": [],
+            "meta": {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "strategy_name": strategy_name,
+                "context_label": context_label,
+            },
+        }
+
+    frame = frame.sort_values("open_time").reset_index(drop=True)
+    chart_times = [to_utc_epoch_seconds(value) for value in frame["open_time"]]
+
+    candle_payload = [
+        {
+            "time": chart_times[idx],
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"]),
+        }
+        for idx, (_, row) in enumerate(frame.iterrows())
+    ]
+
+    volume_payload = [
+        {
+            "time": chart_times[idx],
+            "value": float(row["volume"]),
+            "color": "#26a69a" if float(row["close"]) >= float(row["open"]) else "#ef5350",
+        }
+        for idx, (_, row) in enumerate(frame.iterrows())
+    ]
+
+    markers = _build_chart_markers(
+        chart_times,
+        trades if isinstance(trades, pd.DataFrame) else pd.DataFrame(),
+    )
+    return {
+        "candles": candle_payload,
+        "volume": volume_payload,
+        "markers": markers,
+        "meta": {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "strategy_name": strategy_name,
+            "context_label": context_label,
+        },
+    }
+
+
+def _build_chart_markers(chart_times: list[int], trades: pd.DataFrame) -> list[dict[str, Any]]:
+    """Map and aggregate trade timestamps onto the visible candle buckets used by the chart."""
+    if not chart_times or trades.empty or "ts" not in trades.columns or "side" not in trades.columns:
+        return []
+
+    interval_seconds = 0
+    if len(chart_times) >= 2:
+        deltas = [later - earlier for earlier, later in zip(chart_times, chart_times[1:]) if later > earlier]
+        if deltas:
+            interval_seconds = int(pd.Series(deltas, dtype="int64").median())
+
+    grouped: dict[tuple[int, str], dict[str, Any]] = {}
+    for _, row in trades.sort_values("ts").iterrows():
+        trade_ts = pd.to_datetime(row.get("ts"), errors="coerce")
+        if pd.isna(trade_ts):
+            continue
+
+        trade_time = to_utc_epoch_seconds(trade_ts)
+        if trade_time < chart_times[0]:
+            continue
+        if interval_seconds > 0 and trade_time >= chart_times[-1] + interval_seconds:
+            continue
+
+        idx = bisect_right(chart_times, trade_time) - 1
+        if idx < 0 or idx >= len(chart_times):
+            continue
+
+        side = str(row.get("side", "")).upper().strip()
+        if side not in {"BUY", "SELL"}:
+            continue
+
+        key = (chart_times[idx], side)
+        if key not in grouped:
+            grouped[key] = {
+                "time": chart_times[idx],
+                "position": "belowBar" if side == "BUY" else "aboveBar",
+                "shape": "arrowUp" if side == "BUY" else "arrowDown",
+                "color": "#00e676" if side == "BUY" else "#ff1744",
+                "count": 0,
+                "run_modes": defaultdict(int),
+            }
+
+        grouped[key]["count"] += 1
+        run_mode = str(row.get("run_mode", "")).strip().lower()
+        if run_mode:
+            grouped[key]["run_modes"][run_mode] += 1
+
+    markers: list[dict[str, Any]] = []
+    for (_, side), marker in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1])):
+        count = int(marker.pop("count"))
+        run_modes = dict(marker.pop("run_modes"))
+        text = ""
+        if count > 1:
+            if len(run_modes) > 1:
+                parts = [f"{mode[0].upper()}{qty}" for mode, qty in sorted(run_modes.items())]
+                text = "/".join(parts)
+            else:
+                text = f"x{count}"
+        marker["text"] = text
+        markers.append(marker)
+
+    return markers
 
 
 def compute_drawdown_curve(equity_curve: pd.DataFrame) -> pd.DataFrame:
@@ -622,3 +779,29 @@ def runtime_summary(
         "last_trade_ts": last_trade.get("ts"),
         "last_snapshot_ts": equity["ts"].iloc[-1] if not equity.empty and "ts" in equity.columns else None,
     }
+
+
+def build_focus_candidate_frame(candidates: list[dict]) -> pd.DataFrame:
+    """Return a dashboard-ready table from market focus candidates."""
+    if not candidates:
+        return pd.DataFrame()
+
+    rows = []
+    for c in candidates:
+        sharpe = c.get("sharpe")
+        pf = c.get("profit_factor")
+        dd = c.get("max_drawdown")
+        rows.append(
+            {
+                "rank": c.get("rank"),
+                "symbol": c.get("symbol"),
+                "volume_rank": c.get("volume_rank"),
+                "score": round(float(c.get("score") or 0), 4),
+                "sharpe": round(float(sharpe), 3) if sharpe is not None else None,
+                "profit_factor": round(float(pf), 3) if pf is not None else None,
+                "max_drawdown": round(float(dd), 4) if dd is not None else None,
+                "n_trades": c.get("n_trades"),
+                "status": c.get("status", ""),
+            }
+        )
+    return pd.DataFrame(rows)
