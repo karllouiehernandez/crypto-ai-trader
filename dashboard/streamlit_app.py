@@ -199,6 +199,46 @@ def to_utc_naive_timestamp(value: object) -> pd.Timestamp:
     return ts
 
 
+def enrich_chart_studies(candles: pd.DataFrame) -> pd.DataFrame:
+    """Merge indicator columns back onto the raw candle frame without dropping warmup rows."""
+    if candles.empty:
+        return candles
+
+    frame = candles.copy()
+    frame["open_time"] = pd.to_datetime(frame["open_time"], errors="coerce")
+    frame = frame.dropna(subset=["open_time"]).sort_values("open_time").reset_index(drop=True)
+
+    study_source = add_indicators(frame.copy())
+    study_columns = [
+        "ema_9",
+        "ema_21",
+        "ema_55",
+        "ema_200",
+        "bb_hi",
+        "bb_lo",
+        "rsi_14",
+        "macd",
+        "macd_s",
+    ]
+    for column in study_columns:
+        if column not in frame.columns:
+            frame[column] = pd.NA
+
+    if study_source.empty:
+        return frame
+
+    available_columns = ["open_time"] + [column for column in study_columns if column in study_source.columns]
+    merged = frame.drop(columns=[column for column in study_columns if column in frame.columns], errors="ignore").merge(
+        study_source[available_columns],
+        on="open_time",
+        how="left",
+    )
+    for column in study_columns:
+        if column not in merged.columns:
+            merged[column] = pd.NA
+    return merged
+
+
 def apply_backtest_params_to_session(
     strategy_name: str,
     param_schema: list[dict],
@@ -300,6 +340,11 @@ _DEFAULTS = {
     "symbol":        SYMBOLS[0],
     "autoref":       True,
     "show_trades":   True,
+    "show_fast_emas": True,
+    "show_ema_200": True,
+    "show_bbands": True,
+    "show_rsi": True,
+    "show_macd": True,
     "runtime_mode_filter": "paper",
     "show_all_backtest_runs": False,
 }
@@ -313,7 +358,12 @@ autoref = st.sidebar.checkbox("Auto-refresh (15 s)", key="autoref")
 st.sidebar.markdown("---")
 st.sidebar.markdown("**📉 Chart Layers**")
 show_trades = st.sidebar.checkbox("Trade Markers",     key="show_trades")
-st.sidebar.caption("Responsive chart v1 shows candles, volume, and BUY/SELL markers.")
+show_fast_emas = st.sidebar.checkbox("EMA 9 / 21 / 55", key="show_fast_emas")
+show_ema_200 = st.sidebar.checkbox("EMA 200", key="show_ema_200")
+show_bbands = st.sidebar.checkbox("Bollinger Bands", key="show_bbands")
+show_rsi = st.sidebar.checkbox("RSI", key="show_rsi")
+show_macd = st.sidebar.checkbox("MACD", key="show_macd")
+st.sidebar.caption("Responsive chart shows candles, volume, EMA/BB overlays, RSI, MACD, and BUY/SELL markers.")
 
 active_strategy = get_active_strategy_config()
 strategy_catalog = load_strategy_catalog()
@@ -870,10 +920,11 @@ with backtest_tab:
             str(selected_run["symbol"]),
             max((now_ts - selected_start_ts).days + 2, 2),
         )
-        filtered_candles = candle_df[
-            (candle_df["open_time"] >= selected_start_ts)
-            & (candle_df["open_time"] <= selected_end_ts)
-        ] if not candle_df.empty else pd.DataFrame()
+        enriched_candles = enrich_chart_studies(candle_df) if not candle_df.empty else pd.DataFrame()
+        filtered_candles = enriched_candles[
+            (enriched_candles["open_time"] >= selected_start_ts)
+            & (enriched_candles["open_time"] <= selected_end_ts)
+        ] if not enriched_candles.empty else pd.DataFrame()
         if not filtered_candles.empty:
             backtest_chart_payload = build_trading_chart_payload(
                 filtered_candles,
@@ -882,11 +933,16 @@ with backtest_tab:
                 timeframe="Backtest",
                 strategy_name=str(selected_run.get("strategy_name", "")),
                 context_label=f"Run #{selected_run_id}",
+                show_fast_emas=show_fast_emas,
+                show_ema_200=show_ema_200,
+                show_bbands=show_bbands,
+                show_rsi=show_rsi,
+                show_macd=show_macd,
             )
             render_responsive_chart(
                 backtest_chart_payload,
                 chart_id=f"backtest-{selected_run_id}",
-                height=420,
+                height=560,
             )
         else:
             st.info("No candle data is available locally for this saved backtest window.")
@@ -1034,23 +1090,30 @@ with runtime_tab:
     except Exception:
         st.sidebar.caption("Promotion data unavailable")
 
-    st.caption("Responsive chart v1 focuses on candles, volume, and trade markers. Overlay studies return in a follow-up.")
+    chart_df = enrich_chart_studies(ohlcv) if not ohlcv.empty else pd.DataFrame()
+
+    st.caption("Responsive chart shows the active studies directly on the workbench: EMA overlays, Bollinger Bands, RSI, MACD, and runtime trade markers.")
     if runtime_mode_filter == "All":
         st.info("Trade markers are aggregated across paper and live. Switch Runtime Mode to `paper` or `live` to inspect one stream.")
     regime_label = _REGIME_EMOJI.get(regime, "") if regime else ""
     runtime_chart_payload = build_trading_chart_payload(
-        ohlcv,
+        chart_df,
         tr if show_trades else pd.DataFrame(),
         symbol=symbol,
         timeframe=timeframe,
         strategy_name=runtime_strategy_filter,
         context_label=f"{runtime_mode_filter.upper()} {regime_label}".strip(),
+        show_fast_emas=show_fast_emas,
+        show_ema_200=show_ema_200,
+        show_bbands=show_bbands,
+        show_rsi=show_rsi,
+        show_macd=show_macd,
     )
     if runtime_chart_payload["candles"]:
         render_responsive_chart(
             runtime_chart_payload,
             chart_id=f"runtime-{symbol}-{timeframe}-{runtime_strategy_filter}-{runtime_mode_filter}",
-            height=560,
+            height=680,
         )
     else:
         st.info("No data — run `python run_live.py` to load candles.")

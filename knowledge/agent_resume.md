@@ -10,9 +10,9 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 28 — Responsive Chart Indicator Overlays`
-- Status: Sprint 27 is closed; next work is to restore EMA/BB/RSI/MACD visibility on the new responsive chart
-- Baseline: `pytest tests/ -q` must show `490 passed`
+- Sprint: `Sprint 29 — Historical Data Backfill + Audit`
+- Status: Sprint 28 is closed; next work is reliable local historical-data coverage for backtesting before Jetson deployment
+- Baseline: `pytest tests/ -q` must show `491 passed`
 - GitHub tracking issue: none created; current integration can read GitHub but board/issue writes are blocked with `403 Resource not accessible by integration`
 
 ## Why This Exists
@@ -29,6 +29,13 @@ Read order for a new agent:
 - Candlestick views are no longer Plotly-based:
   - `Runtime Monitor` and `Backtest Lab` use the same TradingView-like renderer
   - Plotly remains for equity, drawdown, and realized P&L
+- Strategy studies are visible on the responsive chart again:
+  - `EMA 9 / 21 / 55`
+  - `EMA 200`
+  - `Bollinger Bands`
+  - `RSI`
+  - `MACD`
+- Runtime and backtest charts use the same study payload contract and synced multi-pane renderer
 - Runtime marker clutter is reduced:
   - duplicate BUY/SELL markers are aggregated per candle/side
   - runtime mode defaults to `paper`
@@ -55,11 +62,11 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 28 — restore strategy/statistical overlays on the responsive chart:
-- `EMA`
-- `Bollinger Bands`
-- `RSI`
-- `MACD`
+Sprint 29 — build a trustworthy local historical-data workflow:
+- explicit backfill over date ranges
+- gap auditing before backtests
+- clear continuity/error messaging
+- local simulation-first validation before Jetson deployment
 
 ## Constraints
 
@@ -71,8 +78,8 @@ Sprint 28 — restore strategy/statistical overlays on the responsive chart:
 
 ## Last Verified State
 
-- Tests: `490 passed, 1 warning`
-- Last sprint closed: `Sprint 27`
+- Tests: `491 passed, 1 warning`
+- Last sprint closed: `Sprint 28`
 
 ## Token-Saving Rule
 

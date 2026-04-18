@@ -445,3 +445,63 @@ def test_build_trading_chart_payload_aggregates_duplicate_markers_per_candle_sid
     assert len(payload["markers"]) == 2
     assert payload["markers"][0]["text"] == "L1/P2"
     assert payload["markers"][1]["text"] == "x2"
+
+
+def test_build_trading_chart_payload_serializes_enabled_studies():
+    candles = pd.DataFrame(
+        [
+            {
+                "open_time": pd.Timestamp("2026-04-18 10:00:00"),
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 10.0,
+                "ema_9": 100.1,
+                "ema_21": 99.9,
+                "ema_55": 99.5,
+                "ema_200": 98.0,
+                "bb_hi": 101.5,
+                "bb_lo": 98.5,
+                "rsi_14": 54.0,
+                "macd": 0.35,
+                "macd_s": 0.21,
+            },
+            {
+                "open_time": pd.Timestamp("2026-04-18 11:00:00"),
+                "open": 100.5,
+                "high": 102.0,
+                "low": 100.0,
+                "close": 101.0,
+                "volume": 12.0,
+                "ema_9": 100.4,
+                "ema_21": 100.0,
+                "ema_55": 99.7,
+                "ema_200": 98.1,
+                "bb_hi": 101.9,
+                "bb_lo": 98.9,
+                "rsi_14": 58.0,
+                "macd": 0.48,
+                "macd_s": 0.31,
+            },
+        ]
+    )
+
+    payload = build_trading_chart_payload(
+        candles,
+        pd.DataFrame(),
+        symbol="BTCUSDT",
+        timeframe="1h",
+        show_fast_emas=True,
+        show_ema_200=True,
+        show_bbands=True,
+        show_rsi=True,
+        show_macd=True,
+    )
+
+    price_labels = [overlay["label"] for overlay in payload["overlays"]["price"]]
+    assert price_labels == ["EMA 9", "EMA 21", "EMA 55", "EMA 200", "BB High", "BB Low"]
+    assert payload["overlays"]["rsi"]["series"][0]["label"] == "RSI 14"
+    assert [band["label"] for band in payload["overlays"]["rsi"]["bands"]] == ["Overbought", "Midline", "Oversold"]
+    assert [series["label"] for series in payload["overlays"]["macd"]["series"]] == ["MACD", "Signal"]
+    assert round(payload["overlays"]["macd"]["histogram"][0]["value"], 2) == 0.14

@@ -10,35 +10,33 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 27 closed) |
-| **Sprint completed** | Sprint 27 ✅ — Responsive Chart + Runtime Marker Clarity — 490 tests passing |
-| **Next sprint** | Sprint 28 — Indicator overlays on the responsive chart |
+| **Last updated** | 2026-04-18 (Sprint 28 closed) |
+| **Sprint completed** | Sprint 28 ✅ — Responsive Chart Indicator Overlays — 491 tests passing |
+| **Next sprint** | Sprint 29 — Historical Data Backfill + Audit |
 | **Blocking issues** | GitHub board/issue writes are blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 27 complete. |
+| **Reason for handoff** | Sprint 28 complete. |
 
 ---
 
-## Resume Here — Sprint 28
+## Resume Here — Sprint 29
 
-**Sprint 27 complete.** The workbench now uses a responsive TradingView-like chart in both `Runtime Monitor` and `Backtest Lab`, runtime marker spam is controlled, and the launcher is simplified. 490 tests passing.
+**Sprint 28 complete.** The workbench now restores strategy studies on the responsive chart in both `Runtime Monitor` and `Backtest Lab`. 491 tests passing.
 
-### What was done in Sprint 27
-- **Responsive chart component**: `dashboard/chart_component.py` + `dashboard/assets/lightweight-charts.standalone.production.js` — bundled Lightweight Charts renderer for candles, volume, and trade markers with pan/zoom/crosshair/responsive resize.
-- **Shared chart payload helpers**: `dashboard/workbench.py` — normalized UTC timestamp handling plus shared payload/marker builders used by both runtime and backtest views.
-- **Workbench integration**: `dashboard/streamlit_app.py` — replaced inline Plotly candlesticks in `Runtime Monitor` and `Backtest Lab`, kept Plotly for equity/drawdown/P&L, and simplified v1 chart controls.
-- **Runtime trade clarity**: `dashboard/workbench.py`, `dashboard/streamlit_app.py` — aggregated duplicate markers per candle/side, defaulted runtime mode to `paper`, and added a warning when viewing combined `All` mode.
-- **Per-candle execution guard**: `simulator/paper_trader.py` — prevents reprocessing the same latest candle every second, which had been creating repeated buys/sells on a single candle.
-- **Launcher refresh**: `run_all.ps1` — no hardcoded activation, auto-detects repo Python/venv, supports optional dependency install/MCP startup/browser skip.
-- **490 total passing** (+7 over Sprint 26)
+### What was done in Sprint 28
+- **Overlay-capable responsive chart**: `dashboard/chart_component.py` — extended the Lightweight Charts renderer to support multi-pane layouts with a price pane plus synced RSI and MACD panes.
+- **Shared study payloads**: `dashboard/workbench.py` — chart payloads now serialize `EMA 9/21/55`, `EMA 200`, `Bollinger Bands`, `RSI`, and `MACD` on one shared contract for runtime and backtest.
+- **Workbench controls restored**: `dashboard/streamlit_app.py` — brought back chart-layer toggles for EMA, Bollinger Bands, RSI, and MACD while keeping the TradingView-like renderer and existing Plotly analytics.
+- **Indicator warmup handling**: `dashboard/streamlit_app.py` — backtest charts now compute studies from the broader local candle window before slicing the visible run range, so overlays do not start blank at the left edge.
+- **491 total passing** (+1 over Sprint 27)
 
-### Sprint 28 Goal
-Restore the missing indicator/statistical overlays on top of the new responsive chart without regressing the Jesse-like workflow. Recommended scope:
-1. Add `EMA` and `Bollinger Bands` to the responsive price pane
-2. Add `RSI` and `MACD` as aligned subpanes below the chart
-3. Keep runtime and backtest rendering on one shared payload contract
-4. Preserve mobile responsiveness and marker readability
+### Sprint 29 Goal
+Build a reliable local historical-data workflow for backtesting before Jetson deployment. Recommended scope:
+1. Add explicit local backfill commands for historical candles over date ranges
+2. Add continuity auditing so backtests fail fast on missing windows
+3. Surface gap summaries clearly in the CLI/dashboard
+4. Keep simulation-first validation on this machine before moving to Jetson
 
 ## Resume Here — Sprint 26 (COMPLETED)
 
@@ -89,6 +87,7 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 | Sprint 25 — Weekly Market Focus Selector | ✅ CLOSED | Claude Code | 2026-04-18 |
 | Sprint 26 — CI/CD + Jetson + MCP + Telegram | ✅ CLOSED | Claude Code | 2026-04-18 |
 | Sprint 27 — Responsive Chart + Runtime Marker Clarity | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 28 — Responsive Chart Indicator Overlays | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 
