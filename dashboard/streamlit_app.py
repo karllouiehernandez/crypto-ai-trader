@@ -22,9 +22,13 @@ from strategy.runtime import (
 from strategy.artifacts import (
     approve_artifact_for_live,
     compute_strategy_code_hash,
+    deactivate_runtime_artifact,
+    get_active_runtime_artifact_id,
+    list_all_strategy_artifacts,
     promote_artifact_to_paper,
     get_strategy_artifact,
     review_generated_strategy,
+    validate_runtime_artifact,
 )
 from backtester.service import (
     get_backtest_run,
@@ -38,9 +42,11 @@ from backtester.service import (
     save_backtest_preset,
 )
 from dashboard.workbench import (
+    build_artifact_registry_frame,
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_focus_candidate_frame,
+    build_runtime_target_summary,
     build_trader_summary,
     build_trading_chart_payload,
     build_strategy_comparison_frame,
@@ -56,6 +62,7 @@ from dashboard.workbench import (
     format_scenario_label,
     format_strategy_origin,
     get_strategy_source_code,
+    list_rollback_candidates,
     list_runtime_strategies,
     normalise_params,
     normalise_preset_name,
@@ -902,6 +909,14 @@ st.sidebar.caption("Responsive chart shows candles, volume, EMA/BB overlays, RSI
 active_strategy = get_active_strategy_config()
 active_paper_artifact = get_active_runtime_artifact("paper")
 active_live_artifact = get_active_runtime_artifact("live")
+_paper_artifact_id = get_active_runtime_artifact_id("paper")
+_live_artifact_id = get_active_runtime_artifact_id("live")
+_, _paper_validation_error = validate_runtime_artifact(_paper_artifact_id)
+_, _live_validation_error = validate_runtime_artifact(_live_artifact_id)
+runtime_target_summary = build_runtime_target_summary(
+    active_paper_artifact, active_live_artifact,
+    _paper_validation_error, _live_validation_error,
+)
 strategy_catalog = load_strategy_catalog()
 strategy_errors = load_strategy_errors()
 all_backtest_runs = load_backtest_runs()
@@ -973,6 +988,18 @@ hero_cols[4].metric(
     "Runtime Targets",
     f"P:{active_paper_artifact['name'] if active_paper_artifact else '—'} · L:{active_live_artifact['name'] if active_live_artifact else '—'}",
 )
+if runtime_target_summary["has_issues"]:
+    _issue_lines = []
+    if runtime_target_summary["paper"]["error"] and not active_paper_artifact:
+        _issue_lines.append(f"Paper: {runtime_target_summary['paper']['error']}")
+    elif runtime_target_summary["paper"]["error"]:
+        _issue_lines.append(f"Paper target invalid — {runtime_target_summary['paper']['error']}")
+    if runtime_target_summary["live"]["error"] and not active_live_artifact:
+        _issue_lines.append(f"Live: {runtime_target_summary['live']['error']}")
+    elif runtime_target_summary["live"]["error"]:
+        _issue_lines.append(f"Live target invalid — {runtime_target_summary['live']['error']}")
+    if _issue_lines:
+        st.warning("⚠ Runtime target issues detected. See **Promotion Control Panel** in the Strategies tab.  \n" + "  \n".join(_issue_lines))
 
 strategy_tab, backtest_tab, runtime_tab, focus_tab, inspect_tab = st.tabs(
     ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect"]
@@ -1215,6 +1242,105 @@ with strategy_tab:
             st.caption("Promote to Paper unlocks after this exact reviewed artifact has at least one passing saved backtest.")
         if str(selected_meta.get("artifact_status") or "").lower() not in {"paper_passed", "live_approved", "live_active"}:
             st.caption("Approve for Live unlocks after the active paper artifact passes its paper evaluation gate.")
+
+    # ── Promotion Control Panel ───────────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("Promotion Control Panel", expanded=runtime_target_summary["has_issues"]):
+        st.caption(
+            "Manage active paper and live runtime targets. "
+            "Deactivate or roll back to a different reviewed artifact without restarting."
+        )
+        _all_artifacts = list_all_strategy_artifacts()
+        _pcp_cols = st.columns(2)
+
+        # ── Paper target ──────────────────────────────────────────────────────
+        with _pcp_cols[0]:
+            st.markdown("##### Paper Target")
+            _pt = runtime_target_summary["paper"]
+            if _pt["configured"]:
+                if _pt["valid"]:
+                    st.success(f"✅ `{_pt['name']}` v{_pt['version']}  \nStatus: `{_pt['status']}` · hash `{_pt['code_hash_short']}`")
+                else:
+                    st.error(f"❌ `{_pt['name']}` — {_pt['error']}")
+            else:
+                st.info("No paper target configured.")
+
+            if st.button("Deactivate Paper Target", key="deactivate_paper_btn", disabled=not _pt["configured"]):
+                deactivate_runtime_artifact("paper")
+                load_strategy_catalog.clear()
+                st.cache_data.clear()
+                st.success("Paper target cleared.")
+                st.rerun()
+
+            _paper_candidates = list_rollback_candidates(_all_artifacts, "paper", _pt["artifact_id"])
+            if _paper_candidates:
+                st.markdown("**Roll paper back to:**")
+                _pc_labels = {
+                    f"#{a['id']} {a['name']} v{a['version']} [{a['status']}]": a["id"]
+                    for a in _paper_candidates
+                }
+                _pc_choice = st.selectbox("Select artifact", list(_pc_labels.keys()), key="paper_rollback_select")
+                if st.button("Roll Back Paper Target", key="paper_rollback_btn"):
+                    try:
+                        _rolled = promote_artifact_to_paper(int(_pc_labels[_pc_choice]))
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        load_strategy_catalog.clear()
+                        st.cache_data.clear()
+                        st.success(f"Paper target set to artifact #{_rolled['id']} ({_rolled['name']}).")
+                        st.rerun()
+            elif _pt["configured"]:
+                st.caption("No other eligible reviewed artifacts available for paper rollback.")
+
+        # ── Live target ───────────────────────────────────────────────────────
+        with _pcp_cols[1]:
+            st.markdown("##### Live Target")
+            _lt = runtime_target_summary["live"]
+            if _lt["configured"]:
+                if _lt["valid"]:
+                    st.success(f"✅ `{_lt['name']}` v{_lt['version']}  \nStatus: `{_lt['status']}` · hash `{_lt['code_hash_short']}`")
+                else:
+                    st.error(f"❌ `{_lt['name']}` — {_lt['error']}")
+            else:
+                st.info("No live target configured.")
+
+            if st.button("Deactivate Live Target", key="deactivate_live_btn", disabled=not _lt["configured"]):
+                deactivate_runtime_artifact("live")
+                load_strategy_catalog.clear()
+                st.cache_data.clear()
+                st.success("Live target cleared.")
+                st.rerun()
+
+            _live_candidates = list_rollback_candidates(_all_artifacts, "live", _lt["artifact_id"])
+            if _live_candidates:
+                st.markdown("**Roll live back to:**")
+                _lc_labels = {
+                    f"#{a['id']} {a['name']} v{a['version']} [{a['status']}]": a["id"]
+                    for a in _live_candidates
+                }
+                _lc_choice = st.selectbox("Select artifact", list(_lc_labels.keys()), key="live_rollback_select")
+                if st.button("Roll Back Live Target", key="live_rollback_btn"):
+                    try:
+                        _rolled_live = approve_artifact_for_live(int(_lc_labels[_lc_choice]))
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        load_strategy_catalog.clear()
+                        st.cache_data.clear()
+                        st.success(f"Live target set to artifact #{_rolled_live['id']} ({_rolled_live['name']}).")
+                        st.rerun()
+            elif _lt["configured"]:
+                st.caption("No other eligible paper-passed artifacts available for live rollback.")
+
+        # ── Artifact registry / audit trail ──────────────────────────────────
+        st.markdown("---")
+        st.markdown("##### Artifact Registry")
+        _registry_df = build_artifact_registry_frame(_all_artifacts, all_backtest_runs)
+        if not _registry_df.empty:
+            st.dataframe(_registry_df, width="stretch", hide_index=True)
+        else:
+            st.caption("No strategy artifacts registered yet. Run a backtest on a reviewed plugin to begin.")
 
     catalog_df = build_strategy_catalog_frame(strategy_catalog, all_backtest_runs, active_strategy["name"])
     st.dataframe(catalog_df, width="stretch", hide_index=True)

@@ -5,6 +5,27 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 34 — Promotion Control Panel Hardening
+**Date started:** 2026-04-18
+**Date closed:** 2026-04-18
+**Agent:** Claude Code
+**Goal:** Harden the Sprint 33 promotion pipeline with a dedicated Promotion Control Panel in the dashboard, surface runtime artifact validation failures directly in the UI, add rollback/deactivation actions for paper and live targets, and provide an artifact registry audit trail.
+**Status:** CLOSED ✓
+**GitHub issue:** not created — current integration still returns `403 Resource not accessible by integration`
+
+### Changes Made
+- [x] `strategy/artifacts.py` — `deactivate_runtime_artifact(run_mode)` clears active paper/live target; `list_all_strategy_artifacts()` returns all registered artifacts sorted by creation date
+- [x] `dashboard/workbench.py` — `build_runtime_target_summary(paper, live, paper_err, live_err)` returns structured validation state; `build_artifact_registry_frame(artifacts, runs)` returns audit DataFrame with best backtest per artifact; `list_rollback_candidates(artifacts, run_mode, current_id)` filters eligible rollback targets per runtime mode
+- [x] `dashboard/streamlit_app.py` — new imports (deactivate, list_all, validate, new workbench helpers); `validate_runtime_artifact()` called at page load for both targets; hero-area warning banner when targets have issues; **Promotion Control Panel** expander added in Strategies tab with paper/live status cards, Deactivate buttons, rollback selectbox + button, and full artifact registry table
+- [x] `tests/test_workbench_helpers.py` — 8 new tests for `build_runtime_target_summary`, `build_artifact_registry_frame`, `list_rollback_candidates`
+- [x] `tests/test_strategy_artifacts.py` — 5 new tests for `deactivate_runtime_artifact` (paper, live, idempotent) and `list_all_strategy_artifacts`
+
+### Verification
+- `pytest tests/ -q` → **556 passed, 4 warnings** (+13 over Sprint 33 baseline of 543)
+- Headless dashboard startup verified (no import errors)
+
+---
+
 ## Sprint 31 — Strategy Experiments EXP-001 + EXP-002
 **Date started:** 2026-04-18
 **Date closed:** not closed
@@ -17,10 +38,10 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ## Sprint 33 — Versioned Strategy Promotion Pipeline
 **Date started:** 2026-04-18
-**Date closed:** not closed
+**Date closed:** 2026-04-18
 **Agent:** Shared Codex + Claude Code stream
 **Goal:** Add a strict Jesse-style strategy lifecycle so generated drafts stay backtest-only, reviewed plugins can be promoted through paper/live by artifact identity, and runtime execution pins reviewed artifacts by code hash instead of by filename alone.
-**Status:** IN PROGRESS
+**Status:** CLOSED ✓
 **GitHub issue:** not created — current integration still returns `403 Resource not accessible by integration`
 
 ### Changes Made
@@ -43,6 +64,47 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 - Treat Codex and Claude Code as one shared developer stream when continuing this sprint.
 - Do not spend time attributing local dirty files to one agent or the other.
 - `knowledge/experiment_log.md` may still be dirty due to a background runtime process and should remain untouched unless explicitly requested.
+
+### Close Status
+- Merged and pushed to `master` as commit `62904ad`
+- Verified on merged state:
+  - `pytest tests/ -q` => **543 passed, 4 warnings**
+  - `python -m py_compile strategy/artifacts.py strategy/runtime.py backtester/service.py simulator/paper_trader.py simulator/coordinator.py run_live.py dashboard/workbench.py dashboard/streamlit_app.py` => passed
+  - `streamlit run dashboard/streamlit_app.py --server.headless true --server.port 8769` => startup verified
+- Approved to close: YES
+
+---
+
+## Sprint 34 — Promotion Control Panel Hardening
+**Date started:** 2026-04-18
+**Date closed:** not closed
+**Agent:** Shared Codex + Claude Code stream
+**Goal:** Harden the Sprint 33 promotion workflow with clearer dashboard control surfaces, runtime target rollback/deactivation actions, and more obvious UI warnings when the selected paper/live artifact is invalid, stale, or mismatched.
+**Status:** QUEUED
+**GitHub issue:** not created — current integration still returns `403 Resource not accessible by integration`
+
+### Planned Scope
+- Add a clearer promotion control panel in the dashboard showing:
+  - active paper artifact
+  - active live artifact
+  - rollout readiness
+  - rollback and deactivation options
+- Surface runtime artifact validation failures directly in the UI instead of only in logs:
+  - missing reviewed artifact
+  - code-hash mismatch
+  - invalid draft selection
+- Add explicit runtime-target management actions:
+  - deactivate paper target
+  - deactivate live target
+  - roll paper/live to another reviewed artifact
+- Improve promotion audit visibility:
+  - latest passing backtest
+  - paper-passed recommendation state
+  - manual live approval trail
+
+### Starting Point
+- Sprint 33 is the baseline and is already on `master`
+- Current verification baseline remains `543 passed, 4 warnings`
 
 ---
 

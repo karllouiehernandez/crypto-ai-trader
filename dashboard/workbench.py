@@ -1137,3 +1137,125 @@ def get_strategy_source_code(item: dict) -> str:
         f"# Built-in strategy: {item.get('name')}\n"
         "# Source code not available for built-in strategies.\n"
     )
+
+
+def build_runtime_target_summary(
+    paper_artifact: dict[str, Any] | None,
+    live_artifact: dict[str, Any] | None,
+    paper_error: str | None,
+    live_error: str | None,
+) -> dict[str, Any]:
+    """Return structured validation state for paper and live runtime targets."""
+
+    def _target_info(artifact: dict[str, Any] | None, error: str | None) -> dict[str, Any]:
+        if artifact is None:
+            return {
+                "configured": False,
+                "name": None,
+                "version": None,
+                "status": None,
+                "code_hash_short": None,
+                "provenance": None,
+                "artifact_id": None,
+                "valid": False,
+                "error": error or "No artifact configured for this runtime mode.",
+            }
+        return {
+            "configured": True,
+            "name": artifact.get("name"),
+            "version": artifact.get("version"),
+            "status": artifact.get("status"),
+            "code_hash_short": (str(artifact.get("code_hash") or ""))[:12],
+            "provenance": artifact.get("provenance"),
+            "artifact_id": artifact.get("id"),
+            "valid": error is None,
+            "error": error,
+        }
+
+    paper_info = _target_info(paper_artifact, paper_error)
+    live_info = _target_info(live_artifact, live_error)
+    return {
+        "paper": paper_info,
+        "live": live_info,
+        "has_issues": bool(paper_info["error"] or live_info["error"]),
+    }
+
+
+def build_artifact_registry_frame(
+    artifacts: list[dict[str, Any]],
+    backtest_runs: pd.DataFrame,
+) -> pd.DataFrame:
+    """Return a DataFrame of registered artifacts with lifecycle and best backtest info."""
+    if not artifacts:
+        return pd.DataFrame()
+
+    bt_map: dict[int, dict[str, Any]] = {}
+    if not backtest_runs.empty and "artifact_id" in backtest_runs.columns:
+        for _, row in backtest_runs.iterrows():
+            raw_aid = row.get("artifact_id")
+            if raw_aid is None or (isinstance(raw_aid, float) and math.isnan(raw_aid)):
+                continue
+            aid = int(raw_aid)
+            existing = bt_map.get(aid)
+            this_passed = str(row.get("status", "")).lower() == "passed"
+            if existing is None:
+                bt_map[aid] = row.to_dict()
+            else:
+                existing_passed = str(existing.get("status", "")).lower() == "passed"
+                if this_passed and not existing_passed:
+                    bt_map[aid] = row.to_dict()
+                elif this_passed == existing_passed:
+                    try:
+                        if float(row.get("sharpe") or 0) > float(existing.get("sharpe") or 0):
+                            bt_map[aid] = row.to_dict()
+                    except (TypeError, ValueError):
+                        pass
+
+    rows = []
+    for a in artifacts:
+        aid = a.get("id")
+        best_bt = bt_map.get(aid) if aid else None
+        rows.append(
+            {
+                "id": aid,
+                "name": a.get("name"),
+                "version": a.get("version"),
+                "provenance": a.get("provenance"),
+                "status": a.get("status"),
+                "code_hash": (str(a.get("code_hash") or ""))[:12],
+                "created_at": a.get("created_at"),
+                "best_sharpe": best_bt.get("sharpe") if best_bt else None,
+                "best_profit_factor": best_bt.get("profit_factor") if best_bt else None,
+                "best_bt_status": str(best_bt.get("status", "")).lower() if best_bt else None,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def list_rollback_candidates(
+    artifacts: list[dict[str, Any]],
+    run_mode: str,
+    current_artifact_id: int | None,
+) -> list[dict[str, Any]]:
+    """Return reviewed plugin artifacts eligible for rollback promotion.
+
+    paper — any plugin-provenance artifact with status >= reviewed
+    live  — plugin-provenance artifacts with paper_passed / live_approved / live_active
+    """
+    clean_mode = str(run_mode or "").strip().lower()
+    if clean_mode == "paper":
+        eligible = {
+            "reviewed", "backtest_passed", "paper_candidate",
+            "paper_active", "paper_passed", "live_approved", "live_active",
+        }
+    elif clean_mode == "live":
+        eligible = {"paper_passed", "live_approved", "live_active"}
+    else:
+        return []
+
+    return [
+        a for a in artifacts
+        if a.get("provenance") == "plugin"
+        and str(a.get("status") or "").lower() in eligible
+        and a.get("id") != current_artifact_id
+    ]

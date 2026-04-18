@@ -8,7 +8,9 @@ import pytest
 from database.models import BacktestRun, SessionLocal, init_db
 from strategies.loader import clear_registry, list_strategies, load_strategy_path
 from strategy.artifacts import (
+    deactivate_runtime_artifact,
     get_active_runtime_artifact_id,
+    list_all_strategy_artifacts,
     promote_artifact_to_paper,
     register_strategy_artifact,
     review_generated_strategy,
@@ -170,3 +172,55 @@ def test_resolve_runtime_strategy_descriptor_returns_promoted_reviewed_plugin(tm
     assert descriptor["artifact_id"] == artifact_id
     assert descriptor["strategy_name"] == "runtime_ready_v1"
     assert descriptor["strategy_provenance"] == "plugin"
+
+
+# ── Sprint 34: deactivate + list_all ─────────────────────────────────────────
+
+def test_deactivate_runtime_artifact_clears_paper(tmp_path, monkeypatch):
+    monkeypatch.setattr("strategy.artifacts.STRATEGIES_DIR", tmp_path)
+    path = _write_strategy(tmp_path, "deactivate_me")
+    meta = _load_meta(path)
+    artifact = register_strategy_artifact(meta)
+    set_active_runtime_artifact_id("paper", artifact["id"])
+    assert get_active_runtime_artifact_id("paper") == artifact["id"]
+
+    deactivate_runtime_artifact("paper")
+    assert get_active_runtime_artifact_id("paper") is None
+
+
+def test_deactivate_runtime_artifact_clears_live(tmp_path, monkeypatch):
+    monkeypatch.setattr("strategy.artifacts.STRATEGIES_DIR", tmp_path)
+    path = _write_strategy(tmp_path, "deactivate_live_me")
+    meta = _load_meta(path)
+    artifact = register_strategy_artifact(meta)
+    set_active_runtime_artifact_id("live", artifact["id"])
+    assert get_active_runtime_artifact_id("live") == artifact["id"]
+
+    deactivate_runtime_artifact("live")
+    assert get_active_runtime_artifact_id("live") is None
+
+
+def test_deactivate_already_none_is_safe():
+    assert get_active_runtime_artifact_id("paper") is None
+    deactivate_runtime_artifact("paper")  # should not raise
+    assert get_active_runtime_artifact_id("paper") is None
+
+
+def test_list_all_strategy_artifacts_returns_registered(tmp_path, monkeypatch):
+    monkeypatch.setattr("strategy.artifacts.STRATEGIES_DIR", tmp_path)
+    path_a = _write_strategy(tmp_path, "list_test_a")
+    path_b = _write_strategy(tmp_path, "list_test_b")
+    meta_a = _load_meta(path_a)
+    meta_b = _load_meta(path_b)
+    register_strategy_artifact(meta_a)
+    register_strategy_artifact(meta_b)
+
+    artifacts = list_all_strategy_artifacts()
+    names = {a["name"] for a in artifacts}
+    assert "generated_momentum_v1" in names  # both files share the same class name in GENERATED_DRAFT
+    assert len(artifacts) >= 1
+
+
+def test_list_all_strategy_artifacts_empty_returns_list():
+    result = list_all_strategy_artifacts()
+    assert isinstance(result, list)

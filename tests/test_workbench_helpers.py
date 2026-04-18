@@ -6,8 +6,10 @@ import pandas as pd
 import pytest
 
 from dashboard.workbench import (
+    build_artifact_registry_frame,
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
+    build_runtime_target_summary,
     build_trader_summary,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
@@ -23,6 +25,7 @@ from dashboard.workbench import (
     format_scenario_label,
     format_strategy_origin,
     get_strategy_source_code,
+    list_rollback_candidates,
     list_runtime_strategies,
     normalise_preset_name,
     parse_metrics_json,
@@ -592,3 +595,83 @@ def test_build_trading_chart_payload_serializes_enabled_studies():
     assert [band["label"] for band in payload["overlays"]["rsi"]["bands"]] == ["Overbought", "Midline", "Oversold"]
     assert [series["label"] for series in payload["overlays"]["macd"]["series"]] == ["MACD", "Signal"]
     assert round(payload["overlays"]["macd"]["histogram"][0]["value"], 2) == 0.14
+
+
+# ── Sprint 34: Promotion Control Panel helpers ────────────────────────────────
+
+def test_build_runtime_target_summary_both_none():
+    summary = build_runtime_target_summary(None, None, None, None)
+    assert summary["has_issues"] is True
+    assert summary["paper"]["configured"] is False
+    assert summary["live"]["configured"] is False
+    assert summary["paper"]["valid"] is False
+    assert summary["live"]["valid"] is False
+
+
+def test_build_runtime_target_summary_paper_valid_live_error():
+    paper = {"name": "ema_plugin", "version": "1.0.0", "status": "paper_active", "code_hash": "abc123", "id": 5}
+    summary = build_runtime_target_summary(paper, None, None, "File missing")
+    assert summary["has_issues"] is True
+    assert summary["paper"]["valid"] is True
+    assert summary["paper"]["name"] == "ema_plugin"
+    assert summary["live"]["valid"] is False
+    assert summary["live"]["error"] == "File missing"
+
+
+def test_build_runtime_target_summary_both_valid():
+    paper = {"name": "p", "version": "1.0.0", "status": "paper_active", "code_hash": "a" * 64, "id": 1}
+    live = {"name": "l", "version": "1.0.0", "status": "live_active", "code_hash": "b" * 64, "id": 2}
+    summary = build_runtime_target_summary(paper, live, None, None)
+    assert summary["has_issues"] is False
+    assert summary["paper"]["valid"] is True
+    assert summary["live"]["valid"] is True
+    assert summary["paper"]["code_hash_short"] == "a" * 12
+    assert summary["live"]["code_hash_short"] == "b" * 12
+
+
+def test_build_artifact_registry_frame_empty():
+    frame = build_artifact_registry_frame([], pd.DataFrame())
+    assert frame.empty
+
+
+def test_build_artifact_registry_frame_maps_best_backtest():
+    artifacts = [{"id": 1, "name": "ema_v1", "version": "1.0.0", "provenance": "plugin", "status": "backtest_passed", "code_hash": "abc", "created_at": None}]
+    runs = pd.DataFrame([
+        {"artifact_id": 1, "status": "passed", "sharpe": 1.8, "profit_factor": 1.5},
+        {"artifact_id": 1, "status": "failed", "sharpe": 0.5, "profit_factor": 1.0},
+    ])
+    frame = build_artifact_registry_frame(artifacts, runs)
+    assert len(frame) == 1
+    assert frame.iloc[0]["best_bt_status"] == "passed"
+    assert frame.iloc[0]["best_sharpe"] == 1.8
+
+
+def test_list_rollback_candidates_paper_excludes_current():
+    artifacts = [
+        {"id": 1, "name": "a", "version": "1.0.0", "provenance": "plugin", "status": "backtest_passed"},
+        {"id": 2, "name": "b", "version": "1.0.0", "provenance": "plugin", "status": "paper_passed"},
+        {"id": 3, "name": "c", "version": "1.0.0", "provenance": "generated", "status": "backtest_passed"},
+    ]
+    candidates = list_rollback_candidates(artifacts, "paper", current_artifact_id=1)
+    ids = [a["id"] for a in candidates]
+    assert 1 not in ids
+    assert 2 in ids
+    assert 3 not in ids  # generated — not eligible
+
+
+def test_list_rollback_candidates_live_requires_paper_passed():
+    artifacts = [
+        {"id": 1, "name": "a", "version": "1.0.0", "provenance": "plugin", "status": "backtest_passed"},
+        {"id": 2, "name": "b", "version": "1.0.0", "provenance": "plugin", "status": "paper_passed"},
+        {"id": 3, "name": "c", "version": "1.0.0", "provenance": "plugin", "status": "live_active"},
+    ]
+    candidates = list_rollback_candidates(artifacts, "live", current_artifact_id=3)
+    ids = [a["id"] for a in candidates]
+    assert 1 not in ids  # backtest_passed is not enough for live
+    assert 2 in ids
+    assert 3 not in ids  # excluded as current
+
+
+def test_list_rollback_candidates_unknown_mode_returns_empty():
+    artifacts = [{"id": 1, "name": "a", "version": "1.0.0", "provenance": "plugin", "status": "paper_passed"}]
+    assert list_rollback_candidates(artifacts, "staging", None) == []

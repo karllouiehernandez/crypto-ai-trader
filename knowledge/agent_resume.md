@@ -11,9 +11,9 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 33 — Versioned Strategy Promotion Pipeline`
-- Status: In progress locally. Artifact lifecycle, promotion actions, and runtime enforcement are implemented and verified, but not yet committed/pushed.
-- Baseline: `pytest tests/ -q` currently shows `543 passed, 4 warnings`
+- Sprint: `Sprint 35 — TBD`
+- Status: Sprint 34 closed. No queued item. Check GitHub Projects board #1 or ask the user.
+- Baseline: `pytest tests/ -q` shows `556 passed, 4 warnings`
 - GitHub tracking: board/issue writes still blocked with `403`; use manual fallback
 
 ## Why This Exists
@@ -26,15 +26,20 @@ Read order for a new agent:
   - Codex and Claude Code must act as one developer on this repo
   - Do not treat local dirty files as belonging to one specific agent unless the user explicitly asks for attribution
   - Continue from the current worktree as shared in-progress state
-- Sprint 33 artifact lifecycle is implemented locally:
-  - `strategy/artifacts.py` — new source of truth for code hashes, artifact registration, review/save, paper/live target selection, and runtime validation
-  - `database/models.py` — `StrategyArtifact` model plus artifact/hash/provenance fields persisted on backtest runs, backtest trades, trades, portfolio snapshots, and promotions
-  - `strategy/runtime.py` — backtest/default strategy remains separate from paper/live artifact selection; runtime now resolves promoted reviewed artifacts
-  - `backtester/service.py` — saved backtests now persist artifact identity and upgrade reviewed artifacts to `backtest_passed`
-  - `simulator/paper_trader.py`, `simulator/coordinator.py`, `run_live.py` — paper/live execution now carry artifact identity and fail closed when the promoted reviewed artifact is invalid or hash-mismatched
-  - `dashboard/streamlit_app.py` — `Review and Save`, `Promote to Paper`, and `Approve for Live` actions added; `Inspect` now shows saved-run artifact identity and code-hash mismatch warnings
+- Sprint 34 Promotion Control Panel is complete and pushed:
+  - `strategy/artifacts.py` — `deactivate_runtime_artifact(run_mode)`, `list_all_strategy_artifacts()`
+  - `dashboard/workbench.py` — `build_runtime_target_summary`, `build_artifact_registry_frame`, `list_rollback_candidates`
+  - `dashboard/streamlit_app.py` — `validate_runtime_artifact()` called at page load for both paper/live targets; hero-area banner shows when targets are invalid; Promotion Control Panel expander in Strategies tab with paper/live status cards, Deactivate buttons, rollback selectors, and artifact registry audit table
+  - `tests/test_workbench_helpers.py` — 8 new tests (+Sprint 34)
+  - `tests/test_strategy_artifacts.py` — 5 new tests (+Sprint 34)
+- Sprint 33 artifact lifecycle is complete and pushed:
+  - `strategy/artifacts.py` — source of truth for code hashes, artifact registration, review/save, paper/live target selection, and runtime validation
+  - `database/models.py` — `StrategyArtifact` model plus artifact/hash/provenance fields on backtest runs, backtest trades, trades, portfolio snapshots, and promotions
+  - `strategy/runtime.py` — backtest/default strategy separate from paper/live artifact selection; runtime validates promoted reviewed artifacts
+  - `backtester/service.py` — saved backtests persist artifact identity and upgrade reviewed artifacts to `backtest_passed`
+  - `simulator/paper_trader.py`, `simulator/coordinator.py`, `run_live.py` — paper/live execution carries artifact identity and fails closed on missing/mismatched artifacts
+  - `dashboard/streamlit_app.py` — `Review and Save`, `Promote to Paper`, `Approve for Live` actions; `Inspect` shows artifact identity and code-hash mismatch warnings
   - `dashboard/workbench.py` — artifact-aware workflow stages and catalog columns
-  - `tests/test_strategy_artifacts.py` — new lifecycle regression coverage
 - Strategy experiment plugins from Sprint 31 remain implemented and discoverable:
   - `strategies/ema200_filtered_momentum.py`
   - `strategies/mtf_confirmation_strategy.py`
@@ -109,10 +114,7 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Finalize Sprint 33 from the existing shared worktree:
-1. Review the full diff as one unified change set
-2. Commit and push Sprint 33 if the user wants it finalized
-3. After push, update handoff files again to mark Sprint 33 closed
+Sprint 34 is closed. No Sprint 35 item is queued. Check GitHub Projects board #1 or ask the user for the next priority.
 
 ## Likely Files
 
@@ -120,6 +122,8 @@ Finalize Sprint 33 from the existing shared worktree:
 - `knowledge/agent_resume.md`
 - `dashboard/streamlit_app.py`
 - `dashboard/workbench.py`
+- `run_live.py`
+- `strategy/artifacts.py`
 - `tests/test_workbench_helpers.py`
 
 ## Constraints
@@ -133,9 +137,9 @@ Finalize Sprint 33 from the existing shared worktree:
 
 ## Last Verified State
 
-- Tests: `543 passed, 4 warnings`
-- Headless dashboard startup: verified on port `8768`
-- Last sprint closed: `Sprint 32`
+- Tests: `556 passed, 4 warnings`
+- Headless dashboard startup: verified after Sprint 34 changes
+- Last sprint closed: `Sprint 34`
 
 ## Token-Saving Rule
 

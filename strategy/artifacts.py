@@ -349,3 +349,20 @@ def validate_runtime_artifact(artifact_id: int | None) -> tuple[dict[str, Any] |
             "review and promote the updated file again."
         )
     return artifact, None
+
+
+def deactivate_runtime_artifact(run_mode: str) -> None:
+    """Clear the active paper or live artifact target (fail-safe deactivation)."""
+    set_active_runtime_artifact_id(run_mode, None)
+
+
+def list_all_strategy_artifacts() -> list[dict[str, Any]]:
+    """Return all registered strategy artifacts sorted by creation date descending."""
+    init_db()
+    with SessionLocal() as sess:
+        rows = (
+            sess.query(StrategyArtifact)
+            .order_by(StrategyArtifact.created_at.desc())
+            .all()
+        )
+        return [_artifact_to_dict(row) for row in rows if row is not None]
