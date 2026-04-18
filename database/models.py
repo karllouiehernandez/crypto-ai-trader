@@ -125,6 +125,45 @@ class BacktestTrade(Base):
     strategy_name = Column(String(128), nullable=False)
     strategy_version = Column(String(32), nullable=True)
 
+class WeeklyFocusStudy(Base):
+    __tablename__ = "weekly_focus_studies"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    created_at    = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
+    strategy_name = Column(String(128), nullable=False)
+    params_json   = Column(String, nullable=False, default="{}")
+    universe_size = Column(Integer, nullable=False)
+    top_n         = Column(Integer, nullable=False)
+    backtest_days = Column(Integer, nullable=False)
+    status        = Column(String(32), nullable=False, default="completed")
+
+
+class WeeklyFocusCandidate(Base):
+    __tablename__ = "weekly_focus_candidates"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    study_id      = Column(Integer, nullable=False, index=True)
+    symbol        = Column(String(32), nullable=False)
+    rank          = Column(Integer, nullable=False)
+    volume_rank   = Column(Integer, nullable=False)
+    sharpe        = Column(Float, nullable=True)
+    profit_factor = Column(Float, nullable=True)
+    max_drawdown  = Column(Float, nullable=True)
+    n_trades      = Column(Integer, nullable=True)
+    score         = Column(Float, nullable=True)
+    status        = Column(String(32), nullable=False, default="completed")
+    metrics_json  = Column(String, nullable=False, default="{}")
+
+
+class SymbolLoadJob(Base):
+    """Tracks background 30-day history load jobs for new symbols."""
+    __tablename__ = "symbol_load_jobs"
+    symbol       = Column(String(32), primary_key=True)
+    status       = Column(String(16), nullable=False, default="queued")  # queued|loading|ready|failed
+    queued_at    = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(tz=timezone.utc))
+    started_at   = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    error_msg    = Column(String(512), nullable=True)
+
+
 # ────────────────────────── helpers ──────────────────────────────────────────
 def get_engine(echo: bool = False):
     Path(DB_PATH).parent.mkdir(exist_ok=True)

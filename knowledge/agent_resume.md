@@ -10,10 +10,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 30 — User-prioritized follow-up`
-- Status: Sprint 29 is closed; dynamic Binance `USDT` symbol discovery, persisted runtime watchlists, and historical backfill/audit coverage are in place
-- Baseline: `pytest tests/ -q` must show `500 passed`
-- GitHub tracking issue: Sprint 29 issue creation was attempted and failed with `403 Resource not accessible by integration`; exact manual issue/card text is recorded in `HANDOFF.md` and `knowledge/sprint_log.md`
+- Sprint: `Sprint 31 — TBD`
+- Status: Sprint 30 is closed; Sprint 31 is not yet defined — check GitHub Projects board #1 or ask the user
+- Baseline: `pytest tests/ -q` must show `510 passed`
+- GitHub tracking: board/issue writes still blocked with `403`; use manual fallback
 
 ## Why This Exists
 
@@ -21,6 +21,11 @@ Read order for a new agent:
 
 ## Current State
 
+- Ready-First Symbol UX is in place (Sprint 30):
+  - `market_data/symbol_readiness.py` — `list_ready_symbols()`, `is_symbol_ready()`, `queue_symbol_load()`, `retry_failed_load()`, `list_load_jobs()`
+  - `market_data/background_loader.py` — daemon thread worker; started by `ensure_worker_running()` on dashboard load
+  - `database/models.py` — `SymbolLoadJob` table tracks load job status
+  - `dashboard/streamlit_app.py` — chart and Backtest Lab selectors show ready-only symbols; "Load New Symbol" sidebar expander with queue status and retry
 - Dynamic Binance spot `USDT` symbol discovery is in place:
   - `market_data/binance_symbols.py`
   - filters active spot `USDT` pairs from Binance metadata
@@ -85,10 +90,14 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 30 is not fixed yet. Likely next directions:
-- expand historical providers/exchanges beyond Binance spot `USDT`
-- improve watchlist and symbol-management UX
-- harden GitHub sprint/project automation once write access exists
+Sprint 31 goal is not yet defined. Check GitHub Projects board #1 or ask the user for the next priority.
+
+## Likely Files
+
+- `dashboard/streamlit_app.py`
+- `market_data/history.py`
+- `market_data/runtime_watchlist.py`
+- `database/models.py`
 
 ## Constraints
 
@@ -100,8 +109,8 @@ Sprint 30 is not fixed yet. Likely next directions:
 
 ## Last Verified State
 
-- Tests: `500 passed, 1 warning`
-- Last sprint closed: `Sprint 29`
+- Tests: `510 passed, 1 warning`
+- Last sprint closed: `Sprint 30`
 
 ## Token-Saving Rule
 

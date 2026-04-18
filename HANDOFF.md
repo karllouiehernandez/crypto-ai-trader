@@ -9,37 +9,31 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 29 closed) |
-| **Sprint completed** | Sprint 29 ✅ — Dynamic Binance USDT Universe + Historical Data Coverage — 500 tests passing |
-| **Next sprint** | Sprint 30 — User-prioritized follow-up (multi-exchange/data-provider expansion, symbol UX polish, or GitHub automation hardening) |
-| **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). Sprint 29 issue creation was attempted and failed with the same 403, so the exact manual issue/card text is recorded below. To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
+| **Last active agent** | Claude Code |
+| **Last updated** | 2026-04-18 (Sprint 30 closed) |
+| **Sprint completed** | Sprint 30 ✅ — Ready-First Symbol UX + Background History Loading — 510 tests passing |
+| **Next sprint** | Sprint 31 — TBD; check GitHub Projects board #1 or ask user |
+| **Blocking issues** | GitHub board/issue writes are still blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 29 complete. |
+| **Reason for handoff** | Sprint 30 complete. |
 
 ---
 
-## Resume Here — Sprint 30
+## Resume Here — Sprint 31
 
-**Sprint 29 complete.** The app now supports a dynamic Binance spot `USDT` symbol universe for research/backtesting/runtime selection, plus historical backfill and continuity audits for arbitrary symbols. 500 tests passing.
+**Sprint 30 complete.** The dashboard now shows only ready symbols (symbols with local candle data) in the chart and backtest selectors. A separate "Load New Symbol" sidebar expander lists all Binance USDT pairs, lets the user queue a background 30-day history load, and shows queue status with retry for failed loads. 510 tests passing.
 
-### What was done in Sprint 29
-- **Dynamic Binance symbol discovery**: `market_data/binance_symbols.py` — added a Binance metadata service that discovers active spot `USDT` pairs and sorts them by 24h quote volume.
-- **Persisted runtime watchlist**: `market_data/runtime_watchlist.py` — added a local watchlist service with `list_runtime_symbols()`, `set_runtime_symbols()`, `add_runtime_symbol()`, and `remove_runtime_symbol()` backed by `AppSetting`.
-- **Historical data coverage workflow**: `market_data/history.py` — added `backfill()`, `sync_recent()`, `ensure_symbol_history()`, `audit()`, `evaluate_candle_coverage()`, and fail-fast audit summaries using Binance archive data plus REST delta sync.
-- **CLI backfill/audit entrypoints**: `collectors/historical_loader.py` — now supports `backfill`, `audit`, and `sync_recent` commands for arbitrary symbols and keeps runtime bootstrap synced to the persisted watchlist.
-- **Dynamic runtime symbol activation**: `collectors/live_streamer.py` and `simulator/paper_trader.py` — runtime loops now read the persisted watchlist instead of treating `config.SYMBOLS` as the active universe.
-- **Workbench symbol freedom**: `dashboard/streamlit_app.py` — dashboard symbol selectors now use the discovered Binance universe, add a dedicated runtime watchlist manager, and expose audit/backfill controls before running backtests.
-- **Backtest fail-fast gap detection**: `backtester/engine.py`, `backtester/walk_forward.py`, and `run_backtest.py` — backtests now stop with a clear incomplete-history error instead of silently running on gapped windows.
-- **Market Focus alignment**: `market_focus/selector.py` — market-focus discovery now uses the same shared Binance symbol catalog instead of its own hardcoded ticker fetch path.
-- **500 total passing** (+9 over Sprint 28)
+### What was done in Sprint 30
+- **`database/models.py`** — added `SymbolLoadJob` ORM model (`symbol PK`, `status`, `queued_at`, `started_at`, `completed_at`, `error_msg`). Auto-created by `init_db()` / `Base.metadata.create_all`.
+- **`market_data/symbol_readiness.py`** (NEW) — `list_ready_symbols()`, `is_symbol_ready()`, `queue_symbol_load()`, `retry_failed_load()`, `list_load_jobs()`.
+- **`market_data/background_loader.py`** (NEW) — daemon thread worker (`ensure_worker_running()`) that polls `SymbolLoadJob` for `queued` rows and calls `backfill` + `sync_recent`; writes `ready` or `failed` status back to DB.
+- **`dashboard/streamlit_app.py`** — chart and backtest Lab symbol selectors now use `ready_symbols` (symbols with local candle data) instead of the full Binance catalog. Added a "Load New Symbol" sidebar expander backed by the full catalog + background loader; shows live queue status and retry for failed jobs. `ensure_worker_running()` called on every page load.
+- **Tests** — 10 new tests in `test_market_data_services.py` covering readiness checks, job queuing, idempotency, failed-job reset, and job ordering.
+- **510 total passing** (+10 over Sprint 29)
 
-### Sprint 30 Direction
-No mandatory roadmap item is queued. The next agent should confirm the user’s priority, with likely options:
-1. Expand beyond Binance spot `USDT` into additional providers/exchanges
-2. Improve symbol-management UX and watchlist controls further
-3. Harden GitHub sprint/project automation once write-capable integration is available
+### Sprint 31 Goal
+No queued roadmap item. Next agent should check GitHub Projects board `#1` or ask the user for the next priority.
 
 ### GitHub Sprint Tracking — Manual Fallback
 - Attempted GitHub issue creation for Sprint 29 in `karllouiehernandez/crypto-ai-trader`
@@ -101,6 +95,8 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 | Sprint 26 — CI/CD + Jetson + MCP + Telegram | ✅ CLOSED | Claude Code | 2026-04-18 |
 | Sprint 27 — Responsive Chart + Runtime Marker Clarity | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 28 — Responsive Chart Indicator Overlays | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 29 — Dynamic Binance USDT Universe + Historical Data Coverage | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 30 — Ready-First Symbol UX + Background History Loading | ✅ CLOSED | Claude Code | 2026-04-18 |
 
 ---
 

@@ -1,4 +1,4 @@
-"""Tests for symbol discovery, runtime watchlists, and history audit helpers."""
+"""Tests for symbol discovery, runtime watchlists, history audit helpers, and symbol readiness."""
 
 from __future__ import annotations
 
@@ -7,10 +7,17 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-from database.models import AppSetting, Candle, SessionLocal, init_db
+from database.models import AppSetting, Candle, SessionLocal, SymbolLoadJob, init_db
 from market_data.binance_symbols import list_binance_spot_usdt_symbol_names, list_binance_spot_usdt_symbols
-from market_data.history import audit, backfill, sync_recent
+from market_data.history import _download_archive_day, audit, backfill, sync_recent
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
+from market_data.symbol_readiness import (
+    is_symbol_ready,
+    list_load_jobs,
+    list_ready_symbols,
+    queue_symbol_load,
+    retry_failed_load,
+)
 
 
 def _clear_market_data_state() -> None:
@@ -136,6 +143,26 @@ def test_backfill_inserts_archive_rows_for_non_default_symbol():
     assert count == 2
 
 
+def test_download_archive_day_supports_microsecond_spot_timestamps():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            "DOGEUSDT-1m-2026-04-18.csv",
+            "1776470400000000,0.1500,0.1600,0.1400,0.1550,1000,1776470459999999,0,0,0,0,0\n",
+        )
+
+    response = MagicMock()
+    response.status_code = 200
+    response.content = buffer.getvalue()
+    response.raise_for_status = MagicMock()
+
+    with patch("market_data.history.requests.get", return_value=response):
+        rows = _download_archive_day("DOGEUSDT", datetime(2026, 4, 18, tzinfo=timezone.utc), "1m")
+
+    assert len(rows) == 1
+    assert rows[0]["open_time"] == datetime(2026, 4, 18, 0, 0, tzinfo=timezone.utc)
+
+
 def test_sync_recent_is_idempotent_when_no_new_rows():
     _clear_market_data_state()
     with SessionLocal() as sess:
@@ -147,3 +174,90 @@ def test_sync_recent_is_idempotent_when_no_new_rows():
 
     assert result["actual_bars"] == 0
     assert result["is_complete"] is False
+
+
+# ── symbol_readiness tests ────────────────────────────────────────────────────
+
+def _clear_load_jobs() -> None:
+    init_db()
+    with SessionLocal() as sess:
+        sess.query(SymbolLoadJob).delete()
+        sess.commit()
+
+
+def test_list_ready_symbols_empty_when_no_candles():
+    _clear_market_data_state()
+    assert list_ready_symbols() == []
+
+
+def test_list_ready_symbols_returns_symbols_with_candles():
+    _clear_market_data_state()
+    with SessionLocal() as sess:
+        sess.add(Candle(**_make_row("BTCUSDT", 0)))
+        sess.add(Candle(**_make_row("ETHUSDT", 0)))
+        sess.commit()
+    result = list_ready_symbols()
+    assert "BTCUSDT" in result
+    assert "ETHUSDT" in result
+
+
+def test_is_symbol_ready_true_when_candle_exists():
+    _clear_market_data_state()
+    with SessionLocal() as sess:
+        sess.add(Candle(**_make_row("BTCUSDT", 0)))
+        sess.commit()
+    assert is_symbol_ready("BTCUSDT") is True
+    assert is_symbol_ready("btcusdt") is True  # normalisation
+
+
+def test_is_symbol_ready_false_when_no_candles():
+    _clear_market_data_state()
+    assert is_symbol_ready("DOGEUSDT") is False
+
+
+def test_queue_symbol_load_creates_queued_job():
+    _clear_load_jobs()
+    job = queue_symbol_load("SOLUSDT")
+    assert job["symbol"] == "SOLUSDT"
+    assert job["status"] == "queued"
+    jobs = list_load_jobs()
+    assert any(j["symbol"] == "SOLUSDT" and j["status"] == "queued" for j in jobs)
+
+
+def test_queue_symbol_load_is_idempotent_for_queued():
+    _clear_load_jobs()
+    queue_symbol_load("SOLUSDT")
+    job2 = queue_symbol_load("SOLUSDT")
+    assert job2["status"] == "queued"
+    assert sum(1 for j in list_load_jobs() if j["symbol"] == "SOLUSDT") == 1
+
+
+def test_queue_symbol_load_resets_failed_to_queued():
+    _clear_load_jobs()
+    init_db()
+    with SessionLocal() as sess:
+        sess.add(SymbolLoadJob(symbol="SOLUSDT", status="failed", error_msg="boom"))
+        sess.commit()
+    job = queue_symbol_load("SOLUSDT")
+    assert job["status"] == "queued"
+    assert job["error_msg"] is None
+
+
+def test_retry_failed_load_resets_to_queued():
+    _clear_load_jobs()
+    with SessionLocal() as sess:
+        sess.add(SymbolLoadJob(symbol="AVAXUSDT", status="failed", error_msg="timeout"))
+        sess.commit()
+    job = retry_failed_load("AVAXUSDT")
+    assert job["status"] == "queued"
+
+
+def test_list_load_jobs_returns_most_recent_first():
+    _clear_load_jobs()
+    queue_symbol_load("AAVEUSDT")
+    queue_symbol_load("LINKUSDT")
+    jobs = list_load_jobs()
+    assert len(jobs) >= 2
+    # most recent is first (LINKUSDT queued after AAVEUSDT)
+    symbols = [j["symbol"] for j in jobs]
+    assert symbols.index("LINKUSDT") < symbols.index("AAVEUSDT")

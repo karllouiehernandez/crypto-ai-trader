@@ -55,6 +55,7 @@ from dashboard.workbench import (
 from database.promotion_queries import query_promotions
 from database.models import init_db
 from llm.generator import generate_and_discover_strategy
+from market_data.background_loader import ensure_worker_running
 from market_data.binance_symbols import list_binance_spot_usdt_symbols
 from market_data.history import (
     audit as audit_history,
@@ -63,6 +64,12 @@ from market_data.history import (
     format_audit_summary,
 )
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
+from market_data.symbol_readiness import (
+    list_load_jobs as list_symbol_load_jobs,
+    list_ready_symbols,
+    queue_symbol_load,
+    retry_failed_load as retry_symbol_load,
+)
 
 # ── Regime config ─────────────────────────────────────────────────────────────
 _REGIME_EMOJI = {
@@ -101,6 +108,7 @@ _TF_LOOKBACK_DAYS = {
 }
 
 init_db()
+ensure_worker_running()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=10)
@@ -357,6 +365,25 @@ def load_symbol_audit(symbol: str, start_iso: str, end_iso: str) -> dict:
     return audit_history(symbol, start_iso, end_iso, interval="1m")
 
 
+@st.cache_data(ttl=15)
+def load_ready_symbols_cached() -> list[str]:
+    """Symbols with local candle data, ordered by Binance volume rank."""
+    ready = set(list_ready_symbols())
+    if not ready:
+        return list(SYMBOLS)
+    catalog = load_symbol_catalog()
+    ranked = [row["symbol"] for row in catalog if row["symbol"] in ready]
+    in_catalog = {row["symbol"] for row in catalog}
+    ranked.extend(sorted(s for s in ready if s not in in_catalog))
+    return ranked
+
+
+@st.cache_data(ttl=5)
+def load_symbol_jobs() -> list[dict]:
+    """Return symbol load jobs, most recent first."""
+    return list_symbol_load_jobs()
+
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Crypto-AI Trader", layout="wide", initial_sidebar_state="expanded")
 
@@ -372,14 +399,19 @@ st.markdown("""
 st.sidebar.title("⚙️ Controls")
 
 symbol_catalog = load_symbol_catalog()
-available_symbols = [row["symbol"] for row in symbol_catalog]
+available_symbols = [row["symbol"] for row in symbol_catalog]  # full Binance catalog
+ready_symbols = load_ready_symbols_cached()                     # symbols with local data
 runtime_watchlist = list_runtime_symbols()
 if not available_symbols:
     available_symbols = runtime_watchlist or list(SYMBOLS)
+if not ready_symbols:
+    ready_symbols = runtime_watchlist or list(SYMBOLS)
 if not runtime_watchlist:
     runtime_watchlist = list(SYMBOLS)
 if not available_symbols:
     available_symbols = ["BTCUSDT"]
+if not ready_symbols:
+    ready_symbols = ["BTCUSDT"]
 
 # Persist all user preferences in session_state so auto-refresh never resets them
 _DEFAULTS = {
@@ -400,8 +432,11 @@ for k, v in _DEFAULTS.items():
 
 if st.session_state["symbol"] not in available_symbols:
     available_symbols = [st.session_state["symbol"]] + [sym for sym in available_symbols if sym != st.session_state["symbol"]]
+# Reset saved symbol to first ready option if it has no local data
+if st.session_state.get("symbol") not in ready_symbols:
+    st.session_state["symbol"] = ready_symbols[0]
 
-symbol  = st.sidebar.selectbox("Symbol", available_symbols, key="symbol")
+symbol  = st.sidebar.selectbox("Symbol", ready_symbols, key="symbol")
 autoref = st.sidebar.checkbox("Auto-refresh (15 s)", key="autoref")
 
 st.sidebar.markdown("---")
@@ -438,6 +473,51 @@ if sync_symbol:
     load_symbol_audit.clear()
     st.success(f"Synced recent history for {symbol}.")
     st.rerun()
+
+st.sidebar.markdown("---")
+_ready_set = set(ready_symbols)
+_unloaded_symbols = [s for s in available_symbols if s not in _ready_set]
+with st.sidebar.expander(f"Load New Symbol ({len(_unloaded_symbols)} available)", expanded=False):
+    st.caption("Queue a background 30-day history load. The symbol appears in chart/backtest selectors once ready.")
+    if _unloaded_symbols:
+        _new_sym = st.selectbox(
+            "Search Binance USDT symbol",
+            _unloaded_symbols,
+            key="load_new_sym_picker",
+        )
+        if st.button("Queue Background Load", key="queue_new_load_btn", use_container_width=True):
+            _job = queue_symbol_load(_new_sym)
+            if _job["status"] == "queued":
+                st.info(f"Queued: **{_new_sym}** will appear in the symbol list once ready (~30 min).")
+            elif _job["status"] == "loading":
+                st.info(f"**{_new_sym}** is already loading.")
+            elif _job["status"] == "ready":
+                st.success(f"**{_new_sym}** is already ready — refresh to see it in selectors.")
+            load_ready_symbols_cached.clear()
+            load_symbol_jobs.clear()
+            st.rerun()
+    else:
+        st.caption("All discovered Binance symbols are already loaded.")
+
+    _jobs = load_symbol_jobs()
+    _active = [j for j in _jobs if j["status"] in ("queued", "loading", "failed")]
+    if _active:
+        st.markdown("**Load Queue**")
+        for _j in _active[:10]:
+            _icon = {"queued": "⏳", "loading": "🔄", "failed": "❌"}.get(_j["status"], "?")
+            st.caption(f"{_icon} **{_j['symbol']}** — {_j['status']}")
+            if _j["status"] == "failed":
+                if _j.get("error_msg"):
+                    st.caption(f"  {_j['error_msg'][:80]}")
+                if st.button("Retry", key=f"retry_load_{_j['symbol']}", use_container_width=True):
+                    retry_symbol_load(_j["symbol"])
+                    load_symbol_jobs.clear()
+                    st.rerun()
+    _recently_ready = [j for j in _jobs if j["status"] == "ready"][:5]
+    if _recently_ready:
+        st.markdown("**Recently Loaded**")
+        for _j in _recently_ready:
+            st.caption(f"✅ {_j['symbol']}")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**📉 Chart Layers**")
@@ -667,7 +747,7 @@ with backtest_tab:
     selector_cols = st.columns(2)
     _prefill_sym = st.session_state.pop("focus_prefill_symbol", None)
     _bt_sym_default = _prefill_sym if _prefill_sym else symbol
-    _bt_sym_options = available_symbols if _bt_sym_default in available_symbols else [_bt_sym_default] + list(available_symbols)
+    _bt_sym_options = ready_symbols if _bt_sym_default in ready_symbols else [_bt_sym_default] + list(ready_symbols)
     bt_symbol = selector_cols[0].selectbox(
         "Symbol",
         _bt_sym_options,
