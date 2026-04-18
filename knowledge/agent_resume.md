@@ -10,10 +10,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 25 — Weekly Market Focus Selector`
-- Status: ready to start
-- Baseline: `pytest tests/ -q` must show `429 passed`
-- GitHub tracking issue: `#26`
+- Sprint: `Sprint 28 — Responsive Chart Indicator Overlays`
+- Status: Sprint 27 is closed; next work is to restore EMA/BB/RSI/MACD visibility on the new responsive chart
+- Baseline: `pytest tests/ -q` must show `490 passed`
+- GitHub tracking issue: none created; current integration can read GitHub but board/issue writes are blocked with `403 Resource not accessible by integration`
 
 ## Why This Exists
 
@@ -22,6 +22,19 @@ Read order for a new agent:
 ## Current State
 
 - Workbench tabs are in place: `Strategies`, `Backtest Lab`, `Runtime Monitor`
+- Runtime and backtest now share one responsive chart renderer:
+  - `dashboard/chart_component.py`
+  - vendored `Lightweight Charts` asset under `dashboard/assets/`
+  - shared payload helpers in `dashboard/workbench.py`
+- Candlestick views are no longer Plotly-based:
+  - `Runtime Monitor` and `Backtest Lab` use the same TradingView-like renderer
+  - Plotly remains for equity, drawdown, and realized P&L
+- Runtime marker clutter is reduced:
+  - duplicate BUY/SELL markers are aggregated per candle/side
+  - runtime mode defaults to `paper`
+  - `All` mode now explicitly warns that live + paper markers are combined
+- Paper trader now processes each latest candle once:
+  - repeated loop ticks no longer generate duplicate trades on the same candle
 - Backtest comparison UX is in place from Sprint 22:
   - strategy candidate comparison table
   - saved-run leaderboard
@@ -34,26 +47,19 @@ Read order for a new agent:
   - strategy-scoped preset persistence
   - save/apply preset UX in `Backtest Lab`
   - preset names persisted with saved runs when params match a preset
+- Weekly Market Focus Selector is now in place from Sprint 25:
+  - `market_focus/selector.py` — deterministic ranking, no LLM required
+  - `WeeklyFocusStudy` + `WeeklyFocusCandidate` DB tables
+  - "Market Focus" 4th tab in dashboard with one-click Backtest Lab prefill
 - Runtime monitoring is already strategy-aware and mode-aware
 
 ## Immediate Goal
 
-Add a weekly market-focus study that:
-- discover a research-only top-liquid Binance `USDT` universe wider than runtime `SYMBOLS`
-- ranks candidates using recent backtest results for the active strategy and active params
-- persist weekly study runs and shortlisted candidates
-- let the dashboard prefill `Backtest Lab` with the recommended token
-
-## Files Most Likely Needed First
-
-- `config.py`
-- `collectors/historical_loader.py`
-- `backtester/service.py`
-- `database/models.py`
-- `dashboard/streamlit_app.py`
-- `dashboard/workbench.py`
-- `strategy/runtime.py`
-- `HANDOFF.md`
+Sprint 28 — restore strategy/statistical overlays on the responsive chart:
+- `EMA`
+- `Bollinger Bands`
+- `RSI`
+- `MACD`
 
 ## Constraints
 
@@ -61,22 +67,12 @@ Add a weekly market-focus study that:
 - Do not edit, stage, or revert `knowledge/experiment_log.md` unless you intentionally stop that process
 - Keep the Jesse-like workflow intact
 - Prefer pure helpers in `dashboard/workbench.py` over embedding ranking/formatting logic directly in Streamlit
-
-## Sprint 25 Working Target
-
-Sprint 24 closed. The next sprint should:
-
-- add a research-only symbol universe that is separate from runtime `SYMBOLS`
-- rank a top-liquid Binance spot `USDT` shortlist using the active strategy
-- persist weekly study runs and ranked results
-- surface the latest recommendation in the workbench and allow one-click prefill into `Backtest Lab`
-- keep paper/live symbol behavior unchanged
+- Keep the responsive chart self-contained and locally bundled; do not introduce a Node build step
 
 ## Last Verified State
 
-- Tests: `429 passed, 1 warning`
-- Last sprint closed: `Sprint 24`
-- Latest closed sprint artifacts are in the repo; use `git log --oneline -n 3` if you need the exact commit IDs without reopening the full sprint archive
+- Tests: `490 passed, 1 warning`
+- Last sprint closed: `Sprint 27`
 
 ## Token-Saving Rule
 

@@ -9,6 +9,7 @@ from dashboard.workbench import (
     build_backtest_run_leaderboard,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
+    build_trading_chart_payload,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
@@ -354,3 +355,93 @@ def test_runtime_summary_extracts_latest_and_last_trade():
     assert summary["last_trade_regime"] == "TRENDING"
     assert summary["realized_pnl"] == 5.0
     assert summary["last_snapshot_ts"] == pd.Timestamp("2026-01-02")
+
+
+def test_build_trading_chart_payload_empty_candles_returns_empty_series():
+    payload = build_trading_chart_payload(pd.DataFrame(), pd.DataFrame(), symbol="BTCUSDT", timeframe="1h")
+    assert payload["candles"] == []
+    assert payload["volume"] == []
+    assert payload["markers"] == []
+    assert payload["meta"]["symbol"] == "BTCUSDT"
+
+
+def test_build_trading_chart_payload_without_trades_keeps_volume_and_no_markers():
+    candles = pd.DataFrame(
+        [
+            {"open_time": pd.Timestamp("2026-04-18 00:00:00"), "open": 100.0, "high": 105.0, "low": 99.0, "close": 104.0, "volume": 10.0},
+            {"open_time": pd.Timestamp("2026-04-18 01:00:00"), "open": 104.0, "high": 106.0, "low": 102.0, "close": 103.0, "volume": 12.0},
+        ]
+    )
+
+    payload = build_trading_chart_payload(candles, pd.DataFrame(), symbol="BTCUSDT", timeframe="1h")
+
+    assert len(payload["candles"]) == 2
+    assert len(payload["volume"]) == 2
+    assert payload["markers"] == []
+    assert payload["volume"][0]["color"] == "#26a69a"
+    assert payload["volume"][1]["color"] == "#ef5350"
+
+
+def test_build_trading_chart_payload_drops_trades_outside_visible_window():
+    candles = pd.DataFrame(
+        [
+            {"open_time": pd.Timestamp("2026-04-18 10:00:00"), "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 10.0},
+            {"open_time": pd.Timestamp("2026-04-18 11:00:00"), "open": 100.5, "high": 102.0, "low": 100.0, "close": 101.0, "volume": 12.0},
+        ]
+    )
+    trades = pd.DataFrame(
+        [
+            {"ts": pd.Timestamp("2026-04-18 09:59:00"), "side": "BUY"},
+            {"ts": pd.Timestamp("2026-04-18 12:00:00"), "side": "SELL"},
+        ]
+    )
+
+    payload = build_trading_chart_payload(candles, trades, symbol="BTCUSDT", timeframe="1h")
+    assert payload["markers"] == []
+
+
+def test_build_trading_chart_payload_maps_mixed_markers_to_candle_buckets():
+    candles = pd.DataFrame(
+        [
+            {"open_time": pd.Timestamp("2026-04-18 10:00:00"), "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 10.0},
+            {"open_time": pd.Timestamp("2026-04-18 11:00:00"), "open": 100.5, "high": 102.0, "low": 100.0, "close": 101.0, "volume": 12.0},
+        ]
+    )
+    trades = pd.DataFrame(
+        [
+            {"ts": pd.Timestamp("2026-04-18 10:20:00"), "side": "BUY"},
+            {"ts": pd.Timestamp("2026-04-18 11:45:00"), "side": "SELL"},
+        ]
+    )
+
+    payload = build_trading_chart_payload(candles, trades, symbol="BTCUSDT", timeframe="1h")
+
+    assert [marker["text"] for marker in payload["markers"]] == ["", ""]
+    assert payload["markers"][0]["position"] == "belowBar"
+    assert payload["markers"][1]["position"] == "aboveBar"
+    assert payload["markers"][0]["time"] == payload["candles"][0]["time"]
+    assert payload["markers"][1]["time"] == payload["candles"][1]["time"]
+
+
+def test_build_trading_chart_payload_aggregates_duplicate_markers_per_candle_side():
+    candles = pd.DataFrame(
+        [
+            {"open_time": pd.Timestamp("2026-04-18 10:00:00"), "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 10.0},
+            {"open_time": pd.Timestamp("2026-04-18 11:00:00"), "open": 100.5, "high": 102.0, "low": 100.0, "close": 101.0, "volume": 12.0},
+        ]
+    )
+    trades = pd.DataFrame(
+        [
+            {"ts": pd.Timestamp("2026-04-18 10:05:00"), "side": "BUY", "run_mode": "paper"},
+            {"ts": pd.Timestamp("2026-04-18 10:15:00"), "side": "BUY", "run_mode": "paper"},
+            {"ts": pd.Timestamp("2026-04-18 10:20:00"), "side": "BUY", "run_mode": "live"},
+            {"ts": pd.Timestamp("2026-04-18 11:10:00"), "side": "SELL", "run_mode": "paper"},
+            {"ts": pd.Timestamp("2026-04-18 11:20:00"), "side": "SELL", "run_mode": "paper"},
+        ]
+    )
+
+    payload = build_trading_chart_payload(candles, trades, symbol="BTCUSDT", timeframe="1h")
+
+    assert len(payload["markers"]) == 2
+    assert payload["markers"][0]["text"] == "L1/P2"
+    assert payload["markers"][1]["text"] == "x2"

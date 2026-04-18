@@ -25,6 +25,7 @@ def _make_candle(symbol: str = "BTCUSDT", close: float = 100.0):
     c = MagicMock()
     c.symbol = symbol
     c.close  = close
+    c.open_time = datetime(2026, 4, 18, 4, 29, tzinfo=timezone.utc)
     return c
 
 
@@ -279,6 +280,21 @@ class TestStep:
             await trader.step()  # should not raise
 
         assert trader.cash == trader.cash  # trivially true — no exception raised
+
+    @pytest.mark.asyncio
+    async def test_step_processes_each_candle_only_once(self):
+        trader = PaperTrader()
+        candle = _make_candle("BTCUSDT", close=50_000.0)
+        session = _session_returning(candle)
+
+        with patch("simulator.paper_trader.SessionLocal", return_value=session), \
+             patch("simulator.paper_trader.compute_strategy_decision", return_value=_decision(Signal.BUY)), \
+             patch("simulator.paper_trader.SYMBOLS", ["BTCUSDT"]), \
+             patch.object(trader, "_auto_buy", new=AsyncMock()) as mock_auto_buy:
+            await trader.step()
+            await trader.step()
+
+        assert mock_auto_buy.await_count == 1
 
 
 # ── round-trip P&L math ────────────────────────────────────────────────────────

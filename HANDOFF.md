@@ -9,34 +9,36 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-18 (Sprint 26 closed) |
-| **Sprint completed** | Sprint 26 ✅ — CI/CD + Jetson + MCP + Telegram — 483 tests passing |
-| **Next sprint** | Sprint 27 — TBD (no queued roadmap item) |
-| **Blocking issues** | To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
+| **Last active agent** | Codex |
+| **Last updated** | 2026-04-18 (Sprint 27 closed) |
+| **Sprint completed** | Sprint 27 ✅ — Responsive Chart + Runtime Marker Clarity — 490 tests passing |
+| **Next sprint** | Sprint 28 — Indicator overlays on the responsive chart |
+| **Blocking issues** | GitHub board/issue writes are blocked for the current integration (`403 Resource not accessible by integration`). To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 26 complete. |
+| **Reason for handoff** | Sprint 27 complete. |
 
 ---
 
-## Resume Here — Sprint 27
+## Resume Here — Sprint 28
 
-**Sprint 26 complete.** CI/CD, Jetson deployment, MCP server, and Telegram bot commands all shipped. 483 tests passing.
+**Sprint 27 complete.** The workbench now uses a responsive TradingView-like chart in both `Runtime Monitor` and `Backtest Lab`, runtime marker spam is controlled, and the launcher is simplified. 490 tests passing.
 
-### What was done in Sprint 26
-- **CI/CD**: `.github/workflows/ci.yml` — runs pytest on push/PR, matrix Python 3.10+3.11
-- **Jetson deployment**: `deployment/` folder — systemd service, swap setup, install script, env template, README
-- **config.py**: `MAX_SYMBOLS`, `DAYS_BACK` env overrides; `check_available_memory_gb()`
-- **MCP server**: `mcp_server/` package — 10 read tools + 2 write tools via FastMCP; stdio + SSE transports; `.mcp.json` for Claude Code auto-discovery
-- **Telegram commands**: `utils/telegram_commands.py` — /status /trades /equity /strategy /strategies /halt /resume /buy /sell /backtest /focus /help; poller extended for text commands + retry
-- **483 total passing** (+40 over Sprint 25)
+### What was done in Sprint 27
+- **Responsive chart component**: `dashboard/chart_component.py` + `dashboard/assets/lightweight-charts.standalone.production.js` — bundled Lightweight Charts renderer for candles, volume, and trade markers with pan/zoom/crosshair/responsive resize.
+- **Shared chart payload helpers**: `dashboard/workbench.py` — normalized UTC timestamp handling plus shared payload/marker builders used by both runtime and backtest views.
+- **Workbench integration**: `dashboard/streamlit_app.py` — replaced inline Plotly candlesticks in `Runtime Monitor` and `Backtest Lab`, kept Plotly for equity/drawdown/P&L, and simplified v1 chart controls.
+- **Runtime trade clarity**: `dashboard/workbench.py`, `dashboard/streamlit_app.py` — aggregated duplicate markers per candle/side, defaulted runtime mode to `paper`, and added a warning when viewing combined `All` mode.
+- **Per-candle execution guard**: `simulator/paper_trader.py` — prevents reprocessing the same latest candle every second, which had been creating repeated buys/sells on a single candle.
+- **Launcher refresh**: `run_all.ps1` — no hardcoded activation, auto-detects repo Python/venv, supports optional dependency install/MCP startup/browser skip.
+- **490 total passing** (+7 over Sprint 26)
 
-### Sprint 27 Goal
-No queued roadmap item. Suggested next priorities:
-1. Deploy on Jetson Nano and run paper trading for ≥2 weeks (pre-live checklist)
-2. Subscribe to OpenRouter and validate full LLM self-learning loop end-to-end
-3. Walk-forward parameter sensitivity analysis for the active strategy
+### Sprint 28 Goal
+Restore the missing indicator/statistical overlays on top of the new responsive chart without regressing the Jesse-like workflow. Recommended scope:
+1. Add `EMA` and `Bollinger Bands` to the responsive price pane
+2. Add `RSI` and `MACD` as aligned subpanes below the chart
+3. Keep runtime and backtest rendering on one shared payload contract
+4. Preserve mobile responsiveness and marker readability
 
 ## Resume Here — Sprint 26 (COMPLETED)
 
@@ -85,6 +87,8 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 | Sprint 23 — Strategy Parameters & Scenario Presets | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 24 — Named Scenario Presets | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 25 — Weekly Market Focus Selector | ✅ CLOSED | Claude Code | 2026-04-18 |
+| Sprint 26 — CI/CD + Jetson + MCP + Telegram | ✅ CLOSED | Claude Code | 2026-04-18 |
+| Sprint 27 — Responsive Chart + Runtime Marker Clarity | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 
@@ -131,7 +135,7 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 | DB | SQLite + SQLAlchemy 2.x |
 | Data | pandas, numpy |
 | Indicators | ta library |
-| Dashboard | Streamlit + Plotly |
+| Dashboard | Streamlit + Plotly + Lightweight Charts |
 | Messaging | Telegram Bot API |
 | Async | asyncio, aiosqlite |
 | Credentials | python-dotenv (.env file) |

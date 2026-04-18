@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
+from dashboard.chart_component import render_responsive_chart
 from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD, LIVE_TRADE_ENABLED, LLM_ENABLED, LLM_MODEL, LLM_PROVIDER
 from strategy.ta_features import add_indicators
 from strategy.regime import detect_regime, Regime
@@ -21,14 +21,19 @@ from strategy.runtime import (
 from backtester.service import (
     get_backtest_run,
     get_backtest_trades,
+    get_latest_market_focus,
+    get_market_focus_candidates,
     list_backtest_presets,
     list_backtest_runs,
     run_and_persist_backtest,
+    run_market_focus_study,
     save_backtest_preset,
 )
 from dashboard.workbench import (
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
+    build_focus_candidate_frame,
+    build_trading_chart_payload,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     compute_cumulative_trade_pnl,
@@ -294,12 +299,8 @@ st.sidebar.title("⚙️ Controls")
 _DEFAULTS = {
     "symbol":        SYMBOLS[0],
     "autoref":       True,
-    "show_ohlc":     True,
-    "show_bb":       True,
-    "show_ema":      True,
     "show_trades":   True,
-    "show_ema200":   False,
-    "runtime_mode_filter": "All",
+    "runtime_mode_filter": "paper",
     "show_all_backtest_runs": False,
 }
 for k, v in _DEFAULTS.items():
@@ -310,12 +311,9 @@ symbol  = st.sidebar.selectbox("Symbol", SYMBOLS, key="symbol")
 autoref = st.sidebar.checkbox("Auto-refresh (15 s)", key="autoref")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("**📉 Chart Overlays**")
-show_ohlc   = st.sidebar.checkbox("Candlesticks",      key="show_ohlc")
-show_bb     = st.sidebar.checkbox("Bollinger Bands",   key="show_bb")
-show_ema    = st.sidebar.checkbox("EMA 9 / 21 / 55",   key="show_ema")
-show_ema200 = st.sidebar.checkbox("EMA 200",           key="show_ema200")
+st.sidebar.markdown("**📉 Chart Layers**")
 show_trades = st.sidebar.checkbox("Trade Markers",     key="show_trades")
+st.sidebar.caption("Responsive chart v1 shows candles, volume, and BUY/SELL markers.")
 
 active_strategy = get_active_strategy_config()
 strategy_catalog = load_strategy_catalog()
@@ -380,7 +378,7 @@ hero_cols[2].metric("Workflow Stage", focus_workflow_status["stage"])
 hero_cols[3].metric("Passing Backtests", str(focus_workflow_status["passed_runs"]))
 hero_cols[4].metric("Runtime View", f"{runtime_strategy_filter} · {runtime_mode_filter}")
 
-strategy_tab, backtest_tab, runtime_tab = st.tabs(["Strategies", "Backtest Lab", "Runtime Monitor"])
+strategy_tab, backtest_tab, runtime_tab, focus_tab = st.tabs(["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus"])
 
 with strategy_tab:
     st.markdown("### Strategies")
@@ -533,7 +531,15 @@ with strategy_tab:
 with backtest_tab:
     st.markdown("### Backtest Lab")
     selector_cols = st.columns(2)
-    bt_symbol = selector_cols[0].selectbox("Symbol", SYMBOLS, index=SYMBOLS.index(symbol), key="bt_symbol")
+    _prefill_sym = st.session_state.pop("focus_prefill_symbol", None)
+    _bt_sym_default = _prefill_sym if _prefill_sym else symbol
+    _bt_sym_options = SYMBOLS if _bt_sym_default in SYMBOLS else [_bt_sym_default] + list(SYMBOLS)
+    bt_symbol = selector_cols[0].selectbox(
+        "Symbol",
+        _bt_sym_options,
+        index=0 if _prefill_sym else (_bt_sym_options.index(_bt_sym_default) if _bt_sym_default in _bt_sym_options else 0),
+        key="bt_symbol",
+    )
     bt_strategy = selector_cols[1].selectbox(
         "Strategy",
         strategy_names,
@@ -857,7 +863,6 @@ with backtest_tab:
             f"→ {to_utc_naive_timestamp(selected_run.get('end_ts')).strftime('%Y-%m-%d')}"
         )
 
-        backtest_chart = go.Figure()
         selected_start_ts = to_utc_naive_timestamp(selected_run["start_ts"])
         selected_end_ts = to_utc_naive_timestamp(selected_run["end_ts"])
         now_ts = to_utc_naive_timestamp(pd.Timestamp.utcnow())
@@ -870,34 +875,21 @@ with backtest_tab:
             & (candle_df["open_time"] <= selected_end_ts)
         ] if not candle_df.empty else pd.DataFrame()
         if not filtered_candles.empty:
-            backtest_chart.add_trace(go.Candlestick(
-                x=filtered_candles["open_time"],
-                open=filtered_candles["open"],
-                high=filtered_candles["high"],
-                low=filtered_candles["low"],
-                close=filtered_candles["close"],
-                name="OHLC",
-            ))
-        if not selected_run_trades.empty:
-            for side, color, marker in [("BUY", "#00e676", "triangle-up"), ("SELL", "#ff1744", "triangle-down")]:
-                side_df = selected_run_trades[selected_run_trades["side"] == side]
-                if not side_df.empty:
-                    backtest_chart.add_trace(go.Scatter(
-                        x=side_df["ts"],
-                        y=side_df["price"],
-                        mode="markers",
-                        name=side,
-                        marker=dict(color=color, size=11, symbol=marker),
-                    ))
-        backtest_chart.update_layout(
-            title=f"Backtest #{selected_run_id} · {selected_run['strategy_name']} · {selected_run['symbol']}",
-            height=380,
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            font=dict(color="#d1d4dc"),
-            xaxis_rangeslider_visible=False,
-        )
-        st.plotly_chart(backtest_chart, width="stretch")
+            backtest_chart_payload = build_trading_chart_payload(
+                filtered_candles,
+                selected_run_trades,
+                symbol=str(selected_run["symbol"]),
+                timeframe="Backtest",
+                strategy_name=str(selected_run.get("strategy_name", "")),
+                context_label=f"Run #{selected_run_id}",
+            )
+            render_responsive_chart(
+                backtest_chart_payload,
+                chart_id=f"backtest-{selected_run_id}",
+                height=420,
+            )
+        else:
+            st.info("No candle data is available locally for this saved backtest window.")
 
         if not selected_run_trades.empty:
             lower_left, lower_right = st.columns(2)
@@ -1042,164 +1034,26 @@ with runtime_tab:
     except Exception:
         st.sidebar.caption("Promotion data unavailable")
 
-    # ── Main chart: Price + Volume (subplots) ────────────────────────────────────
-    fig = make_subplots(
-        rows=4, cols=1,
-        shared_xaxes=True,
-        row_heights=[0.55, 0.12, 0.17, 0.16],
-        vertical_spacing=0.02,
-        subplot_titles=("", "Volume", "MACD", "RSI")
-    )
-
-    if not df.empty:
-        if show_ohlc:
-            fig.add_trace(go.Candlestick(
-                x=df.open_time, open=df.open, high=df.high, low=df.low, close=df.close,
-                name="OHLC",
-                increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
-                increasing_fillcolor="#26a69a", decreasing_fillcolor="#ef5350",
-            ), row=1, col=1)
-        else:
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df.close, name="Close",
-                line=dict(color="#2962ff", width=1.5)
-            ), row=1, col=1)
-
-        if show_bb and "bb_hi" in df.columns and "bb_lo" in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df.bb_hi, name="BB Upper",
-                line=dict(width=0.8, color="rgba(100,180,255,0.6)"), showlegend=False
-            ), row=1, col=1)
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df.bb_lo, name="BB Lower",
-                line=dict(width=0.8, color="rgba(100,180,255,0.6)"),
-                fill="tonexty", fillcolor="rgba(100,180,255,0.05)", showlegend=False
-            ), row=1, col=1)
-
-        if show_ema:
-            ema_styles = [
-                ("ema_9",  "EMA 9",  "#f6c90e", 1),
-                ("ema_21", "EMA 21", "#ff9800", 1.2),
-                ("ema_55", "EMA 55", "#e91e63", 1.4),
-            ]
-            for col_name, label, color, width in ema_styles:
-                if col_name in df.columns:
-                    fig.add_trace(go.Scatter(
-                        x=df.open_time, y=df[col_name], name=label,
-                        line=dict(width=width, color=color)
-                    ), row=1, col=1)
-
-        if show_ema200 and "ema_200" in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df["ema_200"], name="EMA 200",
-                line=dict(width=1.5, color="#7c4dff", dash="dot")
-            ), row=1, col=1)
-
-        if show_trades and not tr.empty:
-            tf_start = df.open_time.min()
-            tf_end   = df.open_time.max()
-            visible_tr = tr[(tr.ts >= tf_start) & (tr.ts <= tf_end)]
-            buys  = visible_tr[visible_tr.side == "BUY"]
-            sells = visible_tr[visible_tr.side == "SELL"]
-            if not buys.empty:
-                fig.add_trace(go.Scatter(
-                    x=buys.ts, y=buys.price, mode="markers", name="BUY",
-                    marker=dict(symbol="triangle-up", size=12, color="#00e676",
-                                line=dict(width=1, color="white"))
-                ), row=1, col=1)
-            if not sells.empty:
-                fig.add_trace(go.Scatter(
-                    x=sells.ts, y=sells.price, mode="markers", name="SELL",
-                    marker=dict(symbol="triangle-down", size=12, color="#ff1744",
-                                line=dict(width=1, color="white"))
-                ), row=1, col=1)
-
-        vol_colors = [
-            "#26a69a" if c >= o else "#ef5350"
-            for c, o in zip(df.close, df.open)
-        ]
-        fig.add_trace(go.Bar(
-            x=df.open_time, y=df.volume, name="Volume",
-            marker_color=vol_colors, showlegend=False
-        ), row=2, col=1)
-
-        if "macd" in df.columns:
-            macd_hist = df.macd - df.macd_s
-            hist_colors = ["#26a69a" if v >= 0 else "#ef5350" for v in macd_hist]
-            fig.add_trace(go.Bar(
-                x=df.open_time, y=macd_hist, name="MACD Hist",
-                marker_color=hist_colors, showlegend=False
-            ), row=3, col=1)
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df.macd,   name="MACD",
-                line=dict(color="#2196f3", width=1)
-            ), row=3, col=1)
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df.macd_s, name="Signal",
-                line=dict(color="#ff9800", width=1)
-            ), row=3, col=1)
-
-        if "rsi_14" in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df.open_time, y=df.rsi_14, name="RSI-14",
-                line=dict(color="#ce93d8", width=1.2)
-            ), row=4, col=1)
-            for lvl, col in [(70, "rgba(239,83,80,0.4)"), (35, "rgba(38,166,154,0.4)"), (50, "rgba(120,120,120,0.3)")]:
-                fig.add_hline(y=lvl, line_dash="dot", line_color=col, row=4, col=1)
-            fig.add_hrect(y0=70, y1=100, fillcolor="rgba(239,83,80,0.05)",
-                          line_width=0, row=4, col=1)
-            fig.add_hrect(y0=0, y1=35, fillcolor="rgba(38,166,154,0.05)",
-                          line_width=0, row=4, col=1)
-    else:
-        fig.add_annotation(
-            text="No data — run <b>python run_live.py</b> to load candles",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font=dict(size=18, color="#aaaaaa")
-        )
-
+    st.caption("Responsive chart v1 focuses on candles, volume, and trade markers. Overlay studies return in a follow-up.")
+    if runtime_mode_filter == "All":
+        st.info("Trade markers are aggregated across paper and live. Switch Runtime Mode to `paper` or `live` to inspect one stream.")
     regime_label = _REGIME_EMOJI.get(regime, "") if regime else ""
-    fig.update_layout(
-        title=dict(
-            text=f"{symbol}  ·  {timeframe}  {regime_label}",
-            font=dict(size=18, color="#ffffff")
-        ),
-        height=900,
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        font=dict(color="#d1d4dc"),
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.01,
-            xanchor="left", x=0,
-            bgcolor="rgba(0,0,0,0)", font=dict(size=11)
-        ),
-        xaxis_rangeslider_visible=False,
-        xaxis4=dict(
-            rangeselector=dict(
-                buttons=[
-                    dict(count=1,  label="1H",  step="hour",  stepmode="backward"),
-                    dict(count=6,  label="6H",  step="hour",  stepmode="backward"),
-                    dict(count=1,  label="1D",  step="day",   stepmode="backward"),
-                    dict(count=7,  label="1W",  step="day",   stepmode="backward"),
-                    dict(count=1,  label="1M",  step="month", stepmode="backward"),
-                    dict(count=3,  label="3M",  step="month", stepmode="backward"),
-                    dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
-                    dict(step="all", label="All"),
-                ],
-                bgcolor="#1e222d", activecolor="#2962ff",
-                font=dict(color="#d1d4dc"),
-            ),
-            type="date"
-        ),
-        margin=dict(l=10, r=10, t=60, b=10),
+    runtime_chart_payload = build_trading_chart_payload(
+        ohlcv,
+        tr if show_trades else pd.DataFrame(),
+        symbol=symbol,
+        timeframe=timeframe,
+        strategy_name=runtime_strategy_filter,
+        context_label=f"{runtime_mode_filter.upper()} {regime_label}".strip(),
     )
-    for axis in ["xaxis", "xaxis2", "xaxis3", "xaxis4",
-                 "yaxis", "yaxis2", "yaxis3", "yaxis4"]:
-        fig.update_layout(**{axis: dict(
-            gridcolor="#1e222d", gridwidth=0.5,
-            zerolinecolor="#363a45",
-        )})
-
-    st.plotly_chart(fig, width="stretch")
+    if runtime_chart_payload["candles"]:
+        render_responsive_chart(
+            runtime_chart_payload,
+            chart_id=f"runtime-{symbol}-{timeframe}-{runtime_strategy_filter}-{runtime_mode_filter}",
+            height=560,
+        )
+    else:
+        st.info("No data — run `python run_live.py` to load candles.")
 
     overview_cols = st.columns(6)
     overview_cols[0].metric("Strategy View", runtime_strategy_filter)
@@ -1332,6 +1186,93 @@ with runtime_tab:
     else:
         st.info("No runtime trades recorded yet for the selected strategy/mode.")
 
+# ── Market Focus tab ─────────────────────────────────────────────────────────
+with focus_tab:
+    import config as _cfg
+    st.subheader("Weekly Market Focus Selector")
+    st.caption(
+        "Rank top-liquid Binance USDT pairs using the active strategy and params. "
+        "Results are saved and can prefill Backtest Lab."
+    )
+
+    _latest_study = get_latest_market_focus()
+
+    with st.expander("Run a new study", expanded=_latest_study is None):
+        _focus_universe = st.slider(
+            "Universe size (top pairs by 24 h volume)",
+            min_value=5, max_value=50,
+            value=_cfg.MARKET_FOCUS_UNIVERSE_SIZE,
+            step=5,
+        )
+        _focus_top_n = st.slider(
+            "Shortlist size (ranked candidates to keep)",
+            min_value=3, max_value=15,
+            value=_cfg.MARKET_FOCUS_TOP_N,
+            step=1,
+        )
+        _focus_days = st.slider(
+            "Backtest window (days back from today)",
+            min_value=7, max_value=90,
+            value=_cfg.MARKET_FOCUS_BACKTEST_DAYS,
+            step=7,
+        )
+        _run_study = st.button("Run Weekly Study", type="primary")
+        if _run_study:
+            import concurrent.futures as _cf
+            with st.spinner("Fetching universe and running backtests… this may take a minute."):
+                try:
+                    with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
+                        _future = _pool.submit(
+                            run_market_focus_study,
+                            active_strategy["name"],
+                            None,
+                            backtest_days=_focus_days,
+                            top_n=_focus_top_n,
+                            universe_size=_focus_universe,
+                        )
+                        _result = _future.result()
+                    _latest_study = get_latest_market_focus()
+                    st.success(
+                        f"Study complete — top pick: **{_result['top_candidates'][0]['symbol']}**"
+                        if _result.get("top_candidates") else "Study complete."
+                    )
+                    st.rerun()
+                except Exception as _exc:
+                    st.error(f"Study failed: {_exc}")
+
+    if _latest_study:
+        _study_id = _latest_study["id"]
+        _study_ts = _latest_study.get("created_at")
+        _study_ts_str = _study_ts.strftime("%Y-%m-%d %H:%M UTC") if _study_ts else "—"
+        st.markdown(
+            f"**Latest study** — {_study_ts_str}  ·  strategy: `{_latest_study['strategy_name']}`  "
+            f"·  universe: {_latest_study['universe_size']} pairs  ·  window: {_latest_study['backtest_days']} days"
+        )
+
+        _candidates = get_market_focus_candidates(_study_id)
+        _top_n_saved = _latest_study.get("top_n", _cfg.MARKET_FOCUS_TOP_N)
+        _top_candidates = [c for c in _candidates if c.get("rank", 999) <= _top_n_saved]
+        _all_candidates = _candidates
+
+        if _top_candidates:
+            st.markdown("#### Ranked Shortlist")
+            _frame = build_focus_candidate_frame(_top_candidates)
+            st.dataframe(_frame, hide_index=True, use_container_width=True)
+
+            _recommendation = _top_candidates[0]["symbol"]
+            st.markdown(f"**Recommended token this week: `{_recommendation}`**")
+
+            if st.button(f"Prefill Backtest Lab with {_recommendation}"):
+                st.session_state["focus_prefill_symbol"] = _recommendation
+                st.info(f"Switch to **Backtest Lab** — the symbol is pre-set to `{_recommendation}`.")
+
+        if len(_all_candidates) > _top_n_saved:
+            with st.expander("Full universe results"):
+                _full_frame = build_focus_candidate_frame(_all_candidates)
+                st.dataframe(_full_frame, hide_index=True, use_container_width=True)
+    else:
+        st.info("No study run yet. Use the panel above to run your first weekly study.")
+
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if autoref:
     import time
@@ -1341,4 +1282,3 @@ if autoref:
         time.sleep(1)
     placeholder.empty()
     st.rerun()
-

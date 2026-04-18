@@ -45,6 +45,7 @@ class PaperTrader:
         self._binance_client = None       # set by run_live.py when LIVE_TRADE_ENABLED=True
         self._force_halt = False          # set True/False via /halt and /resume Telegram commands
         self._last_regime: Dict[str, str] = {}   # sym → regime string for critique context
+        self._last_processed_candle: Dict[str, datetime] = {}
         active = get_active_strategy_config()
         self._strategy_name = active["name"]
         self._strategy_version = active["version"]
@@ -138,6 +139,14 @@ class PaperTrader:
                 return
 
             for sym, candle in candles.items():
+                candle_open_time = getattr(candle, "open_time", None)
+                if candle_open_time is not None:
+                    if candle_open_time.tzinfo is not None:
+                        candle_open_time = candle_open_time.astimezone(timezone.utc).replace(tzinfo=None)
+                    last_processed = self._last_processed_candle.get(sym)
+                    if last_processed == candle_open_time:
+                        continue
+
                 decision = compute_strategy_decision(sess, candle, strategy_name=self._strategy_name)
                 self._last_regime[sym] = decision.regime.value
                 if decision.signal == Signal.BUY:
@@ -145,6 +154,9 @@ class PaperTrader:
                     await self._auto_buy(sym, candle.close, atr, prices, decision.regime.value)
                 elif decision.signal == Signal.SELL:
                     await self._auto_sell(sym, candle.close, decision.regime.value)
+
+                if candle_open_time is not None:
+                    self._last_processed_candle[sym] = candle_open_time
 
     # ── ATR helper ─────────────────────────────────────────────────────────────
 
