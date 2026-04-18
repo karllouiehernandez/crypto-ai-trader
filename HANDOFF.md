@@ -10,14 +10,14 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 23 closed) |
+| **Last updated** | 2026-04-18 (Sprint 24 ready; Sprint 25 queued) |
 | **Sprint completed** | Sprint 23 ✅ — Strategy parameters and run-scoped scenarios committed + pushed to GitHub |
 | **Next sprint** | Sprint 24 — Named Scenario Presets |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
-| **Local worktree note** | `knowledge/experiment_log.md` is expected to stay dirty while the background runtime process is running; do not edit or stage it unless you intentionally stop that process |
+| **Local worktree note** | `dashboard/streamlit_app.py` has an uncommitted local compatibility fix; `knowledge/experiment_log.md` may stay dirty while the background runtime process is running. Do not overwrite or stage either blindly. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 23 complete; next agent should promote run-scoped scenarios into reusable named presets without disturbing the current workbench flow |
+| **Reason for handoff** | Sprint 24 remains the active implementation sprint; Sprint 25 `Weekly Market Focus Selector` is now queued immediately after it with GitHub tracking issue `#26` |
 
 ---
 
@@ -41,6 +41,27 @@ Sprint 23 made scenarios run-scoped, but they still vanish into individual backt
 - keep the current run-scoped scenario behavior intact; named presets should be additive, not a replacement
 - review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` if preset UX requires explicit workflow guidance
 
+### Queued After Sprint 24 — Sprint 25: Weekly Market Focus Selector
+GitHub tracking issue: `#26`
+
+Goal:
+- recommend the best Binance spot `USDT` token for the current week using a low-token deterministic ranking flow
+- evaluate candidates using the active strategy and active params
+- keep the result as research guidance only, not runtime auto-execution
+
+Planned scope:
+- add a research-only symbol universe wider than runtime `SYMBOLS`
+- rank a dynamic top-liquid Binance `USDT` shortlist using recent backtest results
+- persist weekly study runs and ranked candidates
+- surface the latest recommendation inside the dashboard workbench
+- allow one-click prefill into `Backtest Lab`
+
+Important defaults:
+- `config.SYMBOLS` remains the runtime watchlist
+- no paper/live auto-switching in Sprint 25
+- no LLM requirement in the baseline weekly selector flow
+- do not start Sprint 25 until Sprint 24 closes unless the roadmap is explicitly reprioritized
+
 ### Step 1 — Verify baseline
 ```bash
 pytest tests/ -q   # must show 421 passed
@@ -51,6 +72,7 @@ pytest tests/ -q   # must show 421 passed
 - [ ] `knowledge/agent_resume.md` updated for Sprint 24
 - [ ] `knowledge/sprint_log.md` updated with Sprint 24 entry
 - [ ] `HANDOFF.md` Current State table updated
+- [ ] `HANDOFF.md` Next sprint updated to `Sprint 25 — Weekly Market Focus Selector`
 - [ ] Committed and pushed to GitHub
 - [ ] GitHub issue created and closed for Sprint 24
 

@@ -13,6 +13,7 @@ Read order for a new agent:
 - Sprint: `Sprint 24 — Named Scenario Presets`
 - Status: ready to start
 - Baseline: `pytest tests/ -q` must show `421 passed`
+- Queued next sprint: `Sprint 25 — Weekly Market Focus Selector` (GitHub issue `#26`)
 
 ## Why This Exists
 
@@ -35,6 +36,20 @@ Read order for a new agent:
 
 Add reusable named presets on top of the run-scoped scenario system so backtests can reapply saved parameter sets without manual re-entry.
 
+## Queued After Sprint 24
+
+- Sprint: `Sprint 25 — Weekly Market Focus Selector`
+- GitHub tracking issue: `#26`
+- Goal: recommend the best Binance spot `USDT` token for the week using a deterministic, low-token ranking flow
+- Strategy basis: evaluate the active strategy and active params only
+- Output boundary: recommendation-only inside the workbench; no paper/live auto-switching
+
+Planned capability:
+- discover a research-only top-liquid Binance `USDT` universe wider than runtime `SYMBOLS`
+- rank candidates using recent backtest results
+- persist weekly study runs and shortlisted candidates
+- let the dashboard prefill `Backtest Lab` with the recommended token
+
 ## Files Most Likely Needed First
 
 - `dashboard/streamlit_app.py`
@@ -47,6 +62,7 @@ Add reusable named presets on top of the run-scoped scenario system so backtests
 
 ## Constraints
 
+- `dashboard/streamlit_app.py` currently has an uncommitted local compatibility fix; review before overwriting or staging unrelated changes
 - `knowledge/experiment_log.md` may remain dirty because a background runtime process writes to it
 - Do not edit, stage, or revert `knowledge/experiment_log.md` unless you intentionally stop that process
 - Keep the Jesse-like workflow intact

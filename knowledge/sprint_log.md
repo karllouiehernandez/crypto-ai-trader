@@ -5,6 +5,34 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Planned Sprint 25 — Weekly Market Focus Selector
+**Date planned:** 2026-04-18
+**Agent:** Codex
+**Goal:** Add a low-token weekly market study that ranks Binance spot `USDT` pairs for the active strategy and surfaces a research-only recommendation in the dashboard workbench.
+**Status:** PLANNED
+**GitHub issue:** `#26`
+
+### Planned Scope
+- [ ] Add a research-only symbol universe wider than runtime `SYMBOLS`
+- [ ] Discover a top-liquid Binance spot `USDT` shortlist dynamically
+- [ ] Rank candidates using recent backtest results for the active strategy and active params
+- [ ] Persist weekly study runs and ranked candidates
+- [ ] Show the latest recommendation in the workbench and allow one-click prefill into `Backtest Lab`
+
+### Acceptance Targets
+- [ ] Dashboard can run a weekly market-focus study on demand
+- [ ] Ranking covers a broader Binance `USDT` universe than `BTCUSDT` / `ETHUSDT` / `BNBUSDT`
+- [ ] Latest recommendation and shortlisted candidates are persisted and reloadable
+- [ ] Prefill into `Backtest Lab` does not change runtime watchlist or paper/live behavior
+- [ ] No LLM call is required in the baseline selector flow
+
+### Key Product Decisions
+1. **Sprint order stays intact:** Sprint 24 remains the next implementation sprint; Sprint 25 is queued after it unless the roadmap is explicitly reprioritized.
+2. **Recommendation-only first release:** the weekly selector supports research and backtesting, not automatic runtime symbol switching.
+3. **Deterministic ranking first:** use metrics-driven backtest ranking instead of an LLM-heavy research flow to conserve tokens and keep weekly evaluation reproducible.
+
+---
+
 ## Sprint 14 — Live Trade Execution Gate
 **Date started:** 2026-04-17
 **Date closed:** 2026-04-17
