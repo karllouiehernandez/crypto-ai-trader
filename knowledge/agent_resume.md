@@ -10,10 +10,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 24 — Named Scenario Presets`
+- Sprint: `Sprint 25 — Weekly Market Focus Selector`
 - Status: ready to start
-- Baseline: `pytest tests/ -q` must show `421 passed`
-- Queued next sprint: `Sprint 25 — Weekly Market Focus Selector` (GitHub issue `#26`)
+- Baseline: `pytest tests/ -q` must show `429 passed`
+- GitHub tracking issue: `#26`
 
 ## Why This Exists
 
@@ -26,61 +26,56 @@ Read order for a new agent:
   - strategy candidate comparison table
   - saved-run leaderboard
   - run ranking helpers in `dashboard/workbench.py`
-- Run-scoped scenarios are now in place from Sprint 23:
+- Run-scoped scenarios are in place from Sprint 23:
   - backtest parameter controls in `Backtest Lab`
   - params persisted with each saved run
   - comparison views treat `strategy + params` as the evaluation unit
+- Named presets are now in place from Sprint 24:
+  - strategy-scoped preset persistence
+  - save/apply preset UX in `Backtest Lab`
+  - preset names persisted with saved runs when params match a preset
 - Runtime monitoring is already strategy-aware and mode-aware
 
 ## Immediate Goal
 
-Add reusable named presets on top of the run-scoped scenario system so backtests can reapply saved parameter sets without manual re-entry.
-
-## Queued After Sprint 24
-
-- Sprint: `Sprint 25 — Weekly Market Focus Selector`
-- GitHub tracking issue: `#26`
-- Goal: recommend the best Binance spot `USDT` token for the week using a deterministic, low-token ranking flow
-- Strategy basis: evaluate the active strategy and active params only
-- Output boundary: recommendation-only inside the workbench; no paper/live auto-switching
-
-Planned capability:
+Add a weekly market-focus study that:
 - discover a research-only top-liquid Binance `USDT` universe wider than runtime `SYMBOLS`
-- rank candidates using recent backtest results
+- ranks candidates using recent backtest results for the active strategy and active params
 - persist weekly study runs and shortlisted candidates
 - let the dashboard prefill `Backtest Lab` with the recommended token
 
 ## Files Most Likely Needed First
 
-- `dashboard/streamlit_app.py`
-- `dashboard/workbench.py`
+- `config.py`
+- `collectors/historical_loader.py`
 - `backtester/service.py`
 - `database/models.py`
-- `strategy/base.py`
+- `dashboard/streamlit_app.py`
+- `dashboard/workbench.py`
 - `strategy/runtime.py`
 - `HANDOFF.md`
 
 ## Constraints
 
-- `dashboard/streamlit_app.py` currently has an uncommitted local compatibility fix; review before overwriting or staging unrelated changes
 - `knowledge/experiment_log.md` may remain dirty because a background runtime process writes to it
 - Do not edit, stage, or revert `knowledge/experiment_log.md` unless you intentionally stop that process
 - Keep the Jesse-like workflow intact
 - Prefer pure helpers in `dashboard/workbench.py` over embedding ranking/formatting logic directly in Streamlit
 
-## Sprint 23 Working Target
+## Sprint 25 Working Target
 
-Sprint 23 closed. The next sprint should:
+Sprint 24 closed. The next sprint should:
 
-- add named presets keyed by strategy
-- let the dashboard save and reapply a preset in `Backtest Lab`
-- keep run-scoped params and saved-run comparisons working as they do now
-- keep paper/live parameter behavior unchanged unless explicitly expanded
+- add a research-only symbol universe that is separate from runtime `SYMBOLS`
+- rank a top-liquid Binance spot `USDT` shortlist using the active strategy
+- persist weekly study runs and ranked results
+- surface the latest recommendation in the workbench and allow one-click prefill into `Backtest Lab`
+- keep paper/live symbol behavior unchanged
 
 ## Last Verified State
 
-- Tests: `421 passed, 1 warning`
-- Last sprint closed: `Sprint 23`
+- Tests: `429 passed, 1 warning`
+- Last sprint closed: `Sprint 24`
 - Latest closed sprint artifacts are in the repo; use `git log --oneline -n 3` if you need the exact commit IDs without reopening the full sprint archive
 
 ## Token-Saving Rule

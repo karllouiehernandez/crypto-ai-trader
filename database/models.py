@@ -92,9 +92,24 @@ class BacktestRun(Base):
     end_ts           = Column(DateTime(timezone=True), nullable=False)
     strategy_name    = Column(String(128), nullable=False)
     strategy_version = Column(String(32), nullable=True)
+    preset_name      = Column(String(128), nullable=True)
     params_json      = Column(String, nullable=False, default="{}")
     metrics_json     = Column(String, nullable=False, default="{}")
     status           = Column(String(32), nullable=False, default="completed")
+
+
+class BacktestPreset(Base):
+    __tablename__ = "backtest_presets"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    created_at    = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
+    updated_at    = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
+    strategy_name = Column(String(128), nullable=False, index=True)
+    preset_name   = Column(String(128), nullable=False)
+    params_json   = Column(String, nullable=False, default="{}")
+
+    __table_args__ = (
+        sa.UniqueConstraint("strategy_name", "preset_name", name="uix_backtest_preset_strategy_name"),
+    )
 
 
 class BacktestTrade(Base):
@@ -135,6 +150,16 @@ def _ensure_runtime_schema(bind) -> None:
             "strategy_version": "ALTER TABLE trades ADD COLUMN strategy_version VARCHAR(32)",
             "run_mode": "ALTER TABLE trades ADD COLUMN run_mode VARCHAR(16)",
             "regime": "ALTER TABLE trades ADD COLUMN regime VARCHAR(32)",
+        }
+        with bind.begin() as conn:
+            for column, ddl in migrations.items():
+                if column not in existing_columns:
+                    conn.execute(text(ddl))
+
+    if "backtest_runs" in existing_tables:
+        existing_columns = {col["name"] for col in inspector.get_columns("backtest_runs")}
+        migrations = {
+            "preset_name": "ALTER TABLE backtest_runs ADD COLUMN preset_name VARCHAR(128)",
         }
         with bind.begin() as conn:
             for column, ddl in migrations.items():

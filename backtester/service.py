@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 
 from backtester.engine import build_equity_curve, run_backtest
 from backtester.metrics import acceptance_gate, compute_metrics
-from database.models import BacktestRun, BacktestTrade, SessionLocal, init_db
-from dashboard.workbench import parse_metrics_json, parse_params_json
+from database.models import BacktestPreset, BacktestRun, BacktestTrade, SessionLocal, init_db
+from dashboard.workbench import normalise_preset_name, parse_metrics_json, parse_params_json
 
 
 def run_and_persist_backtest(
@@ -19,10 +19,12 @@ def run_and_persist_backtest(
     end: datetime,
     strategy_name: str,
     params: dict | None = None,
+    preset_name: str | None = None,
 ) -> dict:
     """Run a backtest, persist the run, and return a dashboard-ready payload."""
     init_db()
     params = parse_params_json(json.dumps(params or {}))
+    preset_name = normalise_preset_name(preset_name) or None
     trades = run_backtest(symbol, start, end, strategy_name=strategy_name, params=params)
     equity_curve = build_equity_curve(trades)
     metrics = compute_metrics(trades, equity_curve)
@@ -39,6 +41,7 @@ def run_and_persist_backtest(
             end_ts=end,
             strategy_name=strategy_name,
             strategy_version=strategy_version,
+            preset_name=preset_name,
             params_json=json.dumps(params, sort_keys=True),
             metrics_json=json.dumps({**metrics, "passed": passed, "failures": failures}),
             status="passed" if passed else "failed",
@@ -67,6 +70,7 @@ def run_and_persist_backtest(
         "trades": trades,
         "equity_curve": equity_curve,
         "metrics": metrics,
+        "preset_name": preset_name,
         "params": params,
         "passed": passed,
         "failures": failures,
@@ -92,6 +96,7 @@ def list_backtest_runs(limit: int = 100) -> pd.DataFrame:
             "end_ts": row.end_ts,
             "strategy_name": row.strategy_name,
             "strategy_version": row.strategy_version,
+            "preset_name": row.preset_name,
             "status": row.status,
             "params": parse_params_json(row.params_json),
             **parse_metrics_json(row.metrics_json),
@@ -116,9 +121,100 @@ def get_backtest_run(run_id: int) -> dict | None:
         "end_ts": row.end_ts,
         "strategy_name": row.strategy_name,
         "strategy_version": row.strategy_version,
+        "preset_name": row.preset_name,
         "status": row.status,
         "params": parse_params_json(row.params_json),
         **parse_metrics_json(row.metrics_json),
+    }
+
+
+def save_backtest_preset(
+    strategy_name: str,
+    preset_name: str,
+    params: dict | None = None,
+) -> dict:
+    """Create or update a named backtest preset for one strategy."""
+    init_db()
+    clean_name = normalise_preset_name(preset_name)
+    if not clean_name:
+        raise ValueError("Preset name is required")
+
+    clean_params = parse_params_json(json.dumps(params or {}))
+    now = datetime.now(tz=timezone.utc)
+
+    with SessionLocal() as sess:
+        preset = (
+            sess.query(BacktestPreset)
+            .filter(
+                BacktestPreset.strategy_name == strategy_name,
+                BacktestPreset.preset_name == clean_name,
+            )
+            .one_or_none()
+        )
+        if preset is None:
+            preset = BacktestPreset(
+                strategy_name=strategy_name,
+                preset_name=clean_name,
+                params_json=json.dumps(clean_params, sort_keys=True),
+                created_at=now,
+                updated_at=now,
+            )
+            sess.add(preset)
+        else:
+            preset.params_json = json.dumps(clean_params, sort_keys=True)
+            preset.updated_at = now
+        sess.commit()
+        preset_id = preset.id
+
+    return get_backtest_preset(int(preset_id)) or {
+        "id": preset_id,
+        "strategy_name": strategy_name,
+        "preset_name": clean_name,
+        "params": clean_params,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def list_backtest_presets(strategy_name: str | None = None) -> pd.DataFrame:
+    """Return saved presets, optionally filtered to one strategy."""
+    init_db()
+    with SessionLocal() as sess:
+        query = sess.query(BacktestPreset)
+        if strategy_name:
+            query = query.filter(BacktestPreset.strategy_name == strategy_name)
+        rows = query.order_by(BacktestPreset.updated_at.desc(), BacktestPreset.id.desc()).all()
+
+    return pd.DataFrame(
+        [
+            {
+                "id": row.id,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+                "strategy_name": row.strategy_name,
+                "preset_name": row.preset_name,
+                "params": parse_params_json(row.params_json),
+            }
+            for row in rows
+        ]
+    )
+
+
+def get_backtest_preset(preset_id: int) -> dict | None:
+    """Return one persisted preset by id."""
+    init_db()
+    with SessionLocal() as sess:
+        row = sess.get(BacktestPreset, preset_id)
+
+    if row is None:
+        return None
+    return {
+        "id": row.id,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "strategy_name": row.strategy_name,
+        "preset_name": row.preset_name,
+        "params": parse_params_json(row.params_json),
     }
 
 

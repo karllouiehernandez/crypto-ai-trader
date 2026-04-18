@@ -8,7 +8,13 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from backtester.service import get_backtest_run, list_backtest_runs, run_and_persist_backtest
+from backtester.service import (
+    get_backtest_run,
+    list_backtest_presets,
+    list_backtest_runs,
+    run_and_persist_backtest,
+    save_backtest_preset,
+)
 from database.models import BacktestRun, SessionLocal, init_db
 
 
@@ -142,3 +148,63 @@ def test_run_and_persist_backtest_saves_params_payload():
     loaded = get_backtest_run(result["run_id"])
     assert loaded is not None
     assert loaded["params"] == {"rsi_buy_threshold": 28}
+
+
+def test_run_and_persist_backtest_saves_preset_name():
+    init_db()
+    trades = pd.DataFrame(
+        [
+            {
+                "time": datetime(2024, 4, 1, tzinfo=timezone.utc),
+                "side": "BUY",
+                "qty": 1.0,
+                "price": 100.0,
+                "regime": "RANGING",
+                "strategy_name": "mean_reversion_v1",
+                "strategy_version": "1.0.0",
+            }
+        ]
+    )
+    with patch("backtester.service.run_backtest", return_value=trades), \
+         patch("backtester.service.build_equity_curve", return_value=pd.Series([100.0, 101.0])), \
+         patch("backtester.service.compute_metrics", return_value={"sharpe": 1.2, "max_drawdown": 0.1, "profit_factor": 1.8, "n_trades": 1.0}), \
+         patch("backtester.service.acceptance_gate", return_value=(True, [])):
+        result = run_and_persist_backtest(
+            "BTCUSDT",
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 2, tzinfo=timezone.utc),
+            "mean_reversion_v1",
+            params={"rsi_buy_threshold": 28},
+            preset_name="Pullback A",
+        )
+
+    loaded = get_backtest_run(result["run_id"])
+    assert loaded is not None
+    assert loaded["preset_name"] == "Pullback A"
+
+
+def test_save_backtest_preset_creates_and_lists_preset():
+    init_db()
+    saved = save_backtest_preset(
+        "mean_reversion_v1",
+        "Pullback A",
+        {"rsi_buy_threshold": 28, "volume_confirmation_mult": 1.7},
+    )
+
+    presets = list_backtest_presets("mean_reversion_v1")
+    match = presets[presets["id"] == saved["id"]].iloc[0]
+    assert match["preset_name"] == "Pullback A"
+    assert match["params"]["rsi_buy_threshold"] == 28
+
+
+def test_save_backtest_preset_updates_existing_name():
+    init_db()
+    first = save_backtest_preset("mean_reversion_v1", "Pullback A", {"rsi_buy_threshold": 28})
+    second = save_backtest_preset("mean_reversion_v1", "Pullback A", {"rsi_buy_threshold": 31})
+
+    presets = list_backtest_presets("mean_reversion_v1")
+    same_name = presets[presets["preset_name"] == "Pullback A"]
+    assert len(same_name) >= 1
+    latest = same_name[same_name["id"] == second["id"]].iloc[0]
+    assert first["id"] == second["id"]
+    assert latest["params"]["rsi_buy_threshold"] == 31

@@ -21,22 +21,28 @@ from strategy.runtime import (
 from backtester.service import (
     get_backtest_run,
     get_backtest_trades,
+    list_backtest_presets,
     list_backtest_runs,
     run_and_persist_backtest,
+    save_backtest_preset,
 )
 from dashboard.workbench import (
+    build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
+    find_matching_preset_name,
     filter_backtest_runs,
     filter_runtime_data,
     format_params_summary,
+    format_scenario_label,
     format_strategy_origin,
     list_runtime_strategies,
     normalise_params,
+    normalise_preset_name,
     runtime_mode_table,
     strategy_workflow_status,
     runtime_summary,
@@ -173,6 +179,35 @@ def load_backtest_trades(run_id: int) -> pd.DataFrame:
 @st.cache_data(ttl=10)
 def load_backtest_run(run_id: int) -> dict | None:
     return get_backtest_run(run_id)
+
+
+@st.cache_data(ttl=10)
+def load_backtest_presets(strategy_name: str) -> pd.DataFrame:
+    return list_backtest_presets(strategy_name)
+
+
+def to_utc_naive_timestamp(value: object) -> pd.Timestamp:
+    """Normalize timestamp-like values to a UTC-naive pandas Timestamp."""
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is not None:
+        return ts.tz_convert("UTC").tz_localize(None)
+    return ts
+
+
+def apply_backtest_params_to_session(
+    strategy_name: str,
+    param_schema: list[dict],
+    params: dict,
+    defaults: dict,
+) -> None:
+    """Push a parameter payload into the widget session state for one strategy."""
+    params = normalise_params(params)
+    for field in param_schema:
+        field_name = str(field.get("name", "")).strip()
+        if not field_name:
+            continue
+        key = f"bt_param_{strategy_name}_{field_name}"
+        st.session_state[key] = params.get(field_name, defaults.get(field_name))
 
 
 def render_strategy_param_control(strategy_name: str, field: dict, defaults: dict) -> object:
@@ -393,7 +428,7 @@ with strategy_tab:
             generate_now = st.form_submit_button(
                 "Generate Plugin Draft",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 disabled=not LLM_ENABLED or not strategy_names,
             )
 
@@ -440,9 +475,9 @@ with strategy_tab:
             if generation_result.get("file_name"):
                 st.caption(f"Saved plugin file: `{generation_result['file_name']}`")
             if generation_result.get("errors"):
-                st.dataframe(pd.DataFrame(generation_result["errors"]), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(generation_result["errors"]), width="stretch", hide_index=True)
             if generation_result.get("strategies"):
-                st.dataframe(pd.DataFrame(generation_result["strategies"]), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(generation_result["strategies"]), width="stretch", hide_index=True)
             if generation_result.get("code"):
                 st.code(generation_result["code"], language="python")
 
@@ -478,7 +513,7 @@ with strategy_tab:
             st.warning("Generated plugin draft. Keep it in draft status until it passes backtesting and is reviewed as a stable plugin.")
         if selected_meta.get("default_params"):
             st.json(selected_meta["default_params"], expanded=False)
-    if st.button("Set Active Strategy", type="primary", use_container_width=True):
+    if st.button("Set Active Strategy", type="primary", width="stretch"):
         saved = set_active_strategy_config(selected_strategy)
         load_strategy_catalog.clear()
         load_strategy_errors.clear()
@@ -489,11 +524,11 @@ with strategy_tab:
         )
 
     catalog_df = build_strategy_catalog_frame(strategy_catalog, all_backtest_runs, active_strategy["name"])
-    st.dataframe(catalog_df, use_container_width=True, hide_index=True)
+    st.dataframe(catalog_df, width="stretch", hide_index=True)
 
     if strategy_errors:
         st.warning("Plugin load issues detected")
-        st.dataframe(pd.DataFrame(strategy_errors), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(strategy_errors), width="stretch", hide_index=True)
 
 with backtest_tab:
     st.markdown("### Backtest Lab")
@@ -509,10 +544,48 @@ with backtest_tab:
     bt_default_params = normalise_params(selected_bt_meta.get("default_params", {}) if selected_bt_meta else {})
     bt_param_schema = list(selected_bt_meta.get("param_schema", []) if selected_bt_meta else [])
     bt_params = dict(bt_default_params)
+    preset_flash = st.session_state.pop("backtest_preset_flash", "")
+    if preset_flash:
+        st.success(preset_flash)
+
+    presets_df = load_backtest_presets(bt_strategy)
+    presets_view = build_backtest_preset_frame(presets_df)
+    preset_options = ["Custom"]
+    if not presets_view.empty and "preset_name" in presets_view.columns:
+        preset_options.extend(presets_view["preset_name"].astype(str).tolist())
+
+    preset_select_key = f"bt_preset_choice_{bt_strategy}"
+    active_preset_key = f"bt_active_preset_{bt_strategy}"
+    if st.session_state.get(preset_select_key) not in preset_options:
+        st.session_state[preset_select_key] = "Custom"
+    if st.session_state.get(active_preset_key) not in preset_options:
+        st.session_state[active_preset_key] = ""
 
     if bt_param_schema:
+        st.markdown("#### Scenario Presets")
+        st.caption("Named presets sit on top of run-scoped params. Applying a preset updates the form; saved runs still keep the exact params payload.")
+        preset_cols = st.columns([2, 1])
+        selected_preset_name = preset_cols[0].selectbox(
+            "Preset",
+            preset_options,
+            key=preset_select_key,
+        )
+        apply_preset_now = preset_cols[1].button(
+            "Apply Preset",
+            width="stretch",
+            disabled=selected_preset_name == "Custom",
+        )
+        if apply_preset_now and selected_preset_name != "Custom":
+            preset_row = presets_view[presets_view["preset_name"] == selected_preset_name].head(1)
+            if not preset_row.empty:
+                preset_payload = preset_row.iloc[0].get("params", {})
+                apply_backtest_params_to_session(bt_strategy, bt_param_schema, preset_payload, bt_default_params)
+                st.session_state[active_preset_key] = selected_preset_name
+                st.session_state["backtest_preset_flash"] = f"Applied preset `{selected_preset_name}`."
+                st.rerun()
+
         st.markdown("#### Scenario Parameters")
-        st.caption("Backtest-only in Sprint 23. These values are saved with the run and used in comparison views.")
+        st.caption("Backtest-only in Sprint 24. These values are saved with the run and can optionally be attached to a named preset.")
         param_cols = st.columns(2)
         for idx, field in enumerate(bt_param_schema):
             with param_cols[idx % 2]:
@@ -521,14 +594,59 @@ with backtest_tab:
                     continue
                 bt_params[field_name] = render_strategy_param_control(bt_strategy, field, bt_default_params)
 
+        matched_preset_name = find_matching_preset_name(bt_params, presets_view)
+        st.session_state[active_preset_key] = matched_preset_name
+        if matched_preset_name:
+            st.caption(f"Preset match: **{matched_preset_name}**")
+        else:
+            st.caption("Preset match: **Custom scenario**")
+
+        save_cols = st.columns([2, 1])
+        save_name_key = f"bt_preset_save_name_{bt_strategy}"
+        preset_name_input = save_cols[0].text_input(
+            "Save current params as preset",
+            key=save_name_key,
+            placeholder="Example: Mean Reversion Pullback A",
+        )
+        save_preset_now = save_cols[1].button(
+            "Save Preset",
+            width="stretch",
+            disabled=not preset_name_input.strip(),
+        )
+        if save_preset_now:
+            saved_preset = save_backtest_preset(bt_strategy, preset_name_input, bt_params)
+            load_backtest_presets.clear()
+            st.session_state[preset_select_key] = saved_preset["preset_name"]
+            st.session_state[active_preset_key] = saved_preset["preset_name"]
+            st.session_state[save_name_key] = saved_preset["preset_name"]
+            st.session_state["backtest_preset_flash"] = f"Saved preset `{saved_preset['preset_name']}` for `{bt_strategy}`."
+            st.rerun()
+
+        if not presets_view.empty:
+            display_presets = presets_view.copy()
+            if "updated_at" in display_presets.columns:
+                display_presets["updated_at"] = pd.to_datetime(display_presets["updated_at"]).dt.strftime("%Y-%m-%d %H:%M")
+            if "created_at" in display_presets.columns:
+                display_presets["created_at"] = pd.to_datetime(display_presets["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
+            st.dataframe(
+                display_presets[["preset_name", "scenario_label", "params_summary", "updated_at", "created_at"]],
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.info(f"No named presets saved yet for `{bt_strategy}`.")
+
     date_cols = st.columns(2)
     bt_start = date_cols[0].date_input("Start", value=datetime.utcnow().date() - timedelta(days=30))
     bt_end = date_cols[1].date_input("End", value=datetime.utcnow().date())
-    current_scenario_label = format_params_summary(bt_params)
+    matched_preset_name = find_matching_preset_name(bt_params, presets_view)
+    current_scenario_label = format_scenario_label(bt_params, matched_preset_name)
     st.caption(f"Scenario: **{current_scenario_label}**")
+    if matched_preset_name:
+        st.caption(f"Preset: **{matched_preset_name}**")
     if bt_params:
         st.json(bt_params, expanded=False)
-    run_backtest_now = st.button("Run Backtest", type="primary", use_container_width=True)
+    run_backtest_now = st.button("Run Backtest", type="primary", width="stretch")
 
     if selected_bt_meta:
         bt_workflow_status = strategy_workflow_status(selected_bt_meta, all_backtest_runs, active_strategy["name"])
@@ -550,6 +668,7 @@ with backtest_tab:
                 datetime.combine(bt_end, datetime.min.time()),
                 bt_strategy,
                 params=bt_params,
+                preset_name=matched_preset_name,
             )
         st.session_state["selected_backtest_run_id"] = result["run_id"]
         load_backtest_runs.clear()
@@ -644,7 +763,7 @@ with backtest_tab:
                     "best_run_id",
                 ]
             ],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -687,7 +806,7 @@ with backtest_tab:
                     "failure_summary",
                 ]
             ],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         available_run_ids = leaderboard_df["id"].astype(int).tolist()
@@ -718,7 +837,9 @@ with backtest_tab:
         metric_cols[3].metric("Max DD", f"{float(selected_run.get('max_drawdown', 0.0)):.1%}")
         metric_cols[4].metric("PF", f"{float(selected_run.get('profit_factor', 0.0)):.2f}")
         metric_cols[5].metric("Trades", f"{int(selected_run.get('n_trades', 0))}")
-        st.caption(f"Scenario: **{format_params_summary(selected_run.get('params'))}**")
+        st.caption(f"Scenario: **{format_scenario_label(selected_run.get('params'), selected_run.get('preset_name'))}**")
+        if normalise_preset_name(selected_run.get("preset_name")):
+            st.caption(f"Preset: **{normalise_preset_name(selected_run.get('preset_name'))}**")
         if selected_run.get("params"):
             st.json(selected_run["params"], expanded=False)
 
@@ -732,18 +853,21 @@ with backtest_tab:
             st.success(f"Acceptance gate: {str(selected_run.get('status', 'completed')).upper()}")
 
         st.caption(
-            f"Window: {pd.to_datetime(selected_run.get('start_ts')).strftime('%Y-%m-%d')} "
-            f"→ {pd.to_datetime(selected_run.get('end_ts')).strftime('%Y-%m-%d')}"
+            f"Window: {to_utc_naive_timestamp(selected_run.get('start_ts')).strftime('%Y-%m-%d')} "
+            f"→ {to_utc_naive_timestamp(selected_run.get('end_ts')).strftime('%Y-%m-%d')}"
         )
 
         backtest_chart = go.Figure()
+        selected_start_ts = to_utc_naive_timestamp(selected_run["start_ts"])
+        selected_end_ts = to_utc_naive_timestamp(selected_run["end_ts"])
+        now_ts = to_utc_naive_timestamp(pd.Timestamp.utcnow())
         candle_df = load_candles_raw(
             str(selected_run["symbol"]),
-            max((pd.Timestamp.utcnow() - pd.Timestamp(selected_run["start_ts"])).days + 2, 2),
+            max((now_ts - selected_start_ts).days + 2, 2),
         )
         filtered_candles = candle_df[
-            (candle_df["open_time"] >= pd.Timestamp(selected_run["start_ts"]))
-            & (candle_df["open_time"] <= pd.Timestamp(selected_run["end_ts"]))
+            (candle_df["open_time"] >= selected_start_ts)
+            & (candle_df["open_time"] <= selected_end_ts)
         ] if not candle_df.empty else pd.DataFrame()
         if not filtered_candles.empty:
             backtest_chart.add_trace(go.Candlestick(
@@ -773,7 +897,7 @@ with backtest_tab:
             font=dict(color="#d1d4dc"),
             xaxis_rangeslider_visible=False,
         )
-        st.plotly_chart(backtest_chart, use_container_width=True)
+        st.plotly_chart(backtest_chart, width="stretch")
 
         if not selected_run_trades.empty:
             lower_left, lower_right = st.columns(2)
@@ -795,7 +919,7 @@ with backtest_tab:
                     plot_bgcolor="#0e1117",
                     font=dict(color="#d1d4dc"),
                 )
-                st.plotly_chart(eq_fig, use_container_width=True)
+                st.plotly_chart(eq_fig, width="stretch")
 
             with lower_right:
                 dd_fig = go.Figure()
@@ -816,10 +940,10 @@ with backtest_tab:
                     font=dict(color="#d1d4dc"),
                     yaxis_tickformat=".1%",
                 )
-                st.plotly_chart(dd_fig, use_container_width=True)
+                st.plotly_chart(dd_fig, width="stretch")
 
             st.markdown("#### Trade Log")
-            st.dataframe(selected_run_trades, use_container_width=True, hide_index=True)
+            st.dataframe(selected_run_trades, width="stretch", hide_index=True)
     elif not runs_df.empty:
         st.info(f"No saved runs yet for `{bt_strategy}`. Run a backtest to start its evaluation history or enable 'Show all saved runs'.")
     else:
@@ -839,7 +963,7 @@ with runtime_tab:
 
     for i, tf in enumerate(_TF_OPTIONS):
         btn_type = "primary" if st.session_state.timeframe == tf else "secondary"
-        if tf_cols[i].button(tf, key=f"tf_{tf}", type=btn_type, use_container_width=True):
+        if tf_cols[i].button(tf, key=f"tf_{tf}", type=btn_type, width="stretch"):
             st.session_state.timeframe = tf
 
     timeframe = st.session_state.timeframe
@@ -1075,7 +1199,7 @@ with runtime_tab:
             zerolinecolor="#363a45",
         )})
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     overview_cols = st.columns(6)
     overview_cols[0].metric("Strategy View", runtime_strategy_filter)
@@ -1107,7 +1231,7 @@ with runtime_tab:
             if ts_col in display_mode_table.columns:
                 display_mode_table[ts_col] = pd.to_datetime(display_mode_table[ts_col]).dt.strftime("%Y-%m-%d %H:%M:%S")
                 display_mode_table[ts_col] = display_mode_table[ts_col].fillna("—")
-        st.dataframe(display_mode_table, use_container_width=True, hide_index=True)
+        st.dataframe(display_mode_table, width="stretch", hide_index=True)
 
     if not eq.empty and "equity" in eq.columns:
         eq_left, eq_right = st.columns(2)
@@ -1143,7 +1267,7 @@ with runtime_tab:
                 xaxis=dict(gridcolor="#1e222d"),
                 yaxis=dict(gridcolor="#1e222d"),
             )
-            st.plotly_chart(eq_fig, use_container_width=True)
+            st.plotly_chart(eq_fig, width="stretch")
 
         with eq_right:
             dd_fig = go.Figure()
@@ -1171,7 +1295,7 @@ with runtime_tab:
                 xaxis=dict(gridcolor="#1e222d"),
                 yaxis=dict(gridcolor="#1e222d", tickformat=".1%"),
             )
-            st.plotly_chart(dd_fig, use_container_width=True)
+            st.plotly_chart(dd_fig, width="stretch")
 
     if not pnl_curve.empty:
         st.markdown("### Realized P&L Curve")
@@ -1193,7 +1317,7 @@ with runtime_tab:
             xaxis=dict(gridcolor="#1e222d"),
             yaxis=dict(gridcolor="#1e222d"),
         )
-        st.plotly_chart(pnl_fig, use_container_width=True)
+        st.plotly_chart(pnl_fig, width="stretch")
 
     st.markdown("### Recent Execution Context")
     if not tr.empty:
@@ -1204,7 +1328,7 @@ with runtime_tab:
             col for col in ["ts", "run_mode", "side", "qty", "price", "pnl", "regime", "strategy_version"]
             if col in recent_trades.columns
         ]
-        st.dataframe(recent_trades[ordered_cols], use_container_width=True, hide_index=True)
+        st.dataframe(recent_trades[ordered_cols], width="stretch", hide_index=True)
     else:
         st.info("No runtime trades recorded yet for the selected strategy/mode.")
 

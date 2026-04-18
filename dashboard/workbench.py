@@ -63,6 +63,13 @@ def parse_params_json(raw: str | None) -> dict[str, Any]:
     return _parse_json_dict(raw)
 
 
+def normalise_preset_name(preset_name: Any) -> str:
+    """Return a trimmed preset name or an empty string."""
+    if preset_name is None:
+        return ""
+    return str(preset_name).strip()
+
+
 def normalise_params(params: dict[str, Any] | None) -> dict[str, Any]:
     """Return a stable params dict for persistence and comparison."""
     if not isinstance(params, dict):
@@ -91,9 +98,64 @@ def format_params_summary(params: dict[str, Any] | None, max_items: int = 3) -> 
     return f"{visible}, +{len(parts) - max_items} more"
 
 
+def format_scenario_label(
+    params: dict[str, Any] | None,
+    preset_name: Any = None,
+    max_items: int = 3,
+) -> str:
+    """Prefer a named preset label, otherwise fall back to a params summary."""
+    clean_name = normalise_preset_name(preset_name)
+    if clean_name:
+        return clean_name
+    return format_params_summary(params, max_items=max_items)
+
+
 def scenario_key(params: dict[str, Any] | None) -> str:
     """Return a stable key for grouping runs by parameter scenario."""
     return json.dumps(normalise_params(params), sort_keys=True)
+
+
+def scenario_identity(params: dict[str, Any] | None, preset_name: Any = None) -> str:
+    """Return a stable grouping key that keeps named presets distinct from custom runs."""
+    clean_name = normalise_preset_name(preset_name)
+    if clean_name:
+        return f"preset::{clean_name.lower()}"
+    return f"params::{scenario_key(params)}"
+
+
+def find_matching_preset_name(params: dict[str, Any] | None, presets: pd.DataFrame) -> str:
+    """Return the preset name whose params exactly match the current payload."""
+    if presets.empty or "params" not in presets.columns or "preset_name" not in presets.columns:
+        return ""
+
+    target = normalise_params(params)
+    for _, row in presets.iterrows():
+        if normalise_params(row.get("params")) == target:
+            return normalise_preset_name(row.get("preset_name"))
+    return ""
+
+
+def build_backtest_preset_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return a dashboard-ready preset table sorted by recency."""
+    if frame.empty:
+        return pd.DataFrame()
+
+    presets = frame.copy()
+    if "created_at" in presets.columns:
+        presets["created_at"] = pd.to_datetime(presets["created_at"], errors="coerce")
+    if "updated_at" in presets.columns:
+        presets["updated_at"] = pd.to_datetime(presets["updated_at"], errors="coerce")
+    if "params" not in presets.columns:
+        presets["params"] = [{} for _ in range(len(presets))]
+    presets["params"] = presets["params"].apply(
+        lambda value: normalise_params(value) if isinstance(value, dict) else {}
+    )
+    presets["scenario_label"] = presets.apply(
+        lambda row: format_scenario_label(row.get("params"), row.get("preset_name")),
+        axis=1,
+    )
+    presets["params_summary"] = presets["params"].apply(format_params_summary)
+    return presets.sort_values(by=["updated_at", "created_at"], ascending=[False, False], na_position="last").reset_index(drop=True)
 
 
 def format_strategy_origin(meta: dict[str, Any] | None) -> str:
@@ -230,9 +292,10 @@ def build_strategy_comparison_frame(
                 {
                     "display_name": meta.get("display_name", name),
                     "strategy_name": name,
-                    "scenario_key": scenario_key(default_params),
-                    "scenario_label": format_params_summary(default_params),
+                    "scenario_key": scenario_identity(default_params),
+                    "scenario_label": format_scenario_label(default_params),
                     "scenario_params": default_params,
+                    "preset_name": "",
                     "origin": format_strategy_origin(meta),
                     "workflow_stage": workflow_status["stage"],
                     "is_active": name == active_strategy_name,
@@ -264,8 +327,17 @@ def build_strategy_comparison_frame(
     frame["params"] = frame["params"].apply(
         lambda value: normalise_params(value) if isinstance(value, dict) else {}
     )
-    frame["scenario_key"] = frame["params"].apply(scenario_key)
-    frame["scenario_label"] = frame["params"].apply(format_params_summary)
+    if "preset_name" not in frame.columns:
+        frame["preset_name"] = ""
+    frame["preset_name"] = frame["preset_name"].apply(normalise_preset_name)
+    frame["scenario_key"] = frame.apply(
+        lambda row: scenario_identity(row.get("params"), row.get("preset_name")),
+        axis=1,
+    )
+    frame["scenario_label"] = frame.apply(
+        lambda row: format_scenario_label(row.get("params"), row.get("preset_name")),
+        axis=1,
+    )
     if "status" in frame.columns:
         frame["status"] = frame["status"].fillna("").astype(str).str.lower()
     else:
@@ -292,14 +364,16 @@ def build_strategy_comparison_frame(
         failed_count = int((strategy_runs["status"] == "failed").sum()) if "status" in strategy_runs.columns else 0
         run_count = int(len(strategy_runs))
         scenario_params = normalise_params(strategy_runs.iloc[0].get("params", {})) if not strategy_runs.empty else {}
+        preset_name = normalise_preset_name(strategy_runs.iloc[0].get("preset_name")) if not strategy_runs.empty else ""
 
         rows.append(
             {
                 "display_name": meta.get("display_name", strategy_name),
                 "strategy_name": strategy_name,
                 "scenario_key": run_scenario_key,
-                "scenario_label": format_params_summary(scenario_params),
+                "scenario_label": format_scenario_label(scenario_params, preset_name),
                 "scenario_params": scenario_params,
+                "preset_name": preset_name,
                 "origin": format_strategy_origin(meta),
                 "workflow_stage": workflow_status["stage"],
                 "is_active": strategy_name == active_strategy_name,
@@ -321,7 +395,7 @@ def build_strategy_comparison_frame(
     seen_pairs = {(str(rows_item["strategy_name"]), str(rows_item["scenario_key"])) for rows_item in rows}
     for name, meta in catalog_lookup.items():
         default_params = normalise_params(meta.get("default_params"))
-        default_scenario_key = scenario_key(default_params)
+        default_scenario_key = scenario_identity(default_params)
         if (name, default_scenario_key) in seen_pairs:
             continue
         workflow_status = strategy_workflow_status(meta, frame, active_strategy_name)
@@ -330,8 +404,9 @@ def build_strategy_comparison_frame(
                 "display_name": meta.get("display_name", name),
                 "strategy_name": name,
                 "scenario_key": default_scenario_key,
-                "scenario_label": format_params_summary(default_params),
+                "scenario_label": format_scenario_label(default_params),
                 "scenario_params": default_params,
+                "preset_name": "",
                 "origin": format_strategy_origin(meta),
                 "workflow_stage": workflow_status["stage"],
                 "is_active": name == active_strategy_name,
@@ -380,7 +455,13 @@ def build_backtest_run_leaderboard(frame: pd.DataFrame) -> pd.DataFrame:
     leaderboard["params"] = leaderboard["params"].apply(
         lambda value: normalise_params(value) if isinstance(value, dict) else {}
     )
-    leaderboard["scenario_label"] = leaderboard["params"].apply(format_params_summary)
+    if "preset_name" not in leaderboard.columns:
+        leaderboard["preset_name"] = ""
+    leaderboard["preset_name"] = leaderboard["preset_name"].apply(normalise_preset_name)
+    leaderboard["scenario_label"] = leaderboard.apply(
+        lambda row: format_scenario_label(row.get("params"), row.get("preset_name")),
+        axis=1,
+    )
     if "status" in leaderboard.columns:
         leaderboard["status"] = leaderboard["status"].fillna("").astype(str).str.lower()
         leaderboard["gate_passed"] = leaderboard["status"] == "passed"

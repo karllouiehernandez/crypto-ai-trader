@@ -5,17 +5,21 @@ from __future__ import annotations
 import pandas as pd
 
 from dashboard.workbench import (
+    build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
     compute_trade_equity_curve,
+    find_matching_preset_name,
     filter_backtest_runs,
     filter_runtime_data,
     format_params_summary,
+    format_scenario_label,
     format_strategy_origin,
     list_runtime_strategies,
+    normalise_preset_name,
     parse_metrics_json,
     parse_params_json,
     runtime_mode_table,
@@ -57,9 +61,19 @@ def test_parse_params_json_bad_input_returns_empty():
     assert parse_params_json(None) == {}
 
 
+def test_normalise_preset_name_trims_input():
+    assert normalise_preset_name("  Pullback A  ") == "Pullback A"
+    assert normalise_preset_name(None) == ""
+
+
 def test_format_params_summary_formats_default_and_values():
     assert format_params_summary({}) == "Default"
     assert "threshold=10" in format_params_summary({"threshold": 10, "enabled": True})
+
+
+def test_format_scenario_label_prefers_preset_name():
+    assert format_scenario_label({"threshold": 10}, "Pullback A") == "Pullback A"
+    assert format_scenario_label({"threshold": 10}, "") == "threshold=10"
 
 
 def test_format_strategy_origin_distinguishes_generated_plugins():
@@ -205,6 +219,66 @@ def test_build_backtest_run_leaderboard_prioritizes_passed_runs():
     assert leaderboard.iloc[0]["status_label"] == "Passed"
     assert "rsi_buy_threshold=28" in leaderboard.iloc[0]["scenario_label"]
     assert "Sharpe" in leaderboard.iloc[1]["failure_summary"]
+
+
+def test_build_backtest_run_leaderboard_uses_preset_name_when_present():
+    runs = pd.DataFrame(
+        [
+            {
+                "id": 31,
+                "created_at": pd.Timestamp("2026-04-18 10:00:00"),
+                "strategy_name": "mean_reversion_v1",
+                "symbol": "BTCUSDT",
+                "status": "passed",
+                "preset_name": "Pullback A",
+                "params": {"rsi_buy_threshold": 28},
+                "sharpe": 2.0,
+                "profit_factor": 1.8,
+                "max_drawdown": 0.12,
+                "n_trades": 250,
+                "failures": [],
+            },
+        ]
+    )
+
+    leaderboard = build_backtest_run_leaderboard(runs)
+    assert leaderboard.iloc[0]["scenario_label"] == "Pullback A"
+
+
+def test_build_backtest_preset_frame_formats_summary_and_sorts():
+    presets = pd.DataFrame(
+        [
+            {
+                "preset_name": "Pullback B",
+                "params": {"rsi_buy_threshold": 31},
+                "created_at": pd.Timestamp("2026-04-18 09:00:00"),
+                "updated_at": pd.Timestamp("2026-04-18 10:00:00"),
+            },
+            {
+                "preset_name": "Pullback A",
+                "params": {"rsi_buy_threshold": 28},
+                "created_at": pd.Timestamp("2026-04-18 08:00:00"),
+                "updated_at": pd.Timestamp("2026-04-18 11:00:00"),
+            },
+        ]
+    )
+
+    frame = build_backtest_preset_frame(presets)
+    assert frame.iloc[0]["preset_name"] == "Pullback A"
+    assert frame.iloc[0]["scenario_label"] == "Pullback A"
+    assert "rsi_buy_threshold=28" in frame.iloc[0]["params_summary"]
+
+
+def test_find_matching_preset_name_returns_exact_match():
+    presets = pd.DataFrame(
+        [
+            {"preset_name": "Pullback A", "params": {"rsi_buy_threshold": 28}},
+            {"preset_name": "Pullback B", "params": {"rsi_buy_threshold": 31}},
+        ]
+    )
+
+    assert find_matching_preset_name({"rsi_buy_threshold": 31.0}, presets) == "Pullback B"
+    assert find_matching_preset_name({"rsi_buy_threshold": 35}, presets) == ""
 
 
 def test_filter_runtime_data_filters_strategy_and_mode():

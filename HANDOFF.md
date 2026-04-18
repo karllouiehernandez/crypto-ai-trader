@@ -10,71 +10,55 @@ Both Claude Code and GitHub Copilot Pro agents must read this file first and upd
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-18 (Sprint 24 ready; Sprint 25 queued) |
-| **Sprint completed** | Sprint 23 ✅ — Strategy parameters and run-scoped scenarios committed + pushed to GitHub |
-| **Next sprint** | Sprint 24 — Named Scenario Presets |
+| **Last updated** | 2026-04-18 (Sprint 24 closed) |
+| **Sprint completed** | Sprint 24 ✅ — Named scenario presets committed + ready to push |
+| **Next sprint** | Sprint 25 — Weekly Market Focus Selector |
 | **Blocking issues** | Add one of: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` to `.env` for LLM features |
-| **Local worktree note** | `dashboard/streamlit_app.py` has an uncommitted local compatibility fix; `knowledge/experiment_log.md` may stay dirty while the background runtime process is running. Do not overwrite or stage either blindly. |
+| **Local worktree note** | `knowledge/experiment_log.md` may stay dirty while the background runtime process is running; do not edit or stage it unless you intentionally stop that process |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 24 remains the active implementation sprint; Sprint 25 `Weekly Market Focus Selector` is now queued immediately after it with GitHub tracking issue `#26` |
+| **Reason for handoff** | Sprint 24 is complete; next agent should start Sprint 25 `Weekly Market Focus Selector` using the queued roadmap and GitHub tracking issue `#26` |
 
 ---
 
-## Resume Here — Sprint 24: Named Scenario Presets
+## Resume Here — Sprint 25: Weekly Market Focus Selector
 
-**Sprint 23 complete.** The dashboard can now edit backtest params, persist them with saved runs, and compare parameterized scenarios directly inside `Backtest Lab`. 421 tests passing.
+**Sprint 24 complete.** The dashboard now supports reusable named presets on top of run-scoped scenarios. Presets are stored per strategy, can be applied back into the parameter form, and matching preset names now persist with saved runs. 429 tests passing.
 
-### What was done in Sprint 23
-- `strategy/base.py`, `strategy/runtime.py` — MODIFIED: added isolated parameter application for backtest strategy instances
-- `backtester/engine.py`, `backtester/service.py` — MODIFIED: backtests now accept params and persist them in saved runs
-- `dashboard/workbench.py`, `dashboard/streamlit_app.py` — MODIFIED: `Backtest Lab` now renders strategy parameter controls and shows scenario-aware comparison/run views
-- **421 total passing** (+6 over Sprint 22)
+### What was done in Sprint 24
+- `database/models.py`, `backtester/service.py` — MODIFIED: added named preset persistence plus preset-aware saved runs
+- `dashboard/workbench.py`, `dashboard/streamlit_app.py` — MODIFIED: `Backtest Lab` can now save/apply named presets and shows preset-aware scenario labels across comparison/run views
+- `tests/test_backtester_service.py`, `tests/test_workbench_helpers.py` — MODIFIED: added coverage for preset persistence, preset matching, and preset-aware leaderboard labels
+- **429 total passing** (+8 over Sprint 23)
 
-### Sprint 24 Goal — Named Scenario Presets
-Sprint 23 made scenarios run-scoped, but they still vanish into individual backtest records. Add reusable named presets so a user can save a parameter set once, reapply it to future backtests, and compare stable scenario names instead of raw parameter blobs.
+### Sprint 25 Goal — Weekly Market Focus Selector
+Recommend the best Binance spot `USDT` token for the current week using a low-token deterministic ranking flow that evaluates candidates with the active strategy and current params.
 
 ### Scope
-- `dashboard/streamlit_app.py` — add preset save/apply UX on top of the existing parameter controls in `Backtest Lab`
-- persistence layer — introduce a simple store for named presets keyed by strategy
-- `dashboard/workbench.py` — add any pure helpers needed for preset labels and scenario formatting
-- keep the current run-scoped scenario behavior intact; named presets should be additive, not a replacement
-- review `.codex/skills/jesse-workbench-ui-ux/SKILL.md` if preset UX requires explicit workflow guidance
-
-### Queued After Sprint 24 — Sprint 25: Weekly Market Focus Selector
-GitHub tracking issue: `#26`
-
-Goal:
-- recommend the best Binance spot `USDT` token for the current week using a low-token deterministic ranking flow
-- evaluate candidates using the active strategy and active params
-- keep the result as research guidance only, not runtime auto-execution
-
-Planned scope:
 - add a research-only symbol universe wider than runtime `SYMBOLS`
-- rank a dynamic top-liquid Binance `USDT` shortlist using recent backtest results
+- discover a top-liquid Binance spot `USDT` shortlist dynamically
+- rank that shortlist using recent backtest results for the active strategy and active params
 - persist weekly study runs and ranked candidates
 - surface the latest recommendation inside the dashboard workbench
 - allow one-click prefill into `Backtest Lab`
 
-Important defaults:
+Defaults:
 - `config.SYMBOLS` remains the runtime watchlist
-- no paper/live auto-switching in Sprint 25
+- no paper/live auto-switching
 - no LLM requirement in the baseline weekly selector flow
-- do not start Sprint 25 until Sprint 24 closes unless the roadmap is explicitly reprioritized
 
 ### Step 1 — Verify baseline
 ```bash
-pytest tests/ -q   # must show 421 passed
+pytest tests/ -q   # must show 429 passed
 ```
 
 ### Step 2 — Sprint close checklist
 - [ ] All CRITICAL and HIGH review findings fixed
-- [ ] `knowledge/agent_resume.md` updated for Sprint 24
-- [ ] `knowledge/sprint_log.md` updated with Sprint 24 entry
+- [ ] `knowledge/agent_resume.md` updated for Sprint 25
+- [ ] `knowledge/sprint_log.md` updated with Sprint 25 entry
 - [ ] `HANDOFF.md` Current State table updated
-- [ ] `HANDOFF.md` Next sprint updated to `Sprint 25 — Weekly Market Focus Selector`
 - [ ] Committed and pushed to GitHub
-- [ ] GitHub issue created and closed for Sprint 24
+- [ ] GitHub issue `#26` closed when Sprint 25 is complete
 
 ---
 
@@ -106,6 +90,7 @@ pytest tests/ -q   # must show 421 passed
 | Sprint 21 — Jesse-Like Workbench Polish | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 22 — Strategy Comparison & Evaluation UX | ✅ CLOSED | Codex | 2026-04-18 |
 | Sprint 23 — Strategy Parameters & Scenario Presets | ✅ CLOSED | Codex | 2026-04-18 |
+| Sprint 24 — Named Scenario Presets | ✅ CLOSED | Codex | 2026-04-18 |
 
 ---
 
