@@ -40,10 +40,18 @@ class DraftMomentum(StrategyBase):
 
 @pytest.fixture(autouse=True)
 def clean_strategy_registry():
+    from database.models import StrategyArtifact, init_db
+    init_db()
+    with SessionLocal() as sess:
+        sess.query(StrategyArtifact).delete()
+        sess.commit()
     clear_registry()
     set_active_runtime_artifact_id("paper", None)
     set_active_runtime_artifact_id("live", None)
     yield
+    with SessionLocal() as sess:
+        sess.query(StrategyArtifact).delete()
+        sess.commit()
     clear_registry()
     set_active_runtime_artifact_id("paper", None)
     set_active_runtime_artifact_id("live", None)
