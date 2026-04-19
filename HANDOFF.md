@@ -10,9 +10,9 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-19 (Sprint 41 Phases 1–3 complete) |
-| **Active sprint** | Sprint 41 — `#43` — **In Progress** on GitHub Projects board `#1` |
-| **Sprint 40** | `#42` — closed/Done on board |
+| **Last updated** | 2026-04-19 (Sprint 41 all phases complete — all gates green) |
+| **Active sprint** | Sprint 41 — `#43` — ready to close (all acceptance criteria met) |
+| **Sprint 40** | `#42` — Done on board |
 | **Tests** | `pytest tests/ -q` → **612 passed, 4 warnings** |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
@@ -21,7 +21,36 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 41 Phase 4
+## Resume Here — Sprint 42 (Sprint 41 Complete)
+
+Sprint 41 is **done**. Close issue #43 on GitHub if not already done, then plan Sprint 42.
+
+### Sprint 41 Final Verification (all gates green)
+
+| Gate | Result |
+|------|--------|
+| `pytest tests/ -q` | **612 passed, 4 warnings** ✅ |
+| Smoke UI (`--ui-only`) | **61/61 (100%)** ✅ |
+| Trader journey (`--journey trader`) | **0 FAIL, 7 PARTIAL (history-incomplete), 1 SKIP** ✅ |
+| Data checks (`--data-only`) | **0 FAIL, 2 PARTIAL (legacy), 1 SKIP (no live target)** ✅ |
+| Paper promotion journey | **PASS** (page=True, db=True) ✅ |
+| Runtime monitor after promotion | **PASS** ✅ |
+
+All 7 journey PARTIALs are "Backtest blocked — dashboard showed explicit history-incomplete error" which is the correct, expected behavior (not silent no-ops).
+
+### Sprint 42 — Next Priorities
+
+Check GitHub Projects board `#1` for queued issues. Likely candidates:
+1. **Paper trader forward evaluation** — start `run_live.py --paper` and monitor the `rsi_mean_reversion_v1` artifact through its first real trades
+2. **Live trader gate** — establish the `paper_passed` → `live_approved` path with real paper forward results
+3. **Candle freshness fix** — get the live streamer running continuously so data checks show 0 PARTIAL for freshness
+4. **Merge to master** — the branch `codex/sprint-27-responsive-chart` has all Sprint 27–41 work; open a PR to master
+
+---
+
+## Sprint 41 History — What Was Done
+
+### Phase 1 — MVP Data Health Gate
 
 Sprint 41 is `In Progress` on the board. Phases 1–3 are done. **Start at Phase 4.**
 
@@ -45,9 +74,9 @@ Issue `#43` — Trader Minimum Product Readiness (Phased). Goal: make the system
 - `dashboard/streamlit_app.py` hero area: paper-readiness advisory — green "armed" banner or blue "no target" info
 - `dashboard/streamlit_app.py` Inspect tab: artifact badge per run showing whether it is the current paper/live target
 
-### Phase 4 — Next Work (not started)
+### Phase 4 — Verified Complete ✅
 
-Goal: **Release contract via trader journey — zero failures**.
+Goal: **Release contract via trader journey — zero failures**. ✅ All gates passed.
 
 Sprint 41 issue acceptance criteria:
 - `pytest tests/ -q` green ✅ (already passing)
