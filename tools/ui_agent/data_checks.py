@@ -33,6 +33,7 @@ from config import (
     STARTING_BALANCE_USD,
 )
 from database.integrity import (
+    ARCHIVED_LEGACY_STATUS,
     INVALID_METRICS_STATUS,
     LEGACY_INVALID_STATUS,
     MISSING_TRADES_STATUS,
@@ -264,20 +265,31 @@ def _check_trade_log_integrity(sess, findings: list[dict], verbose: bool) -> Non
     fresh_issues: list[str] = []
     legacy_issues: list[str] = []
     prev_side_by_sym: dict[str, str] = {}
+    archived_rows = 0
+    active_rows = 0
 
     for sym, side, _, integrity_status, _ in rows:
+        status = str(integrity_status or "").lower()
+        if status == ARCHIVED_LEGACY_STATUS:
+            # Containment-archived rows are excluded from the release-gate sequence check.
+            # The prior_side tracker is reset so adjacent fresh rows are graded cleanly.
+            archived_rows += 1
+            prev_side_by_sym.pop(sym, None)
+            continue
+        active_rows += 1
         side = str(side or "").upper()
         by_sym.setdefault(sym, []).append(side)
         prev_side = prev_side_by_sym.get(sym)
         if prev_side == side and side in {"BUY", "SELL"}:
             issue = f"{sym}:{side}->{side}"
-            if str(integrity_status or "").lower() == LEGACY_INVALID_STATUS:
+            if status == LEGACY_INVALID_STATUS:
                 legacy_issues.append(issue)
             else:
                 fresh_issues.append(issue)
         prev_side_by_sym[sym] = side
 
-    total_trades = len(rows)
+    archive_suffix = f" ({archived_rows} archived legacy row(s) excluded)" if archived_rows else ""
+
     if not rows:
         _record(findings, "Trade log integrity", "SKIP",
                 "No paper trades recorded yet", verbose)
@@ -285,14 +297,20 @@ def _check_trade_log_integrity(sess, findings: list[dict], verbose: bool) -> Non
         sample = fresh_issues[:10]
         tail = f" … +{len(fresh_issues) - 10} more" if len(fresh_issues) > 10 else ""
         _record(findings, "Trade log integrity", "FAIL",
-                f"Consecutive same-side trades ({len(fresh_issues)} total): {sample}{tail}", verbose)
+                f"Consecutive same-side trades ({len(fresh_issues)} total): {sample}{tail}{archive_suffix}",
+                verbose)
     elif legacy_issues:
         syms_affected = sorted({i.split(":")[0] for i in legacy_issues})
         _record(findings, "Trade log integrity", "PARTIAL",
-                f"Contained legacy-invalid sequences ({len(legacy_issues)} across {syms_affected})", verbose)
+                f"Contained legacy-invalid sequences ({len(legacy_issues)} across {syms_affected}){archive_suffix}",
+                verbose)
+    elif active_rows == 0 and archived_rows:
+        _record(findings, "Trade log integrity", "PASS",
+                f"No active trades; {archived_rows} archived legacy row(s) excluded", verbose)
     else:
         _record(findings, "Trade log integrity", "PASS",
-                f"{total_trades} trade(s) across {len(by_sym)} symbol(s) — no consecutive same-side", verbose)
+                f"{active_rows} trade(s) across {len(by_sym)} symbol(s) — no consecutive same-side{archive_suffix}",
+                verbose)
 
 
 # ── Group 6: Backtest metric sanity ──────────────────────────────────────────
@@ -309,12 +327,19 @@ def _check_backtest_metrics(sess, findings: list[dict], verbose: bool) -> None:
 
     bad = []
     legacy_bad = []
+    archived = 0
+    checked = 0
     for run in runs:
+        status = str(run.integrity_status or "").lower()
+        if status == ARCHIVED_LEGACY_STATUS:
+            archived += 1
+            continue
+        checked += 1
         try:
             m = json.loads(run.metrics_json or "{}")
         except Exception:
             issue = f"run#{run.id}:invalid JSON"
-            if str(run.integrity_status or "").lower() == INVALID_METRICS_STATUS:
+            if status == INVALID_METRICS_STATUS:
                 legacy_bad.append(issue)
             else:
                 bad.append(issue)
@@ -329,27 +354,38 @@ def _check_backtest_metrics(sess, findings: list[dict], verbose: bool) -> None:
         if dd is not None and _finite(dd) and not (0.0 <= float(dd) <= 1.0):
             bad.append(f"run#{run.id}:drawdown={dd:.3f} out of [0,1]")
 
+    archive_suffix = f" ({archived} archived legacy run(s) excluded)" if archived else ""
     if bad:
         _record(findings, "Backtest metric sanity", "FAIL",
-                f"Invalid metrics in: {bad[:5]}", verbose)
+                f"Invalid metrics in: {bad[:5]}{archive_suffix}", verbose)
     elif legacy_bad:
         _record(findings, "Backtest metric sanity", "PARTIAL",
-                f"Contained legacy-invalid runs: {legacy_bad[:5]}", verbose)
+                f"Contained legacy-invalid runs: {legacy_bad[:5]}{archive_suffix}", verbose)
+    elif checked == 0 and archived:
+        _record(findings, "Backtest metric sanity", "PASS",
+                f"No active runs in window; {archived} archived legacy run(s) excluded", verbose)
     else:
         _record(findings, "Backtest metric sanity", "PASS",
-                f"{len(runs)} run(s) checked — all metrics finite and in range", verbose)
+                f"{checked} run(s) checked — all metrics finite and in range{archive_suffix}", verbose)
 
 
 # ── Group 7: Backtest equity integrity ───────────────────────────────────────
 
 def _check_backtest_equity(sess, findings: list[dict], verbose: bool) -> None:
     run = sess.execute(
-        sa.select(BacktestRun).order_by(BacktestRun.created_at.desc())
+        sa.select(BacktestRun)
+        .where(
+            sa.or_(
+                BacktestRun.integrity_status.is_(None),
+                BacktestRun.integrity_status != ARCHIVED_LEGACY_STATUS,
+            )
+        )
+        .order_by(BacktestRun.created_at.desc())
     ).scalars().first()
 
     if run is None:
         _record(findings, "Backtest equity integrity", "SKIP",
-                "No backtest runs", verbose)
+                "No backtest runs (archived-legacy runs excluded)", verbose)
         return
 
     trades = sess.execute(
@@ -431,23 +467,34 @@ def _check_position_sizing(sess, findings: list[dict], verbose: bool) -> None:
 
     oversized = []
     legacy_oversized = []
+    archived = 0
+    checked = 0
     for sym, price, qty, _, integrity_status in rows:
+        status = str(integrity_status or "").lower()
+        if status == ARCHIVED_LEGACY_STATUS:
+            archived += 1
+            continue
+        checked += 1
         if price * qty > max_notional * 1.05:
             issue = f"{sym}:{price*qty:.2f}>{max_notional:.2f}"
-            if str(integrity_status or "").lower() == LEGACY_INVALID_STATUS:
+            if status == LEGACY_INVALID_STATUS:
                 legacy_oversized.append(issue)
             else:
                 oversized.append(issue)
 
+    archive_suffix = f" ({archived} archived legacy BUY(s) excluded)" if archived else ""
     if oversized:
         _record(findings, "Position size compliance", "FAIL",
-                f"Oversized trades: {oversized[:5]}", verbose)
+                f"Oversized trades: {oversized[:5]}{archive_suffix}", verbose)
     elif legacy_oversized:
         _record(findings, "Position size compliance", "PARTIAL",
-                f"Contained legacy-invalid trades: {legacy_oversized[:5]}", verbose)
+                f"Contained legacy-invalid trades: {legacy_oversized[:5]}{archive_suffix}", verbose)
+    elif checked == 0 and archived:
+        _record(findings, "Position size compliance", "PASS",
+                f"No active BUY trades in window; {archived} archived legacy BUY(s) excluded", verbose)
     else:
         _record(findings, "Position size compliance", "PASS",
-                f"{len(rows)} BUY trade(s) checked — all within MAX_POS_PCT={MAX_POS_PCT:.0%}",
+                f"{checked} BUY trade(s) checked — all within MAX_POS_PCT={MAX_POS_PCT:.0%}{archive_suffix}",
                 verbose)
 
 

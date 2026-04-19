@@ -1304,6 +1304,63 @@ with strategy_tab:
         else:
             st.caption("No strategy artifacts registered yet. Run a backtest on a reviewed plugin to begin.")
 
+    with st.expander("Legacy Integrity Containment", expanded=False):
+        from database.integrity import (
+            archive_legacy_integrity_rows,
+            count_archivable_legacy_rows,
+            count_archived_legacy_rows,
+            unarchive_legacy_integrity_rows,
+        )
+        from database.models import SessionLocal as _LegacySession
+
+        st.caption(
+            "Contain legacy test-fixture rows from pre-Sprint-42 runs that wrote into the "
+            "live DB before pytest isolation landed. Archiving sets `integrity_status = "
+            "'archived-legacy'`, excludes the rows from the release gate, and preserves the "
+            "prior status in the note. No rows are deleted; the action is reversible."
+        )
+
+        with _LegacySession() as _legacy_sess:
+            _archivable = count_archivable_legacy_rows(_legacy_sess)
+            _archived = count_archived_legacy_rows(_legacy_sess)
+
+        _mcols = st.columns(4)
+        _mcols[0].metric("Legacy trades (active)", _archivable["trades"])
+        _mcols[1].metric("Legacy backtests (active)", _archivable["backtest_runs"])
+        _mcols[2].metric("Archived trades", _archived["trades"])
+        _mcols[3].metric("Archived backtests", _archived["backtest_runs"])
+
+        _btn_cols = st.columns(2)
+        _archive_disabled = (_archivable["trades"] + _archivable["backtest_runs"]) == 0
+        if _btn_cols[0].button(
+            "Archive legacy rows",
+            key="legacy_archive_btn",
+            disabled=_archive_disabled,
+            help="Move all currently legacy-invalid / invalid-metrics / missing-trades rows to archived-legacy.",
+        ):
+            with _LegacySession() as _sess:
+                _result = archive_legacy_integrity_rows(_sess)
+            st.success(
+                f"Archived {_result['trades']} trade row(s) and {_result['backtest_runs']} "
+                "backtest run(s) into `archived-legacy`."
+            )
+            st.rerun()
+
+        _unarchive_disabled = (_archived["trades"] + _archived["backtest_runs"]) == 0
+        if _btn_cols[1].button(
+            "Unarchive legacy rows",
+            key="legacy_unarchive_btn",
+            disabled=_unarchive_disabled,
+            help="Revert archived-legacy rows and re-classify them under current integrity rules.",
+        ):
+            with _LegacySession() as _sess:
+                _reverted = unarchive_legacy_integrity_rows(_sess)
+            st.warning(
+                f"Reverted {_reverted['trades']} trade row(s) and {_reverted['backtest_runs']} "
+                "backtest run(s) out of the archive."
+            )
+            st.rerun()
+
     with st.expander("Manual Agent Workflow", expanded=False):
         st.markdown(
             "1. Start from `strategies/_strategy_template.py` or revise a generated draft.\n"

@@ -9,7 +9,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from database.integrity import INVALID_METRICS_STATUS, LEGACY_INVALID_STATUS, MISSING_TRADES_STATUS
+from database.integrity import (
+    ARCHIVED_LEGACY_STATUS,
+    INVALID_METRICS_STATUS,
+    LEGACY_INVALID_STATUS,
+    MISSING_TRADES_STATUS,
+)
 from tools.ui_agent.data_checks import (
     _check_backtest_equity,
     _check_backtest_metrics,
@@ -180,6 +185,36 @@ def test_trade_log_legacy_invalid_sequence_is_partial():
     assert findings[0]["status"] == "PARTIAL"
 
 
+def test_trade_log_archived_legacy_is_pass():
+    findings = []
+    now = datetime.now(tz=timezone.utc)
+    rows = [
+        ("BTCUSDT", "BUY", now, ARCHIVED_LEGACY_STATUS, "[archived-legacy] ..."),
+        ("BTCUSDT", "BUY", now + timedelta(minutes=1), ARCHIVED_LEGACY_STATUS, "[archived-legacy] ..."),
+    ]
+    sess = MagicMock()
+    sess.execute.return_value.all.return_value = rows
+    _check_trade_log_integrity(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PASS"
+    assert "2 archived legacy row(s) excluded" in findings[0]["detail"]
+
+
+def test_trade_log_fresh_adjacent_to_archived_is_clean():
+    # Archived rows must reset the prev_side tracker so two legitimate trades
+    # across the archive boundary do not get falsely flagged as same-side.
+    findings = []
+    now = datetime.now(tz=timezone.utc)
+    rows = [
+        ("BTCUSDT", "BUY", now, ARCHIVED_LEGACY_STATUS, None),
+        ("BTCUSDT", "BUY", now + timedelta(minutes=1), "valid", None),
+        ("BTCUSDT", "SELL", now + timedelta(minutes=2), "valid", None),
+    ]
+    sess = MagicMock()
+    sess.execute.return_value.all.return_value = rows
+    _check_trade_log_integrity(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PASS"
+
+
 def test_trade_log_empty():
     findings = []
     sess = MagicMock()
@@ -224,6 +259,19 @@ def test_backtest_metrics_no_runs():
     sess.execute.return_value.scalars.return_value.all.return_value = []
     _check_backtest_metrics(sess, findings, verbose=False)
     assert findings[0]["status"] == "SKIP"
+
+
+def test_backtest_metrics_archived_legacy_is_pass():
+    findings = []
+    run = MagicMock()
+    run.id = 8
+    run.metrics_json = "{bad-json}"
+    run.integrity_status = ARCHIVED_LEGACY_STATUS
+    sess = MagicMock()
+    sess.execute.return_value.scalars.return_value.all.return_value = [run]
+    _check_backtest_metrics(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PASS"
+    assert "1 archived legacy run(s) excluded" in findings[0]["detail"]
 
 
 def test_backtest_metrics_legacy_invalid_json_is_partial():
@@ -273,6 +321,17 @@ def test_position_sizing_legacy_invalid_trade_is_partial():
     sess.execute.return_value.all.return_value = [("BTCUSDT", 500.0, 1.0, "BUY", LEGACY_INVALID_STATUS)]
     _check_position_sizing(sess, findings, verbose=False)
     assert findings[0]["status"] == "PARTIAL"
+
+
+def test_position_sizing_archived_legacy_trade_is_pass():
+    findings = []
+    sess = MagicMock()
+    sess.execute.return_value.all.return_value = [
+        ("BTCUSDT", 500.0, 1.0, "BUY", ARCHIVED_LEGACY_STATUS),
+    ]
+    _check_position_sizing(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PASS"
+    assert "1 archived legacy BUY(s) excluded" in findings[0]["detail"]
 
 
 def test_backtest_equity_missing_trade_rows_flagged_as_partial():
