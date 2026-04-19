@@ -146,20 +146,19 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 41 Phase 3 complete. Paper trading is armed.
+**Sprint 41 Phase 4** — Release contract via trader journey (zero failures).
 
-- Phase 1: dashboard MVP data-health gate, sidebar summary, Backtest Lab stale warning, runnable-window status
-- Phase 2: data_checks trade log integrity FAIL→PARTIAL (retag_existing=True + Trade.id tiebreaker), "Sync fresh data" button in MVP gate, concise legacy-issue output
-- Phase 3 (just closed):
-  - `rsi_mean_reversion_v1` promoted to paper (artifact #2 = `paper_active`)
-  - Strategies tab: paper/live target shown as `st.success` banner
-  - Hero area: paper-readiness advisory (green "Paper trading armed" or info "No paper target set")
-  - Inspect tab: artifact-to-paper-target badge — shows active paper/live status per run
-- Remaining data-only issues: candle freshness PARTIAL (live streamer not running), legacy trade sequences PARTIAL (test DB debt), legacy-invalid backtest run PARTIAL
-- Next priorities:
-  1. Verify trader journey 2 FAIL → PARTIAL after `_wait_for_backtest_response` fix (re-run journey)
-  2. Run smoke UI to confirm 61/61 with agent.py _count fixes
-  3. Sprint 42 planning — production deployment or live trader gate
+Phases 1–3 are complete:
+- Phase 1: MVP data-health gate, stale-data sync button, runnable-window status
+- Phase 2: trade log FAIL→PARTIAL, Trade.id tiebreaker
+- Phase 3: rsi_mean_reversion_v1 paper_active, paper readiness banners, Inspect artifact badges
+
+Phase 4 next steps (in order):
+1. Run smoke UI → verify 61/61 (`python run_ui_agent.py --ui-only --url http://localhost:8785`)
+2. Re-run trader journey → verify `_wait_for_backtest_response` fix resolves 2 FAIL (`python run_ui_agent.py --journey trader --ui-only --url http://localhost:8785`)
+3. Fix any remaining trader journey FAILs — blocked/skipped is acceptable, silent-noop is not
+4. Confirm data checks: 0 FAIL (3 PARTIAL is acceptable — candle freshness, legacy trades, run #472)
+5. Sprint 41 close: commit + push, set issue #43 → Done on board, update HANDOFF + agent_resume
 
 ## Likely Files
 
@@ -188,10 +187,11 @@ Sprint 41 Phase 3 complete. Paper trading is armed.
 - Tests: `612 passed, 4 warnings`
 - Dashboard compile: `python -m py_compile dashboard/streamlit_app.py` passes
 - Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
-- Headless dashboard startup: verified on fresh ports during Sprint 37 work
-- Latest smoke UI run: `59/61` before Phase 3 agent.py fixes; should be `61/61` after
-- Trader journey: `_wait_for_backtest_response` fix applied; re-run needed to verify 2 FAIL → resolved
-- Last sprint fully closed/pushed: `Sprint 39`
+- Smoke UI: `59/61` before agent.py `_count` fixes; expected `61/61` after (not yet re-run)
+- Trader journey: `_wait_for_backtest_response` fix applied; expected 2 FAIL → SKIP/PARTIAL (not yet re-run)
+- Data checks: 0 FAIL, 3 PARTIAL (candle freshness, legacy trades, run #472) — all acceptable
+- GitHub: Sprint 41 issue #43 = In Progress; Sprint 40 issue #42 = Done; both on board #1
+- Last sprint fully closed/pushed: Sprint 40 (local), Sprint 39 (GitHub issue closed)
 
 ## Token-Saving Rule
 
