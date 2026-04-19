@@ -1,0 +1,26 @@
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8785
+  Network URL: http://192.168.100.38:8785
+  External URL: http://223.25.63.76:8785
+
++------------------------- Traceback (most recent call last) --------------------------+
+| C:\Users\karll\AppData\Local\Programs\Python\Python310\lib\site-packages\streamlit\r |
+| untime\scriptrunner\exec_code.py:129 in exec_func_with_error_handling                |
+|                                                                                      |
+| C:\Users\karll\AppData\Local\Programs\Python\Python310\lib\site-packages\streamlit\r |
+| untime\scriptrunner\script_runner.py:689 in code_to_exec                             |
+|                                                                                      |
+| D:\trader\crypto_ai_trader\dashboard\streamlit_app.py:12 in <module>                 |
+|                                                                                      |
+|      9 import plotly.graph_objects as go                                             |
+|     10                                                                               |
+|     11 from dashboard.chart_component import render_responsive_chart                 |
+| >   12 from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD, LIVE_TRADE_ENABLED |
+|     13 from strategy.ta_features import add_indicators                               |
+|     14 from strategy.regime import detect_regime, Regime                             |
+|     15 from strategy.runtime import (                                                |
++--------------------------------------------------------------------------------------+
+ImportError: cannot import name 'MVP_FRESHNESS_MINUTES' from 'config' 
+(D:\trader\crypto_ai_trader\config.py)
