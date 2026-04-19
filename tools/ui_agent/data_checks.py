@@ -27,7 +27,11 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
-from config import POSITION_SIZE_PCT as MAX_POS_PCT, STARTING_BALANCE_USD
+from config import (
+    MVP_RESEARCH_UNIVERSE,
+    POSITION_SIZE_PCT as MAX_POS_PCT,
+    STARTING_BALANCE_USD,
+)
 from database.integrity import (
     INVALID_METRICS_STATUS,
     LEGACY_INVALID_STATUS,
@@ -92,6 +96,36 @@ def _finite(v) -> bool:
         return v is not None and not math.isnan(float(v)) and not math.isinf(float(v))
     except (TypeError, ValueError):
         return False
+
+
+def _resolve_health_symbols(
+    ready_symbols: list[str],
+    maintained_symbols: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    """Return the symbol set the release gate should actively grade.
+
+    Prefer the maintained MVP research universe when it overlaps with locally ready
+    symbols. Fall back to all ready symbols when the maintained universe has not
+    been loaded locally yet.
+    """
+    ready_clean: list[str] = []
+    ready_seen: set[str] = set()
+    for raw in ready_symbols:
+        symbol = str(raw or "").strip().upper()
+        if symbol and symbol not in ready_seen:
+            ready_seen.add(symbol)
+            ready_clean.append(symbol)
+
+    maintained_clean: list[str] = []
+    maintained_seen: set[str] = set()
+    for raw in maintained_symbols or []:
+        symbol = str(raw or "").strip().upper()
+        if symbol and symbol not in maintained_seen:
+            maintained_seen.add(symbol)
+            maintained_clean.append(symbol)
+
+    preferred = [symbol for symbol in maintained_clean if symbol in ready_seen]
+    return preferred or ready_clean
 
 
 # ── Group 1: Candle freshness ─────────────────────────────────────────────────
@@ -478,10 +512,17 @@ def run_data_checks(*, verbose: bool = True) -> list[dict]:
     """Run all data integrity checks. Returns list of finding dicts."""
     init_db()
     findings: list[dict] = []
-    symbols = list_ready_symbols()
+    ready_symbols = list_ready_symbols()
+    symbols = _resolve_health_symbols(ready_symbols, MVP_RESEARCH_UNIVERSE)
 
     if verbose:
-        print(f"\n-- Data Integrity (DB) -- [{len(symbols)} ready symbol(s)]")
+        if len(symbols) == len(ready_symbols):
+            print(f"\n-- Data Integrity (DB) -- [{len(symbols)} ready symbol(s)]")
+        else:
+            print(
+                "\n-- Data Integrity (DB) -- "
+                f"[{len(symbols)} maintained symbol(s), {len(ready_symbols)} ready symbol(s)]"
+            )
 
     with SessionLocal() as sess:
         refresh_integrity_flags(sess, retag_existing=True)

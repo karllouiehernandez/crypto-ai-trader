@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from database.models import BacktestRun, SessionLocal, init_db
+import strategy.artifacts as artifacts_module
 from strategies.loader import clear_registry, list_strategies, load_strategy_path
 from strategy.artifacts import (
     deactivate_runtime_artifact,
@@ -18,6 +19,17 @@ from strategy.artifacts import (
     validate_runtime_artifact,
 )
 from strategy.runtime import resolve_runtime_strategy_descriptor
+from tests._db_test_utils import install_temp_app_db
+
+
+@pytest.fixture(autouse=True)
+def isolate_strategy_artifact_db(monkeypatch, tmp_path):
+    install_temp_app_db(
+        monkeypatch,
+        tmp_path,
+        module_globals=globals(),
+        module_targets=[artifacts_module],
+    )
 
 
 GENERATED_DRAFT = """

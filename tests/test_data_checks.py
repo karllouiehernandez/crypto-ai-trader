@@ -19,6 +19,7 @@ from tools.ui_agent.data_checks import (
     _check_position_sizing,
     _check_trade_log_integrity,
     _finite,
+    _resolve_health_symbols,
 )
 
 
@@ -33,6 +34,22 @@ def test_finite_rejects_nan_inf_none():
     assert _finite(float("nan")) is False
     assert _finite(float("inf")) is False
     assert _finite(None) is False
+
+
+def test_resolve_health_symbols_prefers_maintained_ready_overlap():
+    result = _resolve_health_symbols(
+        ["BTCUSDT", "ETHUSDT", "BNBUSDT", "AAVEUSDT"],
+        ["ETHUSDT", "BNBUSDT", "XRPUSDT"],
+    )
+    assert result == ["ETHUSDT", "BNBUSDT"]
+
+
+def test_resolve_health_symbols_falls_back_to_all_ready_symbols():
+    result = _resolve_health_symbols(
+        ["BTCUSDT", "ETHUSDT"],
+        ["XRPUSDT", "SOLUSDT"],
+    )
+    assert result == ["BTCUSDT", "ETHUSDT"]
 
 
 # ── candle freshness ──────────────────────────────────────────────────────────

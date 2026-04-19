@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
+import backtester.service as backtester_service_module
 from backtester.service import (
     get_backtest_run,
     list_backtest_presets,
@@ -16,6 +18,17 @@ from backtester.service import (
     save_backtest_preset,
 )
 from database.models import BacktestRun, BacktestTrade, SessionLocal, init_db
+from tests._db_test_utils import install_temp_app_db
+
+
+@pytest.fixture(autouse=True)
+def isolate_backtester_service_db(monkeypatch, tmp_path):
+    install_temp_app_db(
+        monkeypatch,
+        tmp_path,
+        module_globals=globals(),
+        module_targets=[backtester_service_module],
+    )
 
 
 def test_list_backtest_runs_respects_limit():

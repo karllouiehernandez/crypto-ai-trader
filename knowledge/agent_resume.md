@@ -11,10 +11,15 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Active local hardening stream: `Sprint 40 — Production Trust Hardening`
-- Queued follow-on sprint: `Sprint 41 — Trader Minimum Product Readiness (Phased)` — GitHub issue `#43`
-- Status: Sprint 41 is now on GitHub Projects board `#1` as the phased trader-MVP continuation issue. Phase 1 is implemented locally: dashboard-visible data health gating, sidebar summary, stale-data warning in Backtest Lab, and MVP-universe runnable-window status.
-- Baseline after Phase 1 work: `pytest tests/ -q` shows `612 passed, 4 warnings`
+- Sprint 41 is closed.
+- Active local follow-on work: `Sprint 42 kickoff — trust hardening follow-on`
+- GitHub status: Sprint 42 issue is not yet opened; `HANDOFF.md` is the source of truth for the current local continuation stream.
+- Baseline after the current Sprint 42 kickoff work:
+  - `pytest tests/ -q` -> `614 passed, 4 warnings`
+  - `python run_ui_agent.py --data-only` -> `0 FAIL, 2 PARTIAL (legacy), 1 SKIP`
+  - `tools/ui_agent/data_checks.py` now grades candle freshness against the maintained MVP research universe first, instead of every symbol with any candle rows
+  - `tests/conftest.py` now redirects the full pytest session to a dedicated temp SQLite DB, so the suite no longer mutates the live workbench database
+  - The maintained MVP universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) was directly backfilled back to 30-day coverage after the earlier live-DB corruption was discovered
 
 ## Why This Exists
 
@@ -146,19 +151,14 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-**Sprint 41 Phase 4** — Release contract via trader journey (zero failures).
+**Sprint 42 kickoff** — continue from the now-aligned data-health contract instead of redoing Sprint 41.
 
-Phases 1–3 are complete:
-- Phase 1: MVP data-health gate, stale-data sync button, runnable-window status
-- Phase 2: trade log FAIL→PARTIAL, Trade.id tiebreaker
-- Phase 3: rsi_mean_reversion_v1 paper_active, paper readiness banners, Inspect artifact badges
-
-Phase 4 next steps (in order):
-1. Run smoke UI → verify 61/61 (`python run_ui_agent.py --ui-only --url http://localhost:8785`)
-2. Re-run trader journey → verify `_wait_for_backtest_response` fix resolves 2 FAIL (`python run_ui_agent.py --journey trader --ui-only --url http://localhost:8785`)
-3. Fix any remaining trader journey FAILs — blocked/skipped is acceptable, silent-noop is not
-4. Confirm data checks: 0 FAIL (3 PARTIAL is acceptable — candle freshness, legacy trades, run #472)
-5. Sprint 41 close: commit + push, set issue #43 → Done on board, update HANDOFF + agent_resume
+Next steps:
+1. Keep paper runtime under observation and verify `run_live.py --paper` advances the active paper target (`rsi_mean_reversion_v1`) with fresh candles and first real paper trades
+2. Decide how to handle the remaining legacy integrity PARTIALs (`Trade` same-side legacy rows and one invalid-metrics backtest run)
+3. Decide whether non-maintained ready symbols should auto-refresh or remain explicitly research-only, so the product contract stays honest
+4. Open the formal Sprint 42 GitHub issue/board item once the next slice is clearly defined
+5. Keep `HANDOFF.md` current; this file should stay compact and secondary
 
 ## Likely Files
 
@@ -184,14 +184,15 @@ Phase 4 next steps (in order):
 
 ## Last Verified State
 
-- Tests: `612 passed, 4 warnings`
-- Dashboard compile: `python -m py_compile dashboard/streamlit_app.py` passes
+- Tests: `614 passed, 4 warnings`
+- Data checks: `0 FAIL, 2 PARTIAL, 1 SKIP`
+- Smoke UI: `60/64 passed, 0 FAIL, 0 PARTIAL, 4 SKIP` on the currently running dashboard instance
+- Dashboard compile: `python -m py_compile dashboard/streamlit_app.py` previously passed; not rechecked in this kickoff slice
 - Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
-- Smoke UI: `59/61` before agent.py `_count` fixes; expected `61/61` after (not yet re-run)
-- Trader journey: `_wait_for_backtest_response` fix applied; expected 2 FAIL → SKIP/PARTIAL (not yet re-run)
-- Data checks: 0 FAIL, 3 PARTIAL (candle freshness, legacy trades, run #472) — all acceptable
-- GitHub: Sprint 41 issue #43 = In Progress; Sprint 40 issue #42 = Done; both on board #1
-- Last sprint fully closed/pushed: Sprint 40 (local), Sprint 39 (GitHub issue closed)
+- Freshness contract: maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) now passes freshness; stale exploratory symbols no longer create false freshness PARTIALs
+- Test isolation: full `pytest` now runs against a temp DB and no longer wipes live candles, artifacts, or app settings
+- Maintained-universe recovery: `BTCUSDT`, `ETHUSDT`, `BNBUSDT` each restored to `43201` local 1m candles
+- GitHub: Sprint 41 issue `#43` was reported as Done by the prior agent; Sprint 42 issue not yet created
 
 ## Token-Saving Rule
 

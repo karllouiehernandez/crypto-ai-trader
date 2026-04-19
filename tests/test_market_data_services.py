@@ -7,7 +7,12 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from database.models import AppSetting, Candle, SessionLocal, SymbolLoadJob, init_db
+from market_data import history as history_module
+from market_data import runtime_watchlist as runtime_watchlist_module
+from market_data import symbol_readiness as symbol_readiness_module
 from market_data.binance_symbols import list_binance_spot_usdt_symbol_names, list_binance_spot_usdt_symbols
 from market_data.history import _download_archive_day, audit, backfill, sync_recent
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
@@ -18,6 +23,21 @@ from market_data.symbol_readiness import (
     queue_symbol_load,
     retry_failed_load,
 )
+from tests._db_test_utils import install_temp_app_db
+
+
+@pytest.fixture(autouse=True)
+def isolate_market_data_db(monkeypatch, tmp_path):
+    install_temp_app_db(
+        monkeypatch,
+        tmp_path,
+        module_globals=globals(),
+        module_targets=[
+            history_module,
+            runtime_watchlist_module,
+            symbol_readiness_module,
+        ],
+    )
 
 
 def _clear_market_data_state() -> None:

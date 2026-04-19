@@ -9,11 +9,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-19 (Sprint 41 all phases complete — all gates green) |
-| **Active sprint** | Sprint 41 — `#43` — ready to close (all acceptance criteria met) |
+| **Last active agent** | Codex |
+| **Last updated** | 2026-04-19 (Sprint 42 kickoff: data-health alignment + pytest DB isolation + MVP data restored) |
+| **Active sprint** | Sprint 42 kickoff — trust hardening follow-on (GitHub sprint issue not yet opened) |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **612 passed, 4 warnings** |
+| **Tests** | `pytest tests/ -q` → **614 passed, 4 warnings** |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -21,10 +21,31 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 (Sprint 41 Complete)
+## Resume Here — Sprint 42 Kickoff
 
-Sprint 41 is **done**. Close issue #43 on GitHub if not already done, then plan Sprint 42.
+Sprint 41 is closed. Sprint 42 is not yet opened as a GitHub issue, but local follow-on work has started.
 
+### Fresh progress after Sprint 41 close
+
+| Check | Result |
+|------|--------|
+| `pytest tests/ -q` | **614 passed, 4 warnings** ✅ |
+| Data checks (`--data-only`) | **0 FAIL, 2 PARTIAL (legacy), 1 SKIP** ✅ |
+| Health-gate alignment | **Fixed** — data checks now grade freshness against the maintained MVP universe first, so stale non-maintained symbols no longer create false freshness PARTIALs |
+| Pytest DB isolation | **Fixed** — test suite now runs against a dedicated temp SQLite DB and no longer mutates the live workbench database |
+| MVP data recovery | **Restored** — `BTCUSDT`, `ETHUSDT`, `BNBUSDT` backfilled to 30 days (`43201` 1m candles each), artifact registry re-synced, paper target re-armed |
+
+### Why this mattered
+
+The dashboard MVP data gate already uses the maintained research universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT` by default), but `tools/ui_agent/data_checks.py` was still grading candle freshness against every symbol with any local candles. That created false PARTIALs whenever older exploratory symbols such as `AAVEUSDT` or `LINKUSDT` aged out, even though the maintained universe was fresh.
+
+### Next priorities
+
+1. **Paper trader forward evaluation** — keep `run_live.py --paper` running on the current paper target (`rsi_mean_reversion_v1`) and capture first real paper trades
+2. **Live trader gate** — establish the `paper_passed` → `live_approved` path with real paper evidence
+3. **Legacy integrity cleanup** — the remaining data-check PARTIALs are legacy trade-sequence rows and one legacy-invalid backtest metrics row; decide whether to repair, archive, or surface them more explicitly
+4. **Maintained universe policy** — decide whether extra ready symbols should auto-refresh, or remain research-only and outside the release health gate
+5. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–41 plus this Sprint 42 kickoff fix
 ### Sprint 41 Final Verification (all gates green)
 
 | Gate | Result |
@@ -37,14 +58,6 @@ Sprint 41 is **done**. Close issue #43 on GitHub if not already done, then plan 
 | Runtime monitor after promotion | **PASS** ✅ |
 
 All 7 journey PARTIALs are "Backtest blocked — dashboard showed explicit history-incomplete error" which is the correct, expected behavior (not silent no-ops).
-
-### Sprint 42 — Next Priorities
-
-Check GitHub Projects board `#1` for queued issues. Likely candidates:
-1. **Paper trader forward evaluation** — start `run_live.py --paper` and monitor the `rsi_mean_reversion_v1` artifact through its first real trades
-2. **Live trader gate** — establish the `paper_passed` → `live_approved` path with real paper forward results
-3. **Candle freshness fix** — get the live streamer running continuously so data checks show 0 PARTIAL for freshness
-4. **Merge to master** — the branch `codex/sprint-27-responsive-chart` has all Sprint 27–41 work; open a PR to master
 
 ---
 
@@ -121,6 +134,11 @@ Strategy artifacts (DB):
 
 Paper target: artifact_id=2 (rsi_mean_reversion_v1)
 Live target:  None
+
+Maintained MVP universe:
+  BTCUSDT  43201 candles (30d restored)
+  ETHUSDT  43201 candles (30d restored)
+  BNBUSDT  43201 candles (30d restored)
 ```
 
 To verify: `python -c "from strategy.artifacts import list_all_strategy_artifacts, get_active_runtime_artifact_id; print(list_all_strategy_artifacts()); print('paper:', get_active_runtime_artifact_id('paper'))"`
