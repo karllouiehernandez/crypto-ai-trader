@@ -10,7 +10,7 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-19 (Sprint 42 Priority #2: deterministic paper-evidence gate landed, live DB intact) |
+| **Last updated** | 2026-04-19 (Sprint 42 Priority #1 follow-up: duplicate `run_live.py` resolved as venv launcher + child, not a race) |
 | **Active sprint** | Sprint 42 kickoff — trust hardening follow-on (GitHub sprint issue not yet opened) |
 | **Sprint 40** | `#42` — Done on board |
 | **Tests** | `pytest tests/ -q` → **624 passed, 4 warnings** (+10 new in `tests/test_paper_evaluation.py`) |
@@ -74,10 +74,10 @@ The dashboard MVP data gate already uses the maintained research universe (`BTCU
 
 ### Next priorities
 
-1. **Paper trader forward evaluation** — keep `run_live.py --paper` running on the current paper target (`rsi_mean_reversion_v1`) and capture first real paper trades
-   - **Status (2026-04-19 12:25 UTC)**: paper runtime is armed and healthy. Portfolio snapshots tagged `artifact_id=2 / rsi_mean_reversion_v1` are being written every minute; maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) candles are fresh to the current minute; balance/equity flat at `$100` (no entries yet — RSI mean-reversion requires RSI<30 + BB lower touch + MACD cross, entries are sparse).
-   - **Known ops concern**: two concurrent `run_live.py` processes are running (PIDs `2616` and `11744`, both started within 6 ms at 16:41:30 local). They share one DB and will race on trade writes once a signal fires. Needs user decision on which to terminate — Claude will not kill processes unilaterally.
-   - **No paper trades on artifact #2 yet**. The existing 1,253 paper trades in the DB predate artifact tagging (`artifact_id=NULL`) and are not evidence for the paper→live gate.
+1. **Paper trader forward evaluation** — keep `run_live.py` running on the current paper target (`rsi_mean_reversion_v1`) and capture first real paper trades
+   - **Status (2026-04-19 12:57 UTC)**: paper runtime is armed and healthy. Portfolio snapshots tagged `artifact_id=2 / rsi_mean_reversion_v1` are being written every minute; maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) candles are fresh to the current minute; balance/equity flat at `$100` (no entries yet — RSI mean-reversion requires RSI<30 + BB lower touch + MACD cross, entries are sparse).
+   - **"Duplicate `run_live.py`" concern — RESOLVED, was a false alarm.** PIDs `2616` and `11744` are a parent/child pair, not two concurrent launches: `2616` is the venv launcher stub (`D:\trader\Scripts\python.exe`, 1 thread, 3.3MB WS, 0 CPU) that re-execs into the real interpreter `11744` (`...\Python310\python.exe`, 18 threads, 135MB WS, 314 CPU sec). `Win32_Process.ParentProcessId(11744) = 2616`. Only one trader is doing work; snapshot write rate is 1/min (single writer). **Do not kill `2616`** — that would take the real trader `11744` down with it.
+   - **No paper trades on artifact #2 yet**. The existing ~1,500 pre-existing paper trades in the DB predate artifact tagging (`artifact_id=NULL`) and are correctly excluded from the paper→live evidence gate by design.
 2. **Live trader gate** — establish the `paper_passed` → `live_approved` path with real paper evidence
    - **Status (2026-04-19, Claude Code)**: deterministic, non-LLM evidence gate now lives in [strategy/paper_evaluation.py](strategy/paper_evaluation.py). `evaluate_paper_evidence(artifact_id)` reads the actual `Trade` rows tagged with the artifact (run_mode='paper', side='SELL') and grades against `PaperEvidenceThresholds` (default: ≥20 trades, ≥3 days runtime, Sharpe ≥1.5, profit factor ≥1.5, max drawdown ≤20%).
    - [strategy/artifacts.py:308](strategy/artifacts.py#L308) `mark_artifact_paper_passed` now **requires** a passing evidence result by default; the LLM coordinator path in [simulator/coordinator.py:99](simulator/coordinator.py#L99) explicitly passes `force=True` so its own confidence gate stays authoritative.
