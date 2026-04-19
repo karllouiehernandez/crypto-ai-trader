@@ -146,15 +146,20 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 41 Phase 2 complete. Next: Phase 3 — trader path toward reviewed artifact + paper readiness.
+Sprint 41 Phase 3 complete. Paper trading is armed.
 
 - Phase 1: dashboard MVP data-health gate, sidebar summary, Backtest Lab stale warning, runnable-window status
 - Phase 2: data_checks trade log integrity FAIL→PARTIAL (retag_existing=True + Trade.id tiebreaker), "Sync fresh data" button in MVP gate, concise legacy-issue output
+- Phase 3 (just closed):
+  - `rsi_mean_reversion_v1` promoted to paper (artifact #2 = `paper_active`)
+  - Strategies tab: paper/live target shown as `st.success` banner
+  - Hero area: paper-readiness advisory (green "Paper trading armed" or info "No paper target set")
+  - Inspect tab: artifact-to-paper-target badge — shows active paper/live status per run
 - Remaining data-only issues: candle freshness PARTIAL (live streamer not running), legacy trade sequences PARTIAL (test DB debt), legacy-invalid backtest run PARTIAL
-- Phase 3 priorities:
-  1. At least one reviewed strategy with a saved passing backtest
-  2. Inspect-complete audit surface for all saved runs
-  3. Clear paper target readiness signal when reviewed strategy has passed backtest
+- Next priorities:
+  1. Verify trader journey 2 FAIL → PARTIAL after `_wait_for_backtest_response` fix (re-run journey)
+  2. Run smoke UI to confirm 61/61 with agent.py _count fixes
+  3. Sprint 42 planning — production deployment or live trader gate
 
 ## Likely Files
 
@@ -181,9 +186,11 @@ Sprint 41 Phase 2 complete. Next: Phase 3 — trader path toward reviewed artifa
 ## Last Verified State
 
 - Tests: `612 passed, 4 warnings`
+- Dashboard compile: `python -m py_compile dashboard/streamlit_app.py` passes
+- Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
 - Headless dashboard startup: verified on fresh ports during Sprint 37 work
-- Latest smoke UI run: `60/61`
-- Trader journey run: completes and writes a report with operator concerns instead of failing at harness level
+- Latest smoke UI run: `59/61` before Phase 3 agent.py fixes; should be `61/61` after
+- Trader journey: `_wait_for_backtest_response` fix applied; re-run needed to verify 2 FAIL → resolved
 - Last sprint fully closed/pushed: `Sprint 39`
 
 ## Token-Saving Rule

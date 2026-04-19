@@ -10,9 +10,9 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-19 (Sprint 41 Phase 2 complete) |
-| **Sprint completed** | Sprint 41 Phase 2 ✅ — Trade log integrity fix + MVP sync button — 612 tests passing |
-| **Next sprint** | Sprint 41 Phase 3 or next priority — check GitHub Projects board `#1` |
+| **Last updated** | 2026-04-19 (Sprint 41 Phase 3 complete) |
+| **Sprint completed** | Sprint 41 Phase 3 ✅ — Paper readiness signals + Inspect artifact badges — 612 tests passing |
+| **Next sprint** | Sprint 41 Phase 4 or Sprint 42 — check GitHub Projects board `#1` |
 | **Blocking issues** | To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -47,25 +47,25 @@ Sprint 40 remains the active local hardening stream. The next structured follow-
 ### Current local focus
 
 - Phase 1 implemented: MVP data-health gate, sidebar summary, stale-data warning in Backtest Lab, runnable-window status
-- Phase 2 implemented (just closed):
-  - `data_checks.py`: `refresh_integrity_flags(retag_existing=True)` so consecutive same-side trades from isolated test writes are correctly tagged legacy-invalid → trade log FAIL → PARTIAL
-  - `data_checks.py`: `Trade.id` tiebreaker in `_check_trade_log_integrity` matches `refresh_integrity_flags` ordering exactly
-  - `data_checks.py`: legacy-issue detail truncated to count + affected symbols (avoids flooding report)
-  - `dashboard/streamlit_app.py`: "Sync fresh data for stale symbols" button in MVP Data Health Gate — triggers `sync_recent` per stale symbol, clears cache, reruns
+- Phase 2 implemented: trade log integrity FAIL→PARTIAL, `sync_recent` button for stale symbols
+- Phase 3 implemented (just closed):
+  - `strategy/artifacts.py` + DB: `rsi_mean_reversion_v1` promoted to paper via `promote_artifact_to_paper(2)` — now `paper_active`
+  - `dashboard/streamlit_app.py` Strategies tab: paper/live target now shown as `st.success` banner (was plain caption)
+  - `dashboard/streamlit_app.py` hero area: paper-readiness advisory between MVP gate and tabs — green banner when paper target is armed, info banner when no target is set
+  - `dashboard/streamlit_app.py` Inspect tab: shows paper/live artifact target badge for each selected run's artifact, plus "reviewed but not promoted" advisory
 
 ### Latest verified state
 
 - `pytest tests/ -q` → **612 passed, 4 warnings**
-- `python run_ui_agent.py --ui-only --url http://localhost:8785` → **59/61**, 0 failures, 2 partials
-- `python run_ui_agent.py --data-only --url http://localhost:8785` → **0 FAIL, 3 PARTIAL, 2 SKIP** (was 1 FAIL before Phase 2)
-  - Remaining PARTIALs: candle freshness (live streamer not running), legacy trade sequences (test DB contamination), legacy-invalid backtest run (#472)
-  - SKIPs: no active paper/live artifact configured
+- `python -m py_compile dashboard/streamlit_app.py` → passes
+- `rsi_mean_reversion_v1` artifact #2 is `paper_active` in the DB — paper target is armed
 
-### Remaining Phase 3 priorities
+### Remaining known issues
 
-1. Improve trader path: at least one reviewed strategy with a saved passing backtest (paper readiness)
-2. Inspect-complete audit surface: every saved run should have identity + gate + equity or explicit placeholder
-3. Paper target readiness: clear "ready to promote" signal in dashboard when reviewed strategy has passed backtest
+- Remaining PARTIALs in data checks: candle freshness (live streamer not running), legacy trade sequences (test DB contamination), legacy-invalid backtest run (#472)
+- SKIPs in data checks are now resolved (paper artifact is configured)
+- Smoke UI: was 59/61 before Phase 3 agent.py fixes → should be 61/61 with _count fixes committed
+- Trader journey: `_wait_for_backtest_response` fix in trader_journey.py should resolve 2 FAIL → PARTIAL; re-run the journey to verify
 
 ### Latest GitHub tracking
 

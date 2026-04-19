@@ -1182,6 +1182,19 @@ if active_live_artifact and runtime_target_summary["live"]["error"]:
 if _real_issues:
     st.warning("⚠ Runtime target validation failed. See **Promotion Control Panel** in the Strategies tab.  \n" + "  \n".join(_real_issues))
 
+if active_paper_artifact and not runtime_target_summary["paper"]["error"]:
+    _paper_name = active_paper_artifact.get("name", "?")
+    _paper_status = str(active_paper_artifact.get("status") or "").lower()
+    st.success(
+        f"Paper trading armed — `{_paper_name}` is the active paper strategy "
+        f"(status: `{_paper_status}`). Start the paper trader to begin forward evaluation."
+    )
+elif not active_paper_artifact:
+    st.info(
+        "No paper target set. Run a backtest for a reviewed plugin strategy, then promote it to paper "
+        "from the Strategies tab to arm paper trading."
+    )
+
 strategy_tab, backtest_tab, runtime_tab, focus_tab, inspect_tab, diary_tab = st.tabs(
     ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect", "Trading Diary"]
 )
@@ -1523,9 +1536,9 @@ with strategy_tab:
         _is_paper_target = bool(selected_meta.get("active_paper_artifact"))
         _is_live_target = bool(selected_meta.get("active_live_artifact"))
         if _is_paper_target:
-            st.caption(f"This strategy (`{selected_strategy}`) **is** the current paper trading target.")
+            st.success(f"Paper target active — `{selected_strategy}` is the current paper trading strategy.")
         if _is_live_target:
-            st.caption(f"This strategy (`{selected_strategy}`) **is** the current live trading target.")
+            st.success(f"Live target active — `{selected_strategy}` is the current live trading strategy.")
         if selected_meta.get("is_generated"):
             st.caption(
                 "**Promote to Paper / Approve for Live are disabled** for generated drafts. "
@@ -2284,6 +2297,13 @@ with inspect_tab:
                 f"hash `{str(selected_run.get('strategy_code_hash') or '')[:12] or '—'}`"
             )
             st.caption(artifact_caption)
+            _run_artifact_id = selected_run.get("artifact_id")
+            if _run_artifact_id and int(_run_artifact_id) == (_paper_artifact_id or -1):
+                st.success(f"This run's artifact is the **active paper target** (artifact #{_run_artifact_id}).")
+            elif _run_artifact_id and int(_run_artifact_id) == (_live_artifact_id or -1):
+                st.success(f"This run's artifact is the **active live target** (artifact #{_run_artifact_id}).")
+            elif _run_artifact_id and run_artifact and str(run_artifact.get("status") or "").lower() in {"reviewed", "backtest_passed"}:
+                st.info(f"Artifact #{_run_artifact_id} is reviewed but not yet promoted to paper. Use the Strategies tab to promote it.")
             st.caption(f"Integrity: **{integrity_label(run_integrity_status)}**")
             if run_integrity_status != "valid":
                 warning_text = f"Saved run integrity warning: {integrity_label(run_integrity_status)}."
