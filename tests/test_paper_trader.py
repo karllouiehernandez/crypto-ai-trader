@@ -9,6 +9,7 @@ run with zero I/O.
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch, call
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,7 +17,7 @@ from simulator.paper_trader import PaperTrader
 from strategy.regime import Regime
 from strategy.runtime import StrategyDecision
 from strategy.signals import Signal
-from config import POSITION_SIZE_PCT, FEE_RATE
+from config import POSITION_SIZE_PCT, FEE_RATE, STARTING_BALANCE_USD
 
 
 # ── fixtures ───────────────────────────────────────────────────────────────────
@@ -35,6 +36,18 @@ def _session_returning(candle):
     mock_query.filter.return_value = mock_query
     mock_query.order_by.return_value = mock_query
     mock_query.first.return_value = candle
+
+    mock_sess = MagicMock()
+    mock_sess.query.return_value = mock_query
+    mock_sess.__enter__ = MagicMock(return_value=mock_sess)
+    mock_sess.__exit__ = MagicMock(return_value=False)
+    return mock_sess
+
+
+def _session_with_trades(trades):
+    mock_query = MagicMock()
+    mock_query.order_by.return_value = mock_query
+    mock_query.all.return_value = list(trades)
 
     mock_sess = MagicMock()
     mock_sess.query.return_value = mock_query
@@ -121,16 +134,32 @@ class TestAutoBuy:
         assert trader.cash == pytest.approx(initial_cash)
 
     @pytest.mark.asyncio
-    async def test_auto_buy_accumulates_positions(self):
-        """Two buys accumulate qty in the same symbol."""
+    async def test_auto_buy_skips_duplicate_buy_when_position_open(self):
+        """Normal paper flow should not stack another BUY into an open position."""
         trader = PaperTrader()
+        initial_cash = trader.cash
 
         with patch("simulator.paper_trader.send_telegram_alert"):
             await trader._auto_buy("BTCUSDT", 100.0)
             qty_after_first = trader.positions.get("BTCUSDT", 0)
+            cash_after_first = trader.cash
             await trader._auto_buy("BTCUSDT", 100.0)
 
-        assert trader.positions["BTCUSDT"] > qty_after_first
+        assert trader.positions["BTCUSDT"] == qty_after_first
+        assert trader.cash == cash_after_first
+        assert trader.cash < initial_cash
+
+    @pytest.mark.asyncio
+    async def test_auto_buy_caps_notional_to_position_size_limit(self):
+        trader = PaperTrader()
+        price = 100.0
+        atr = 0.1  # would imply a much larger ATR-sized position without the cap
+
+        with patch("simulator.paper_trader.send_telegram_alert"):
+            await trader._auto_buy("BTCUSDT", price, atr=atr)
+
+        max_notional = STARTING_BALANCE_USD * POSITION_SIZE_PCT
+        assert trader.positions["BTCUSDT"] * price == pytest.approx(max_notional, rel=1e-6)
 
 
 # ── _auto_sell ────────────────────────────────────────────────────────────────
@@ -373,9 +402,8 @@ class TestRiskIntegration:
         """When ATR is provided, position size should come from atr_position_size()."""
         trader = PaperTrader()
         from strategy.risk import atr_position_size
-        from config import STARTING_BALANCE_USD
 
-        price = 100.0
+        price = 1.0
         atr   = 2.0
         expected_qty = atr_position_size(STARTING_BALANCE_USD, atr)
 
@@ -447,3 +475,46 @@ class TestStatusSnapshot:
             await trader._auto_buy("BTCUSDT", 100.0)
 
         assert trader._last_trade_ts is not None
+
+
+class TestRuntimeStateRestore:
+    def test_restore_runtime_state_rebuilds_open_position(self):
+        trade_ts = datetime(2026, 4, 19, 4, 30, tzinfo=timezone.utc)
+        persisted_trade = SimpleNamespace(
+            ts=trade_ts,
+            id=1,
+            symbol="BTCUSDT",
+            side="BUY",
+            qty=1.0,
+            price=100.0,
+            fee=0.1,
+            pnl=0.0,
+            artifact_id=None,
+            strategy_name="regime_router_v1",
+            run_mode="paper",
+        )
+        session = _session_with_trades([persisted_trade])
+
+        with patch("simulator.paper_trader.SessionLocal", return_value=session):
+            trader = PaperTrader(
+                strategy_descriptor={"strategy_name": "regime_router_v1"},
+                restore_runtime_state=True,
+            )
+
+        assert trader.positions == {"BTCUSDT": 1.0}
+        assert trader.cost_basis["BTCUSDT"] == pytest.approx(100.1)
+        assert trader.cash == pytest.approx(STARTING_BALANCE_USD - 100.1)
+        assert trader._last_trade_ts == trade_ts
+
+    @pytest.mark.asyncio
+    async def test_auto_buy_skips_when_persisted_history_already_ends_with_buy(self):
+        trader = PaperTrader()
+
+        with patch.object(trader, "_would_duplicate_persisted_side", return_value=True), \
+             patch.object(trader, "_restore_runtime_state") as mock_restore, \
+             patch("simulator.paper_trader.send_telegram_alert"):
+            await trader._auto_buy("BTCUSDT", 100.0)
+
+        assert trader.positions == {}
+        assert trader.cost_basis == {}
+        mock_restore.assert_called_once()

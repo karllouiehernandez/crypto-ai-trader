@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from llm.cache import _default_cache
-from llm.client import LLMResponse, call_llm, reset_clients
+from llm.client import LLMResponse, call_llm, get_generation_readiness, reset_clients
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +25,33 @@ def test_returns_fallback_when_disabled():
         resp = call_llm("sys", "user")
     assert resp.fallback is True
     assert resp.content == ""
+
+
+def test_generation_readiness_disabled_when_flag_false():
+    with patch("llm.client.LLM_ENABLED", False), \
+         patch("llm.client.LLM_PROVIDER", "groq"), \
+         patch("llm.client.GROQ_API_KEY", "gsk-test"):
+        readiness = get_generation_readiness()
+    assert readiness["ready"] is False
+    assert readiness["enabled"] is False
+
+
+def test_generation_readiness_disabled_when_provider_key_missing():
+    with patch("llm.client.LLM_ENABLED", True), \
+         patch("llm.client.LLM_PROVIDER", "groq"), \
+         patch("llm.client.GROQ_API_KEY", ""):
+        readiness = get_generation_readiness()
+    assert readiness["ready"] is False
+    assert readiness["missing_env_var"] == "GROQ_API_KEY"
+
+
+def test_generation_readiness_enabled_only_when_provider_has_key():
+    with patch("llm.client.LLM_ENABLED", True), \
+         patch("llm.client.LLM_PROVIDER", "openrouter"), \
+         patch("llm.client.OPENROUTER_API_KEY", "sk-or-test"):
+        readiness = get_generation_readiness()
+    assert readiness["ready"] is True
+    assert readiness["status_label"] == "Configured"
 
 
 # ── Anthropic provider ────────────────────────────────────────────────────

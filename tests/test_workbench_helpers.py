@@ -9,6 +9,7 @@ from dashboard.workbench import (
     build_artifact_registry_frame,
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
+    build_data_health_frame,
     build_runtime_target_summary,
     build_trader_summary,
     build_strategy_comparison_frame,
@@ -31,6 +32,7 @@ from dashboard.workbench import (
     parse_metrics_json,
     parse_params_json,
     runtime_mode_table,
+    summarise_data_health,
     strategy_workflow_status,
     runtime_summary,
 )
@@ -92,6 +94,97 @@ def test_get_strategy_source_code_no_path_returns_placeholder():
     item = {"name": "builtin_test", "path": ""}
     source = get_strategy_source_code(item)
     assert "builtin_test" in source and "not available" in source
+
+
+def test_build_data_health_frame_formats_targeted_and_runnable_states():
+    frame = build_data_health_frame(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "latest_candle_ts": "2026-04-19T01:02:03+00:00",
+                "age_minutes": 8,
+                "is_fresh": True,
+                "has_min_history": True,
+                "latest_window_start": "2026-03-20",
+                "latest_window_end": "2026-04-19",
+                "window_runnable": True,
+            },
+            {
+                "symbol": "XRPUSDT",
+                "latest_candle_ts": None,
+                "age_minutes": None,
+                "is_fresh": False,
+                "has_min_history": None,
+                "latest_window_start": None,
+                "latest_window_end": None,
+                "window_runnable": None,
+            },
+        ]
+    )
+    assert frame.loc[0, "symbol"] == "BTCUSDT"
+    assert frame.loc[0, "fresh"] == "Yes"
+    assert frame.loc[0, "window_runnable"] == "Runnable"
+    assert frame.loc[1, "history_30d"] == "Targeted"
+    assert frame.loc[1, "window_runnable"] == "Not audited"
+
+
+def test_summarise_data_health_flags_release_blockers():
+    summary = summarise_data_health(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "age_minutes": 5,
+                "is_fresh": True,
+                "has_min_history": True,
+                "window_runnable": True,
+            },
+            {
+                "symbol": "ETHUSDT",
+                "age_minutes": 25,
+                "is_fresh": False,
+                "has_min_history": False,
+                "window_runnable": False,
+            },
+        ],
+        ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+        freshness_minutes=10,
+    )
+    assert summary["release_blocked"] is True
+    assert summary["mvp_missing_symbols"] == ["BNBUSDT"]
+    assert "ETHUSDT" in summary["mvp_stale_symbols"]
+    assert "ETHUSDT" in summary["mvp_not_runnable_symbols"]
+
+
+def test_summarise_data_health_passes_when_mvp_universe_is_ready():
+    summary = summarise_data_health(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "age_minutes": 2,
+                "is_fresh": True,
+                "has_min_history": True,
+                "window_runnable": True,
+            },
+            {
+                "symbol": "ETHUSDT",
+                "age_minutes": 3,
+                "is_fresh": True,
+                "has_min_history": True,
+                "window_runnable": True,
+            },
+            {
+                "symbol": "BNBUSDT",
+                "age_minutes": 4,
+                "is_fresh": True,
+                "has_min_history": True,
+                "window_runnable": True,
+            },
+        ],
+        ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+        freshness_minutes=10,
+    )
+    assert summary["release_blocked"] is False
+    assert summary["mvp_runnable_count"] == 3
 
 
 def test_compute_drawdown_curve_tracks_peak_to_trough():

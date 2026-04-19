@@ -49,6 +49,57 @@ _FALLBACK = LLMResponse(content="", fallback=True)
 _anthropic_client = None
 _openai_client = None   # used for both groq and openrouter
 
+_PROVIDER_KEY_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+
+def _provider_api_key(provider: str) -> str:
+    provider = str(provider or "").strip().lower()
+    if provider == "anthropic":
+        return str(ANTHROPIC_API_KEY or "")
+    if provider == "groq":
+        return str(GROQ_API_KEY or "")
+    if provider == "openrouter":
+        return str(OPENROUTER_API_KEY or "")
+    return ""
+
+
+def get_generation_readiness() -> dict[str, object]:
+    """Return the current dashboard generation readiness state."""
+    provider = str(LLM_PROVIDER or "").strip().lower()
+    env_var = _PROVIDER_KEY_ENV.get(provider)
+    enabled = bool(LLM_ENABLED)
+    has_key = bool(_provider_api_key(provider))
+    supported_provider = env_var is not None
+    ready = enabled and supported_provider and has_key
+
+    if not enabled:
+        reason = "LLM generation is disabled in config."
+        missing_env_var = None
+    elif not supported_provider:
+        reason = f"Unsupported LLM provider `{provider or 'unknown'}`."
+        missing_env_var = None
+    elif not has_key:
+        reason = f"Missing provider credential: {env_var}."
+        missing_env_var = env_var
+    else:
+        reason = "Generation backend is ready."
+        missing_env_var = None
+
+    return {
+        "enabled": enabled,
+        "provider": provider or "unknown",
+        "model": str(LLM_MODEL or ""),
+        "configured": supported_provider and has_key,
+        "ready": ready,
+        "missing_env_var": missing_env_var,
+        "reason": reason,
+        "status_label": "Configured" if ready else "Unconfigured",
+    }
+
 
 def _get_anthropic():
     global _anthropic_client

@@ -66,6 +66,14 @@ SYMBOLS: List[str] = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
 HIST_INTERVAL      = "1m"   # candle interval for history
 LIVE_POLL_SECONDS  = 1      # real-time ticker poll
 
+MVP_RESEARCH_UNIVERSE: List[str] = [
+    symbol.strip().upper()
+    for symbol in os.environ.get("MVP_RESEARCH_UNIVERSE", ",".join(SYMBOLS)).split(",")
+    if symbol.strip()
+]
+MVP_FRESHNESS_MINUTES = int(os.environ.get("MVP_FRESHNESS_MINUTES", "10"))
+MVP_MIN_HISTORY_DAYS  = int(os.environ.get("MVP_MIN_HISTORY_DAYS", "30"))
+
 # Jetson Nano overrides — set via .env to reduce memory footprint
 # MAX_SYMBOLS=1 limits to the first symbol; 0 = no limit (default)
 _MAX_SYMBOLS = int(os.environ.get("MAX_SYMBOLS", "0"))

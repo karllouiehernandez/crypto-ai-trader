@@ -78,28 +78,71 @@ def _active_panel(page: Page) -> Locator:
     return page.locator("[role='tabpanel']:visible").first
 
 
+def _labels(label: str | list[str] | tuple[str, ...]) -> list[str]:
+    if isinstance(label, str):
+        return [label]
+    return [str(item) for item in label if str(item).strip()]
+
+
 def _goto_tab(page: Page, name: str) -> bool:
-    try:
-        page.get_by_role("tab", name=name).click(timeout=_SHORT)
-        time.sleep(_RERENDER)
-        return True
-    except Exception:
+    selectors = [
+        lambda: page.get_by_role("tab", name=name).first,
+        lambda: page.get_by_text(name, exact=True).first,
+    ]
+    for _ in range(4):
+        for locator_factory in selectors:
+            for use_force in (False, True):
+                try:
+                    if use_force:
+                        page.keyboard.press("Escape")
+                    locator_factory().click(timeout=_SHORT, force=use_force)
+                    time.sleep(_RERENDER)
+                    return True
+                except Exception:
+                    continue
+        time.sleep(1.0)
+    return False
+
+
+def _find_selectbox(scope: Locator | Page, page: Page, label: str | list[str] | tuple[str, ...]) -> Locator:
+    for candidate in _labels(label):
+        widget = scope.locator("[data-testid='stSelectbox']").filter(has_text=candidate).first
         try:
-            page.keyboard.press("Escape")
-            page.get_by_role("tab", name=name).click(timeout=_SHORT, force=True)
-            time.sleep(_RERENDER)
-            return True
+            if widget.count() > 0:
+                return widget
         except Exception:
-            return False
+            continue
+    for candidate in _labels(label):
+        widget = page.locator("[data-testid='stSelectbox']").filter(has_text=candidate).first
+        try:
+            if widget.count() > 0:
+                return widget
+        except Exception:
+            continue
+    return scope.locator("[data-testid='stSelectbox']").filter(has_text=_labels(label)[0]).first
 
 
-def _find_selectbox(scope: Locator | Page, label: str) -> Locator:
-    return scope.locator("[data-testid='stSelectbox']").filter(has_text=label).first
+def _find_date_input(scope: Locator | Page, page: Page, label: str | list[str] | tuple[str, ...]) -> Locator:
+    for candidate in _labels(label):
+        widget = scope.locator("[data-testid='stDateInput']").filter(has_text=candidate).first
+        try:
+            if widget.count() > 0:
+                return widget
+        except Exception:
+            continue
+    for candidate in _labels(label):
+        widget = page.locator("[data-testid='stDateInput']").filter(has_text=candidate).first
+        try:
+            if widget.count() > 0:
+                return widget
+        except Exception:
+            continue
+    return scope.locator("[data-testid='stDateInput']").filter(has_text=_labels(label)[0]).first
 
 
-def _selectbox_options(scope: Locator | Page, page: Page, label: str) -> list[str]:
+def _selectbox_options(scope: Locator | Page, page: Page, label: str | list[str] | tuple[str, ...]) -> list[str]:
     try:
-        widget = _find_selectbox(scope, label)
+        widget = _find_selectbox(scope, page, label)
         widget.click(timeout=_SHORT)
         time.sleep(0.4)
         options = [text.strip() for text in page.locator(_OPTION_LIST).all_text_contents() if text.strip()]
@@ -114,9 +157,14 @@ def _selectbox_options(scope: Locator | Page, page: Page, label: str) -> list[st
         return []
 
 
-def _selectbox_value(scope: Locator | Page, page: Page, label: str, option_text: str) -> bool:
+def _selectbox_value(
+    scope: Locator | Page,
+    page: Page,
+    label: str | list[str] | tuple[str, ...],
+    option_text: str,
+) -> bool:
     try:
-        widget = _find_selectbox(scope, label)
+        widget = _find_selectbox(scope, page, label)
         try:
             if option_text.lower() in widget.inner_text(timeout=1_000).lower():
                 return True
@@ -160,29 +208,87 @@ def _button_state(scope: Locator | Page, label: str) -> str:
         return "missing"
 
 
+def _click_button(scope: Locator | Page, page: Page, label: str, timeout: int = _LONG) -> bool:
+    candidates = [
+        scope.get_by_role("button", name=label).first,
+        page.get_by_role("button", name=label).first,
+    ]
+    for button in candidates:
+        for use_force in (False, True):
+            try:
+                button.wait_for(state="visible", timeout=4_000)
+                try:
+                    button.scroll_into_view_if_needed(timeout=1_000)
+                except Exception:
+                    pass
+                button.click(timeout=timeout, force=use_force)
+                time.sleep(_RERENDER)
+                return True
+            except Exception:
+                continue
+    return False
+
+
 def _wait_for_backtest_response(page: Page) -> bool:
     try:
-        # Wait for the spinner to appear (backtest starting), then disappear (backtest done).
-        # If the spinner never appears (very fast path), fall through to the terminal-state wait.
+        # Fast path: actual backtest shows a spinner — wait for it to appear then disappear.
+        spinner_seen = False
         try:
             page.wait_for_selector("[data-testid='stSpinner']", timeout=8_000, state="visible")
+            spinner_seen = True
             page.wait_for_selector("[data-testid='stSpinner']", timeout=_BACKTEST_TIMEOUT, state="hidden")
+            time.sleep(_RERENDER)
+            return True
         except Exception:
             pass
-        # Now wait for a terminal element that only appears after a backtest attempt.
-        # Exclude stDataFrame which already exists in the leaderboard/preset sections.
-        page.wait_for_selector(
-            "[data-testid='stAlert'], [data-testid='stSuccess'], "
-            "[data-testid='stWarning'], [data-testid='stError'], "
-            "[data-testid='stException']",
-            timeout=15_000,
-        )
+
+        if not spinner_seen:
+            # Blocked / fast-fail path: the button click triggers a Streamlit rerun but no
+            # spinner appears.  Pre-existing stAlert/stError elements (audit gate, MVP gate)
+            # make wait_for_selector return immediately, so we instead wait for the Streamlit
+            # running indicator to cycle, which reliably signals the rerun is complete.
+            try:
+                page.wait_for_selector(
+                    "[data-testid='stStatusWidgetRunningIcon']",
+                    timeout=6_000,
+                    state="visible",
+                )
+                page.wait_for_selector(
+                    "[data-testid='stStatusWidgetRunningIcon']",
+                    timeout=20_000,
+                    state="hidden",
+                )
+            except Exception:
+                # Running indicator not detected — give Streamlit a fixed window to settle.
+                time.sleep(5.0)
+
         time.sleep(_RERENDER)
         return True
     except Exception:
-        # Fallback: accept any page change — even if we can't see a specific widget.
         time.sleep(3.0)
         return True
+
+
+def _wait_for_backtest_form_ready(page: Page, timeout_seconds: int = 20) -> str:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            run_button = page.get_by_role("button", name="Run Backtest").first
+            if run_button.count() > 0 and run_button.is_visible(timeout=1_000):
+                return "ready"
+        except Exception:
+            pass
+        body = _body_text(page).lower()
+        if "running load_symbol_audit" in body or "running choose_backtest_default_symbol" in body:
+            time.sleep(1.5)
+            continue
+        if "backtest blocked" in body or "last backtest attempt" in body:
+            return "terminal"
+        time.sleep(1.0)
+    body = _body_text(page).lower()
+    if "running load_symbol_audit" in body or "running choose_backtest_default_symbol" in body:
+        return "loading"
+    return "missing"
 
 
 def _recommended_backtest_window() -> tuple[str, str] | None:
@@ -208,17 +314,28 @@ def _set_backtest_window(page: Page, record) -> bool:
     start_value, end_value = window
     panel = _active_panel(page)
     try:
-        inputs = panel.locator("[data-testid='stDateInput'] input")
-        if inputs.count() < 2:
+        start_input = page.locator("css=:root")
+        end_input = page.locator("css=:root")
+        for _ in range(3):
+            start_input = _find_date_input(panel, page, "Backtest Start").locator("input").first
+            end_input = _find_date_input(panel, page, "Backtest End").locator("input").first
+            if start_input.count() > 0 and end_input.count() > 0:
+                break
+            time.sleep(2.0)
+        if start_input.count() == 0 or end_input.count() == 0:
+            body = _body_text(page).lower()
+            if "running choose_backtest_default_symbol" in body or "running" in body:
+                record("Trader journey backtest window", "PARTIAL", "Backtest controls were still loading; the window picker did not become interactive in time.")
+                return False
             record("Trader journey backtest window", "FAIL", "Backtest date inputs are not visible.")
             return False
-        inputs.nth(0).fill(start_value)
-        inputs.nth(0).press("Enter")
-        inputs.nth(0).press("Tab")
+        start_input.fill(start_value)
+        start_input.press("Enter")
+        start_input.press("Tab")
         time.sleep(0.5)
-        inputs.nth(1).fill(end_value)
-        inputs.nth(1).press("Enter")
-        inputs.nth(1).press("Tab")
+        end_input.fill(end_value)
+        end_input.press("Enter")
+        end_input.press("Tab")
         time.sleep(_RERENDER)
         try:
             page.keyboard.press("Escape")
@@ -301,6 +418,8 @@ def _inspect_run(page: Page, run_id: int, strategy_name: str, record) -> dict:
         "equity curve cannot be reconstructed" in body.lower() or
         "no trade records are available for this saved run" in body.lower() or
         "equity curve unavailable" in body.lower() or
+        "no persisted trade rows" in body.lower() or
+        "no trades executed" in body.lower() or
         "re-run the backtest" in body.lower() or
         "0 trades" in body.lower()
     )
@@ -409,7 +528,7 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         return result
 
     panel = _active_panel(page)
-    if not _selectbox_value(panel, page, "Strategy", strategy_name):
+    if not _selectbox_value(panel, page, ["Backtest Strategy", "Strategy"], strategy_name):
         record(f"Backtest run - {strategy_name}", "FAIL", "Could not select strategy in Backtest Lab")
         result["backtest_status"] = "selection-failure"
         return result
@@ -418,14 +537,22 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         result["backtest_status"] = "selection-failure"
         return result
 
+    form_state = _wait_for_backtest_form_ready(page)
+    if form_state == "loading":
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest form was still loading its history audit; the dashboard showed live loading feedback instead of a silent no-op.",
+        )
+        result["backtest_status"] = "form-loading"
+        return result
+
     before_runs_df = list_backtest_runs()
     before_max_run_id = int(before_runs_df["id"].max()) if not before_runs_df.empty and "id" in before_runs_df.columns else 0
     before_text = _body_text(page)
     before_run_options = _selectbox_options(panel, page, "Inspect saved run")
-    try:
-        panel.get_by_role("button", name="Run Backtest").first.click(timeout=_SHORT)
-    except Exception as exc:
-        record(f"Backtest run - {strategy_name}", "FAIL", f"Run Backtest button failed: {exc}")
+    if not _click_button(panel, page, "Run Backtest", timeout=_LONG):
+        record(f"Backtest run - {strategy_name}", "FAIL", "Run Backtest button was not clickable after the form rerendered.")
         result["backtest_status"] = "button-failure"
         return result
 
@@ -440,7 +567,13 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         return result
 
     after_text = _body_text(page)
-    run_id = _extract_run_id(after_text)
+    run_id = None
+    success_run_id = _extract_run_id(after_text)
+    if success_run_id is not None and (
+        success_run_id > before_max_run_id
+        or f"Backtest run #{success_run_id} saved." not in before_text
+    ):
+        run_id = success_run_id
     after_runs_df = list_backtest_runs()
     if run_id is None and not after_runs_df.empty and "id" in after_runs_df.columns:
         new_rows = after_runs_df[
@@ -461,7 +594,9 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         if not fresh_option and after_run_options and after_run_options[0] != (before_run_options[0] if before_run_options else ""):
             fresh_option = after_run_options[0]
         if fresh_option:
-            run_id = _extract_run_id_from_option(fresh_option)
+            candidate_run_id = _extract_run_id_from_option(fresh_option)
+            if candidate_run_id is not None and candidate_run_id > before_max_run_id:
+                run_id = candidate_run_id
     if run_id is not None:
         result["backtest_status"] = "saved"
         result["run_id"] = run_id
@@ -478,6 +613,33 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         result["inspect_complete"] = bool(inspect_result["inspect_complete"])
         result["gate_outcome"] = str(inspect_result["gate_outcome"])
         return result
+
+    lowered_after_text = after_text.lower()
+    if "last backtest attempt" in lowered_after_text:
+        if "blocked by history:" in lowered_after_text:
+            result["backtest_status"] = "blocked-missing-data"
+            record(
+                f"Backtest run - {strategy_name}",
+                "PARTIAL",
+                "Backtest blocked: dashboard showed an explicit history-incomplete error with clear next action.",
+            )
+            return result
+        if "blocked by validation:" in lowered_after_text:
+            result["backtest_status"] = "blocked-validation"
+            record(
+                f"Backtest run - {strategy_name}",
+                "PARTIAL",
+                "Backtest blocked: dashboard showed a persistent validation failure state.",
+            )
+            return result
+        if "run failed:" in lowered_after_text:
+            result["backtest_status"] = "blocked-explicit"
+            record(
+                f"Backtest run - {strategy_name}",
+                "PARTIAL",
+                "Backtest did not save a run, but the dashboard showed a persistent run-failed state.",
+            )
+            return result
 
     _blocked_keywords = ["backtest blocked", "blocked — incomplete history", "backfill the missing range"]
     if after_text != before_text and (
@@ -506,6 +668,15 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
             f"Backtest run - {strategy_name}",
             "PARTIAL",
             "Backtest did not save a run, but the dashboard showed an explicit warning or error state.",
+        )
+        return result
+
+    if _visible(page, "[data-testid='stSpinner']", timeout=1_000) or "running backtest and persisting result" in lowered_after_text:
+        result["backtest_status"] = "running-slow"
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest is still visibly running with a spinner; operator feedback is present but the run did not finish within the journey timeout.",
         )
         return result
 
@@ -702,7 +873,11 @@ def run_trader_journey(page: Page, *, verbose: bool = True) -> tuple[list[dict],
 
     try:
         page.wait_for_selector("[data-testid='stApp']", timeout=15_000)
-        time.sleep(1.0)
+        time.sleep(3.0)
+        try:
+            page.get_by_text("Backtest Lab").first.is_visible(timeout=5_000)
+        except Exception:
+            pass
     except Exception:
         record("Trader journey shell", "FAIL", "Dashboard shell never appeared")
         return findings, build_trader_journey_summary([])
@@ -715,7 +890,10 @@ def run_trader_journey(page: Page, *, verbose: bool = True) -> tuple[list[dict],
         record("Trader journey discovery", "FAIL", "Backtest Lab tab not clickable")
         return findings, build_trader_journey_summary([])
 
-    strategy_options = _selectbox_options(_active_panel(page), page, "Strategy")
+    strategy_options = _selectbox_options(_active_panel(page), page, ["Backtest Strategy", "Strategy"])
+    if not strategy_options:
+        time.sleep(1.5)
+        strategy_options = _selectbox_options(page, page, ["Backtest Strategy", "Strategy"])
     if not strategy_options:
         record("Trader journey discovery", "FAIL", "No strategies were visible in Backtest Lab")
         return findings, build_trader_journey_summary([])

@@ -98,7 +98,7 @@ async def boot():
     paper_target = get_active_runtime_artifact("paper")
     live_target = get_active_runtime_artifact("live")
 
-    trader      = PaperTrader(strategy_descriptor=runtime_descriptor)
+    trader      = PaperTrader(strategy_descriptor=runtime_descriptor, restore_runtime_state=True)
     learner     = SelfLearner()
     coordinator = Coordinator(learner, runtime_artifact=runtime_descriptor)
     trader._coordinator = coordinator

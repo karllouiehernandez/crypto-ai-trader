@@ -13,6 +13,7 @@ import time
 
 from tools.ui_agent import browser, agent, report
 from tools.ui_agent import data_checks
+from tools.ui_agent import trader_journey
 
 
 def main() -> None:
@@ -27,18 +28,29 @@ def main() -> None:
                         help="Run DB data checks only — no browser")
     parser.add_argument("--ui-only", action="store_true", dest="ui_only",
                         help="Run UI checks only — skip data integrity")
+    parser.add_argument(
+        "--journey",
+        choices=["trader"],
+        default="",
+        help="Run a stateful UI journey instead of the default smoke suite.",
+    )
     args = parser.parse_args()
 
     all_findings: list[dict] = []
+    journey_result: dict | None = None
     start = time.time()
 
     # ── Pass 1: UI checks (Playwright) ────────────────────────────────────────
     if not args.data_only:
-        print(f"Launching browser → {args.url} (headed={args.headed})")
+        print(f"Launching browser -> {args.url} (headed={args.headed})")
         pw, br, page = browser.launch(args.url, headed=args.headed)
         try:
-            print("── Pass 1: UI checks ──")
-            ui_findings = agent.run_agent(page, verbose=True)
+            if args.journey == "trader":
+                print("-- Pass 1: Trader journey (UI) --")
+                ui_findings, journey_result = trader_journey.run_trader_journey(page, verbose=True)
+            else:
+                print("-- Pass 1: UI checks --")
+                ui_findings = agent.run_agent(page, verbose=True)
             all_findings.extend(ui_findings)
         finally:
             browser.close(pw, br)
@@ -47,7 +59,7 @@ def main() -> None:
 
     # ── Pass 2: Data integrity checks (DB) ───────────────────────────────────
     if not args.ui_only:
-        print("\n── Pass 2: Data integrity checks ──")
+        print("\n-- Pass 2: Data integrity checks --")
         db_findings = data_checks.run_data_checks(verbose=True)
         all_findings.extend(db_findings)
     else:
@@ -56,7 +68,7 @@ def main() -> None:
     elapsed = time.time() - start
 
     # ── Report ────────────────────────────────────────────────────────────────
-    result = report.build_report(all_findings, elapsed_seconds=elapsed)
+    result = report.build_report(all_findings, elapsed_seconds=elapsed, journey=journey_result)
     json_path, md_path = report.write_report(result)
 
     print()

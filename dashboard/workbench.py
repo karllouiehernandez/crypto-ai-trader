@@ -1139,6 +1139,157 @@ def get_strategy_source_code(item: dict) -> str:
     )
 
 
+def build_data_health_frame(symbol_health: list[dict[str, Any]]) -> pd.DataFrame:
+    """Return a dashboard-friendly DataFrame for ready-symbol freshness and window health."""
+    if not symbol_health:
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "latest_candle",
+                "age",
+                "fresh",
+                "history_30d",
+                "latest_window",
+                "window_runnable",
+            ]
+        )
+
+    rows: list[dict[str, Any]] = []
+    for item in symbol_health:
+        latest_ts = pd.to_datetime(item.get("latest_candle_ts"), errors="coerce", utc=True)
+        latest_label = latest_ts.strftime("%Y-%m-%d %H:%M UTC") if pd.notna(latest_ts) else "No local candles"
+
+        age_minutes = item.get("age_minutes")
+        if age_minutes is None:
+            age_label = "No data"
+        elif float(age_minutes) >= 1440:
+            age_label = f"{int(float(age_minutes) // 1440)}d"
+        elif float(age_minutes) >= 60:
+            age_label = f"{int(float(age_minutes) // 60)}h"
+        else:
+            age_label = f"{int(age_minutes)}m"
+
+        latest_window_start = item.get("latest_window_start")
+        latest_window_end = item.get("latest_window_end")
+        if latest_window_start and latest_window_end:
+            latest_window = f"{latest_window_start} -> {latest_window_end}"
+        else:
+            latest_window = "—"
+
+        window_runnable = item.get("window_runnable")
+        if window_runnable is True:
+            window_label = "Runnable"
+        elif window_runnable is False:
+            window_label = "Blocked"
+        else:
+            window_label = "Not audited"
+
+        rows.append(
+            {
+                "symbol": str(item.get("symbol") or ""),
+                "latest_candle": latest_label,
+                "age": age_label,
+                "fresh": "Yes" if bool(item.get("is_fresh")) else "No",
+                "history_30d": (
+                    "Yes"
+                    if item.get("has_min_history") is True
+                    else "No"
+                    if item.get("has_min_history") is False
+                    else "Targeted"
+                ),
+                "latest_window": latest_window,
+                "window_runnable": window_label,
+            }
+        )
+
+    frame = pd.DataFrame(rows)
+    if not frame.empty:
+        frame = frame.sort_values(["fresh", "symbol"], ascending=[False, True]).reset_index(drop=True)
+    return frame
+
+
+def summarise_data_health(
+    symbol_health: list[dict[str, Any]],
+    mvp_universe: list[str] | tuple[str, ...],
+    freshness_minutes: int,
+) -> dict[str, Any]:
+    """Summarize data freshness and MVP universe readiness for the dashboard health gate."""
+    clean_universe = []
+    for symbol in mvp_universe:
+        clean_symbol = str(symbol or "").strip().upper()
+        if clean_symbol and clean_symbol not in clean_universe:
+            clean_universe.append(clean_symbol)
+
+    by_symbol = {
+        str(item.get("symbol") or "").strip().upper(): item
+        for item in symbol_health
+        if str(item.get("symbol") or "").strip()
+    }
+
+    fresh_symbols = [
+        symbol for symbol, item in by_symbol.items()
+        if bool(item.get("is_fresh"))
+    ]
+    stale_symbols = [
+        symbol for symbol, item in by_symbol.items()
+        if item.get("age_minutes") is not None and not bool(item.get("is_fresh"))
+    ]
+    missing_symbols = [
+        symbol for symbol, item in by_symbol.items()
+        if item.get("age_minutes") is None
+    ]
+
+    mvp_missing = [symbol for symbol in clean_universe if symbol not in by_symbol]
+    mvp_stale = [
+        symbol for symbol in clean_universe
+        if symbol in by_symbol and not bool(by_symbol[symbol].get("is_fresh"))
+    ]
+    mvp_incomplete = [
+        symbol for symbol in clean_universe
+        if symbol in by_symbol and not bool(by_symbol[symbol].get("has_min_history"))
+    ]
+    mvp_not_runnable = [
+        symbol for symbol in clean_universe
+        if symbol in by_symbol and by_symbol[symbol].get("window_runnable") is False
+    ]
+
+    release_blockers: list[str] = []
+    if mvp_missing:
+        release_blockers.append(f"MVP symbols missing local data: {', '.join(mvp_missing)}.")
+    if mvp_stale:
+        release_blockers.append(
+            f"MVP symbols are stale beyond {int(freshness_minutes)}m: {', '.join(mvp_stale)}."
+        )
+    if mvp_incomplete:
+        release_blockers.append(
+            f"MVP symbols do not yet have 30-day history coverage: {', '.join(mvp_incomplete)}."
+        )
+    if mvp_not_runnable:
+        release_blockers.append(
+            f"Latest 30-day backtest window is blocked for: {', '.join(mvp_not_runnable)}."
+        )
+
+    return {
+        "ready_symbol_count": len(by_symbol),
+        "fresh_symbol_count": len(fresh_symbols),
+        "stale_symbols": stale_symbols,
+        "missing_symbols": missing_symbols,
+        "mvp_symbol_count": len(clean_universe),
+        "mvp_ready_count": sum(1 for symbol in clean_universe if symbol in by_symbol),
+        "mvp_fresh_count": sum(1 for symbol in clean_universe if symbol in fresh_symbols),
+        "mvp_runnable_count": sum(
+            1 for symbol in clean_universe
+            if symbol in by_symbol and by_symbol[symbol].get("window_runnable") is True
+        ),
+        "mvp_missing_symbols": mvp_missing,
+        "mvp_stale_symbols": mvp_stale,
+        "mvp_incomplete_symbols": mvp_incomplete,
+        "mvp_not_runnable_symbols": mvp_not_runnable,
+        "release_blockers": release_blockers,
+        "release_blocked": bool(release_blockers),
+    }
+
+
 def build_runtime_target_summary(
     paper_artifact: dict[str, Any] | None,
     live_artifact: dict[str, Any] | None,

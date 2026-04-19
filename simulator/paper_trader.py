@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 
 class PaperTrader:
-    def __init__(self, strategy_descriptor: dict | None = None):
+    def __init__(self, strategy_descriptor: dict | None = None, *, restore_runtime_state: bool = False):
         init_db()
         self.cash: float = STARTING_BALANCE_USD
         self.positions: Dict[str, float] = {}
@@ -59,6 +59,9 @@ class PaperTrader:
         self._strategy_code_hash = str(active.get("strategy_code_hash") or "")
         self._strategy_provenance = str(active.get("strategy_provenance") or "")
         self._last_snapshot_minute: Optional[datetime] = None
+        self._enforce_persisted_integrity = bool(restore_runtime_state)
+        if restore_runtime_state:
+            self._restore_runtime_state()
 
     # ── equity helpers ─────────────────────────────────────────────────────────
 
@@ -85,6 +88,87 @@ class PaperTrader:
             log.warning("Trading halted: drawdown circuit breaker triggered.",
                         extra={"reason": "drawdown_circuit_breaker"})
             return True
+        return False
+
+    def _runtime_mode(self) -> str:
+        return "live" if LIVE_TRADE_ENABLED else "paper"
+
+    def _trade_matches_runtime(self, trade: Trade) -> bool:
+        if str(trade.run_mode or "") != self._runtime_mode():
+            return False
+        if self._strategy_artifact_id is not None:
+            return trade.artifact_id == self._strategy_artifact_id
+        return str(trade.strategy_name or "") == self._strategy_name
+
+    def _restore_runtime_state(self) -> None:
+        """Rebuild open positions/cash from persisted trades so restarts do not forget state."""
+        with SessionLocal() as sess:
+            rows = (
+                sess.query(Trade)
+                .order_by(Trade.ts.asc(), Trade.id.asc())
+                .all()
+            )
+
+        matching_rows = [row for row in rows if self._trade_matches_runtime(row)]
+        if not matching_rows:
+            return
+
+        cash = float(STARTING_BALANCE_USD)
+        positions: Dict[str, float] = {}
+        cost_basis: Dict[str, float] = {}
+        realised = 0.0
+
+        for row in matching_rows:
+            symbol = str(row.symbol or "")
+            side = str(row.side or "").upper()
+            qty = float(row.qty or 0.0)
+            price = float(row.price or 0.0)
+            fee = float(row.fee or 0.0)
+            pnl = float(row.pnl or 0.0)
+
+            if side == "BUY":
+                cash -= (qty * price) + fee
+                positions[symbol] = positions.get(symbol, 0.0) + qty
+                cost_basis[symbol] = cost_basis.get(symbol, 0.0) + (qty * price) + fee
+            elif side == "SELL":
+                cash += (qty * price) - fee
+                positions[symbol] = max(0.0, positions.get(symbol, 0.0) - qty)
+                if positions[symbol] <= 1e-12:
+                    positions.pop(symbol, None)
+                    cost_basis.pop(symbol, None)
+                realised += pnl
+
+        self.cash = cash
+        self.positions = positions
+        self.cost_basis = cost_basis
+        self.realised = realised
+        self._last_trade_ts = matching_rows[-1].ts
+        log.info(
+            "Restored runtime state from %s persisted trade(s).",
+            len(matching_rows),
+            extra={
+                "run_mode": self._runtime_mode(),
+                "strategy_name": self._strategy_name,
+                "artifact_id": self._strategy_artifact_id,
+                "open_positions": len(self.positions),
+            },
+        )
+
+    def _would_duplicate_persisted_side(self, symbol: str, side: str) -> bool:
+        if not self._enforce_persisted_integrity:
+            return False
+        with SessionLocal() as sess:
+            rows = (
+                sess.query(Trade)
+                .filter(Trade.symbol == symbol)
+                .order_by(Trade.ts.desc(), Trade.id.desc())
+                .limit(20)
+                .all()
+            )
+        for row in rows:
+            if not self._trade_matches_runtime(row):
+                continue
+            return str(row.side or "").upper() == str(side or "").upper()
         return False
 
     # ── main loops ─────────────────────────────────────────────────────────────
@@ -239,6 +323,13 @@ class PaperTrader:
         if self.positions.get(sym, 0) > 0:
             log.info("AUTO BUY skipped: open position already exists.", extra={"symbol": sym})
             return
+        if self._would_duplicate_persisted_side(sym, "BUY"):
+            log.warning(
+                "AUTO BUY skipped: persisted trade history already ends with BUY for symbol.",
+                extra={"symbol": sym, "run_mode": self._runtime_mode()},
+            )
+            self._restore_runtime_state()
+            return
 
         # Use all known prices for accurate equity; merge sym's current price in
         all_prices = dict(prices or {})
@@ -279,6 +370,18 @@ class PaperTrader:
             return
         qty = self.positions.get(sym, 0)
         if qty == 0:
+            if self._would_duplicate_persisted_side(sym, "SELL"):
+                log.warning(
+                    "AUTO SELL skipped: persisted trade history already ends with SELL for symbol.",
+                    extra={"symbol": sym, "run_mode": self._runtime_mode()},
+                )
+            return
+        if self._would_duplicate_persisted_side(sym, "SELL"):
+            log.warning(
+                "AUTO SELL skipped: persisted trade history already ends with SELL for symbol.",
+                extra={"symbol": sym, "run_mode": self._runtime_mode()},
+            )
+            self._restore_runtime_state()
             return
         cost = self.cost_basis.get(sym, 0)
         submitted = await self._submit_order(sym, "SELL", qty)

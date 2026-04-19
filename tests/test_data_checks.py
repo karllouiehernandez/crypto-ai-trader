@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from database.integrity import INVALID_METRICS_STATUS, LEGACY_INVALID_STATUS, MISSING_TRADES_STATUS
 from tools.ui_agent.data_checks import (
     _check_backtest_equity,
     _check_backtest_metrics,
@@ -128,7 +129,7 @@ def test_candle_continuity_gap_detected():
 
 def _trade_rows(*sides):
     now = datetime.now(tz=timezone.utc)
-    return [("BTCUSDT", side, now) for side in sides]
+    return [("BTCUSDT", side, now, "valid", None) for side in sides]
 
 
 def test_trade_log_clean():
@@ -149,6 +150,19 @@ def test_trade_log_consecutive_buy():
     assert findings[0]["status"] == "FAIL"
 
 
+def test_trade_log_legacy_invalid_sequence_is_partial():
+    findings = []
+    now = datetime.now(tz=timezone.utc)
+    rows = [
+        ("BTCUSDT", "BUY", now, "valid", None),
+        ("BTCUSDT", "BUY", now + timedelta(minutes=1), LEGACY_INVALID_STATUS, "legacy sequence"),
+    ]
+    sess = MagicMock()
+    sess.execute.return_value.all.return_value = rows
+    _check_trade_log_integrity(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PARTIAL"
+
+
 def test_trade_log_empty():
     findings = []
     sess = MagicMock()
@@ -159,10 +173,11 @@ def test_trade_log_empty():
 
 # ── backtest metrics ──────────────────────────────────────────────────────────
 
-def _bt_run(metrics: dict):
+def _bt_run(metrics: dict, *, integrity_status: str | None = None):
     r = MagicMock()
     r.id = 1
     r.metrics_json = json.dumps(metrics)
+    r.integrity_status = integrity_status
     return r
 
 
@@ -194,6 +209,18 @@ def test_backtest_metrics_no_runs():
     assert findings[0]["status"] == "SKIP"
 
 
+def test_backtest_metrics_legacy_invalid_json_is_partial():
+    findings = []
+    run = MagicMock()
+    run.id = 7
+    run.metrics_json = "{bad-json}"
+    run.integrity_status = INVALID_METRICS_STATUS
+    sess = MagicMock()
+    sess.execute.return_value.scalars.return_value.all.return_value = [run]
+    _check_backtest_metrics(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PARTIAL"
+
+
 # ── position sizing ───────────────────────────────────────────────────────────
 
 def _trade_buy(price, qty):
@@ -209,7 +236,7 @@ def test_position_sizing_compliant():
     findings = []
     sess = MagicMock()
     # 0.10 * $100 = $10 max notional; trade is $5
-    sess.execute.return_value.all.return_value = [("BTCUSDT", 50.0, 0.1, "BUY")]
+    sess.execute.return_value.all.return_value = [("BTCUSDT", 50.0, 0.1, "BUY", "valid")]
     _check_position_sizing(sess, findings, verbose=False)
     assert findings[0]["status"] == "PASS"
 
@@ -218,6 +245,46 @@ def test_position_sizing_oversized():
     findings = []
     sess = MagicMock()
     # 0.10 * $100 = $10 max; trade is $500 (price=500, qty=1)
-    sess.execute.return_value.all.return_value = [("BTCUSDT", 500.0, 1.0, "BUY")]
+    sess.execute.return_value.all.return_value = [("BTCUSDT", 500.0, 1.0, "BUY", "valid")]
     _check_position_sizing(sess, findings, verbose=False)
     assert findings[0]["status"] == "FAIL"
+
+
+def test_position_sizing_legacy_invalid_trade_is_partial():
+    findings = []
+    sess = MagicMock()
+    sess.execute.return_value.all.return_value = [("BTCUSDT", 500.0, 1.0, "BUY", LEGACY_INVALID_STATUS)]
+    _check_position_sizing(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PARTIAL"
+
+
+def test_backtest_equity_missing_trade_rows_flagged_as_partial():
+    findings = []
+    run = MagicMock()
+    run.id = 9
+    run.metrics_json = json.dumps({"n_trades": 2})
+    run.integrity_status = MISSING_TRADES_STATUS
+
+    sess = MagicMock()
+    exec_mock = sess.execute
+    exec_mock.return_value.scalars.return_value.first.return_value = run
+    exec_mock.return_value.all.return_value = []
+
+    _check_backtest_equity(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PARTIAL"
+
+
+def test_backtest_equity_zero_trade_run_without_rows_is_pass():
+    findings = []
+    run = MagicMock()
+    run.id = 10
+    run.metrics_json = json.dumps({"n_trades": 0})
+    run.integrity_status = "valid"
+
+    sess = MagicMock()
+    exec_mock = sess.execute
+    exec_mock.return_value.scalars.return_value.first.return_value = run
+    exec_mock.return_value.all.return_value = []
+
+    _check_backtest_equity(sess, findings, verbose=False)
+    assert findings[0]["status"] == "PASS"
