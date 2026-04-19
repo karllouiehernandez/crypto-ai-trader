@@ -11,10 +11,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 39 — Trading Diary + Backtest Knowledge` ✅ CLOSED
-- Status: Trading Diary backend is now surfaced in the dashboard, diary knowledge export is wired, and diary/backtest insight regression tests are in place.
-- Baseline: `pytest tests/ -q` shows `607 passed, 4 warnings`
-- Next: Sprint 40 — check GitHub Projects board `#1` or ask user
+- Active local hardening stream: `Sprint 40 — Production Trust Hardening`
+- Queued follow-on sprint: `Sprint 41 — Trader Minimum Product Readiness (Phased)` — GitHub issue `#43`
+- Status: Sprint 41 is now on GitHub Projects board `#1` as the phased trader-MVP continuation issue. Phase 1 is implemented locally: dashboard-visible data health gating, sidebar summary, stale-data warning in Backtest Lab, and MVP-universe runnable-window status.
+- Baseline after Phase 1 work: `pytest tests/ -q` shows `612 passed, 4 warnings`
 
 ## Why This Exists
 
@@ -146,7 +146,15 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 39 is closed. Next: determine Sprint 40 from GitHub Projects board `#1` or user direction.
+Sprint 41 Phase 2 complete. Next: Phase 3 — trader path toward reviewed artifact + paper readiness.
+
+- Phase 1: dashboard MVP data-health gate, sidebar summary, Backtest Lab stale warning, runnable-window status
+- Phase 2: data_checks trade log integrity FAIL→PARTIAL (retag_existing=True + Trade.id tiebreaker), "Sync fresh data" button in MVP gate, concise legacy-issue output
+- Remaining data-only issues: candle freshness PARTIAL (live streamer not running), legacy trade sequences PARTIAL (test DB debt), legacy-invalid backtest run PARTIAL
+- Phase 3 priorities:
+  1. At least one reviewed strategy with a saved passing backtest
+  2. Inspect-complete audit surface for all saved runs
+  3. Clear paper target readiness signal when reviewed strategy has passed backtest
 
 ## Likely Files
 
@@ -172,7 +180,7 @@ Sprint 39 is closed. Next: determine Sprint 40 from GitHub Projects board `#1` o
 
 ## Last Verified State
 
-- Tests: `607 passed, 4 warnings`
+- Tests: `612 passed, 4 warnings`
 - Headless dashboard startup: verified on fresh ports during Sprint 37 work
 - Latest smoke UI run: `60/61`
 - Trader journey run: completes and writes a report with operator concerns instead of failing at harness level

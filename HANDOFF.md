@@ -9,20 +9,68 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Codex |
-| **Last updated** | 2026-04-19 (Sprint 39 implemented) |
-| **Sprint completed** | Sprint 39 ✅ — Trading Diary + Backtest Knowledge — 607 tests passing |
-| **Next sprint** | Sprint 40 — TBD (check GitHub Projects board) |
+| **Last active agent** | Claude Code |
+| **Last updated** | 2026-04-19 (Sprint 41 Phase 2 complete) |
+| **Sprint completed** | Sprint 41 Phase 2 ✅ — Trade log integrity fix + MVP sync button — 612 tests passing |
+| **Next sprint** | Sprint 41 Phase 3 or next priority — check GitHub Projects board `#1` |
 | **Blocking issues** | To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 39 is complete. Trading Diary UI, diary knowledge export, and diary/backtest insight tests are now in place; ready for next sprint planning. |
+| **Reason for handoff** | Phase 2 data integrity fixes complete. data-only checks now show 0 FAIL / 3 PARTIAL. Remaining PARTIALs are candle freshness (live streamer not running), legacy trade sequences, legacy-invalid backtest run. Next priority: improve trader path toward reviewed artifact + paper readiness. |
 
 ---
 
-## Resume Here — Sprint 40
+## Resume Here — Sprint 41
 
-**Sprint 39 is closed.** Check GitHub Projects board `#1` for the next queued sprint, or ask the user for the next priority.
+Sprint 40 remains the active local hardening stream. The next structured follow-on sprint is now queued remotely:
+
+- Issue: `#43` — `Sprint 41 — Trader Minimum Product Readiness (Phased)`
+- Project board: added to GitHub Projects board `#1`
+- Linked from Sprint 40 issue `#42` so the continuation path is explicit
+
+### Sprint 41 phases
+
+1. **Data Health Gate**
+   - durable dashboard health surface
+   - latest candle age per ready symbol
+   - MVP research universe freshness + 30-day runnable-window gating
+2. **Backtest Operability**
+   - one terminal state per backtest click
+   - at least one canonical reviewed-strategy saved-run path
+3. **Inspect As Canonical Audit Screen**
+   - guaranteed identity + gate + equity/code or explicit placeholders
+4. **Research-To-Paper Readiness**
+   - one reviewed strategy should complete saved backtest -> inspect -> paper target visibility
+5. **Release Contract**
+   - smoke UI, trader journey, data checks, and pytest all become zero-failure gates for MVP readiness
+
+### Current local focus
+
+- Phase 1 implemented: MVP data-health gate, sidebar summary, stale-data warning in Backtest Lab, runnable-window status
+- Phase 2 implemented (just closed):
+  - `data_checks.py`: `refresh_integrity_flags(retag_existing=True)` so consecutive same-side trades from isolated test writes are correctly tagged legacy-invalid → trade log FAIL → PARTIAL
+  - `data_checks.py`: `Trade.id` tiebreaker in `_check_trade_log_integrity` matches `refresh_integrity_flags` ordering exactly
+  - `data_checks.py`: legacy-issue detail truncated to count + affected symbols (avoids flooding report)
+  - `dashboard/streamlit_app.py`: "Sync fresh data for stale symbols" button in MVP Data Health Gate — triggers `sync_recent` per stale symbol, clears cache, reruns
+
+### Latest verified state
+
+- `pytest tests/ -q` → **612 passed, 4 warnings**
+- `python run_ui_agent.py --ui-only --url http://localhost:8785` → **59/61**, 0 failures, 2 partials
+- `python run_ui_agent.py --data-only --url http://localhost:8785` → **0 FAIL, 3 PARTIAL, 2 SKIP** (was 1 FAIL before Phase 2)
+  - Remaining PARTIALs: candle freshness (live streamer not running), legacy trade sequences (test DB contamination), legacy-invalid backtest run (#472)
+  - SKIPs: no active paper/live artifact configured
+
+### Remaining Phase 3 priorities
+
+1. Improve trader path: at least one reviewed strategy with a saved passing backtest (paper readiness)
+2. Inspect-complete audit surface: every saved run should have identity + gate + equity or explicit placeholder
+3. Paper target readiness: clear "ready to promote" signal in dashboard when reviewed strategy has passed backtest
+
+### Latest GitHub tracking
+
+- `#42` — `Sprint 40 — Production Trust Hardening` (in progress)
+- `#43` — `Sprint 41 — Trader Minimum Product Readiness (Phased)` (queued next)
 
 ### Sprint 39 summary (just closed)
 
