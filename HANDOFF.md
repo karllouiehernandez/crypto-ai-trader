@@ -10,19 +10,79 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-18 (Sprint 35 closed) |
-| **Sprint completed** | Sprint 35 ✅ — AI UI Testing Agent + Production Data Integrity Suite — 579 tests passing |
-| **Next sprint** | Sprint 36 — TBD. Check GitHub Projects board #1 or ask the user for the next priority. |
+| **Last updated** | 2026-04-19 (Sprint 38 implemented) |
+| **Sprint completed** | Sprint 38 ✅ — Trader Journey Trust Fixes — 594 tests passing |
+| **Next sprint** | Sprint 39 — TBD (check GitHub Projects board) |
 | **Blocking issues** | To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 35 complete and pushed. |
+| **Reason for handoff** | Sprint 38 is complete. Dashboard trust surfaces hardened; ready for next sprint planning. |
 
 ---
 
-## Resume Here — Sprint 36
+## Resume Here — Sprint 39
 
-**Sprint 35 complete.** The repo now has a two-pass production readiness test suite: UI checks via Playwright (~65 checks across all 5 tabs) and data integrity checks via direct DB queries (~10 checks). 579 tests passing.
+**Sprint 38 is closed.** Check GitHub Projects board `#1` for the next queued sprint, or ask the user for the next priority.
+
+### Sprint 38 summary (just closed)
+
+All trader-trust fixes from issue `#40` are implemented in `dashboard/streamlit_app.py` and `tools/ui_agent/trader_journey.py`:
+
+1. **Backtest Lab date defaults** — end date now defaults to `get_latest_candle_time(symbol).date()`, not `datetime.utcnow().date()`. A "latest complete candle" status caption is always visible above the date inputs.
+2. **Explicit blocked-state banner** — when `audit_result["is_complete"]` is False, a red error banner appears *above* the Run Backtest button explaining exactly what is blocked and what to do.
+3. **No more silent Run Backtest no-ops** — every click produces one of: run saved, blocked-by-history (explicit error), validation failure (explicit error), or unexpected failure (explicit error). All three exception variants are now caught and reported.
+4. **Inspect identity row** — a persistent run identity caption (`Run #N · strategy · symbol · window`) always appears above the artifact and integrity captions.
+5. **Inspect equity section** — three distinct explanations are now shown when no chart can be rendered: `missing-trades`, `invalid-metrics`, or zero-trade run (with actionable next steps).
+6. **Promotion state clarity** — durable captions now explicitly state whether the selected strategy IS the current paper/live target, and explain exactly why each button is blocked (generated draft, wrong provenance, no passing backtest, insufficient artifact status).
+7. **Trader-journey harness** — detection patterns updated for new copy; `blocked-missing-data` now also catches the "Backtest blocked" error banner; equity region detection covers all new no-chart explanations.
+
+### What was done in Sprint 37
+
+**Trader Journey Playwright (`tools/ui_agent/`)**
+- `tools/ui_agent/trader_journey.py` (NEW)
+  - stateful operator-style journey runner
+  - iterates every visible strategy from `Backtest Lab`
+  - checks lifecycle/readiness state in `Strategies`
+  - tries to run a backtest for each strategy
+  - inspects the saved run in `Inspect` when persistence succeeds
+  - verifies paper/live readiness flows without enabling real live trading
+- `run_ui_agent.py`
+  - added `--journey trader`
+  - keeps the existing smoke suite as default
+- `tools/ui_agent/report.py`
+  - report payload now supports a `journey` block
+  - Markdown/JSON reports now include trader summary, per-strategy audit rows, and operator concerns
+- `dashboard/streamlit_app.py`
+  - `Inspect` run labels now include `#run_id` so Playwright can target exact saved runs deterministically
+- `tests/test_ui_agent_smoke.py`
+  - added regression coverage for journey-aware report output and `--journey trader` CLI wiring
+
+### Trader-Journey Learnings To Build On
+
+The new journey runner exposed operator-trust issues that smoke tests do not catch:
+
+- Backtest windows still fail often from a trader point of view because the default date range can land on an incomplete candle window. The workbench should guide the user toward a latest-complete window instead of leaving this as a silent workflow trap.
+- Several strategies in the local environment end with explicit warning states rather than persisted runs. That is acceptable only when the warning is clear. The dashboard should make these blocked states more obvious and more consistent across strategies.
+- Promotion readiness is visible, but the trader journey shows that promotion success should be verified from durable state, not only transient toast/banner text.
+- Inspect remains useful only when every saved run has a clear terminal state: full chart/code surface or an explicit warning. The journey harness should keep being used to prevent regression here.
+
+### Latest Verified State
+
+- `pytest tests/ -q` → **594 passed, 4 warnings**
+- `python run_ui_agent.py --ui-only --url http://localhost:8779` → **60/61**, 1 partial in Inspect equity placeholder detection
+- `python run_ui_agent.py --journey trader --ui-only --url http://localhost:8780` completes and writes a trader-audit report instead of crashing; current operator concerns are surfaced in the report rather than hidden
+
+### Reports To Read First
+
+- `reports/ui_test_20260419_001447.md` — latest smoke UI run
+- `reports/ui_test_20260419_001825.md` — latest trader journey audit
+
+### What's next
+
+- Implement issue `#40` from the GitHub project board
+- Improve Backtest Lab guidance around latest-complete windows and blocked history states
+- Make promotion success/readiness easier to assert from visible durable UI state, not transient banners only
+- Tighten trader-journey reporting so clearly explained blocked states are not treated like silent no-ops
 
 ### What was done in Sprint 35
 

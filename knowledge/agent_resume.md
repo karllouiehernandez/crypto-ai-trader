@@ -11,10 +11,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 36 — TBD`
-- Status: Sprint 35 closed. No queued item. Check GitHub Projects board #1 or ask the user.
-- Baseline: `pytest tests/ -q` shows `579 passed, 4 warnings`
-- GitHub tracking: issue #38 (Sprint 35) added to board successfully
+- Sprint: `Sprint 38 — Trader Journey Trust Fixes` ✅ CLOSED
+- Status: All trust-surface fixes implemented in `dashboard/streamlit_app.py` and `tools/ui_agent/trader_journey.py`. Pushed to master.
+- Baseline: `pytest tests/ -q` shows `594 passed, 4 warnings`
+- Next: Sprint 39 — check GitHub Projects board `#1` or ask user
 
 ## Why This Exists
 
@@ -26,6 +26,24 @@ Read order for a new agent:
   - Codex and Claude Code must act as one developer on this repo
   - Do not treat local dirty files as belonging to one specific agent unless the user explicitly asks for attribution
   - Continue from the current worktree as shared in-progress state
+- Sprint 37 trader-journey coverage is now in the repo locally:
+  - `tools/ui_agent/trader_journey.py` — new stateful Playwright runner that behaves like a normal trader: checks lifecycle status, attempts backtests across the visible strategy catalog, opens `Inspect`, and verifies paper/live readiness UX without placing live orders
+  - `run_ui_agent.py` — added `--journey trader`
+  - `tools/ui_agent/report.py` — report payloads now optionally include a `journey` block with summary counts, per-strategy audit rows, and operator concerns
+  - `tests/test_ui_agent_smoke.py` — added regression tests for journey-aware reports and CLI invocation
+  - `dashboard/streamlit_app.py` — `Inspect` saved-run labels now include `#run_id` for deterministic journey selection
+- Sprint 37 key learnings from real operator flow:
+  - default backtest date windows can still trap the user in incomplete-history states; the dashboard should better guide users toward latest-complete windows
+  - trader-facing blocked states must stay explicit and consistent across strategies; if a run does not persist, the UI needs an obvious explanation
+  - promotion success/readiness should be inferable from durable UI state, not transient success banners alone
+  - the new trader journey is now the best way to catch "looks fine in smoke tests, confusing in real use" regressions
+- Sprint 38 is queued remotely for pickup:
+  - GitHub issue: `#40` — `Sprint 38 — Trader Journey Trust Fixes`
+  - Project board: `https://github.com/users/karllouiehernandez/projects/1`
+  - Priority: use the trader-journey audit to fix trust gaps in `Backtest Lab`, `Inspect`, and promotion/readiness UX
+- Latest local journey reports to inspect first:
+  - `reports/ui_test_20260419_001447.md` — smoke UI run
+  - `reports/ui_test_20260419_001825.md` — trader journey audit with operator concerns
 - Sprint 35 AI UI Testing Agent + Production Data Integrity Suite is complete and pushed:
   - `tools/ui_agent/browser.py` — Playwright wrapper, 11 tool actions, `TOOL_DEFINITIONS`, `dispatch()`
   - `tools/ui_agent/agent.py` — Pure Playwright 9-group test runner (~65 checks, no LLM)
@@ -122,12 +140,15 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 35 is closed. No Sprint 36 item is queued. Check GitHub Projects board #1 or ask the user for the next priority.
+Sprint 38 is closed. Next: determine Sprint 39 from GitHub Projects board `#1` or user direction.
 
 ## Likely Files
 
 - `HANDOFF.md`
 - `knowledge/agent_resume.md`
+- `tools/ui_agent/trader_journey.py`
+- `tools/ui_agent/report.py`
+- `reports/ui_test_20260419_001825.md`
 - `dashboard/streamlit_app.py`
 - `dashboard/workbench.py`
 - `run_live.py`
@@ -145,9 +166,11 @@ Sprint 35 is closed. No Sprint 36 item is queued. Check GitHub Projects board #1
 
 ## Last Verified State
 
-- Tests: `579 passed, 4 warnings`
-- Headless dashboard startup: verified after Sprint 34 changes
-- Last sprint closed: `Sprint 35`
+- Tests: `594 passed, 4 warnings`
+- Headless dashboard startup: verified on fresh ports during Sprint 37 work
+- Latest smoke UI run: `60/61`
+- Trader journey run: completes and writes a report with operator concerns instead of failing at harness level
+- Last sprint fully closed/pushed: `Sprint 38`
 
 ## Token-Saving Rule
 

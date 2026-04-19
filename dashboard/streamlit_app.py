@@ -72,6 +72,8 @@ from dashboard.workbench import (
 )
 from database.promotion_queries import query_promotions
 from database.models import init_db
+from database.integrity import integrity_label
+from llm.client import get_generation_readiness
 from llm.generator import generate_and_discover_strategy
 from market_data.background_loader import ensure_worker_running
 from market_data.binance_symbols import list_binance_spot_usdt_symbols
@@ -80,6 +82,7 @@ from market_data.history import (
     backfill as backfill_history,
     ensure_symbol_history,
     format_audit_summary,
+    get_latest_candle_time,
 )
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
 from market_data.symbol_readiness import (
@@ -1117,16 +1120,20 @@ with strategy_tab:
             "`strategies/example_rsi_mean_reversion.py`"
         )
     with st.expander("Generate Strategy Draft", expanded=bool(st.session_state.get("last_generation_result"))):
-        if not LLM_ENABLED:
-            st.warning(
-                "LLM strategy generation is disabled. Add an LLM API key in `.env` or set `LLM_ENABLED=true` "
-                "to generate plugin drafts from the dashboard."
-            )
+        generation_ready = get_generation_readiness()
+        status_cols = st.columns(3)
+        status_cols[0].metric("Provider", f"{generation_ready['provider']} / {generation_ready['model']}")
+        status_cols[1].metric("Status", str(generation_ready["status_label"]))
+        status_cols[2].metric("Missing Env Var", generation_ready.get("missing_env_var") or "None")
+        if generation_ready["ready"]:
+            st.success("Strategy generation backend is configured and ready.")
+        else:
+            st.warning(str(generation_ready["reason"]))
         with st.form("generate_strategy_form", clear_on_submit=False):
             gen_description = st.text_area(
                 "Strategy brief",
                 placeholder="Example: Trend-following pullback strategy that buys when EMA-9 stays above EMA-21 and RSI recovers from 45 in trending markets.",
-                disabled=not LLM_ENABLED,
+                disabled=not generation_ready["ready"],
             )
             gen_cols = st.columns(2)
             gen_symbol = gen_cols[0].selectbox(
@@ -1134,19 +1141,19 @@ with strategy_tab:
                 available_symbols,
                 index=available_symbols.index(symbol) if symbol in available_symbols else 0,
                 key="gen_symbol",
-                disabled=not LLM_ENABLED,
+                disabled=not generation_ready["ready"],
             )
             gen_regime = gen_cols[1].selectbox(
                 "Target regime",
                 ["any", "RANGING", "TRENDING", "SQUEEZE", "HIGH_VOL"],
                 key="gen_regime",
-                disabled=not LLM_ENABLED,
+                disabled=not generation_ready["ready"],
             )
             generate_now = st.form_submit_button(
                 "Generate Plugin Draft",
                 type="primary",
                 width="stretch",
-                disabled=not LLM_ENABLED or not strategy_names,
+                disabled=not generation_ready["ready"] or not strategy_names,
             )
 
         if generate_now:
@@ -1201,7 +1208,6 @@ with strategy_tab:
     selected_strategy = st.selectbox(
         "Select backtest/default strategy",
         strategy_names,
-        index=default_strategy_index,
         format_func=lambda name: next((item["display_name"] for item in strategy_catalog if item["name"] == name), name),
         key="active_strategy_selector",
     )
@@ -1330,12 +1336,33 @@ with strategy_tab:
                 st.success(f"Live target approved for `{selected_strategy}` (artifact #{approved['id']}).")
                 st.rerun()
 
+        _artifact_status = str(selected_meta.get("artifact_status") or "").lower()
+        _is_paper_target = bool(selected_meta.get("active_paper_artifact"))
+        _is_live_target = bool(selected_meta.get("active_live_artifact"))
+        if _is_paper_target:
+            st.caption(f"This strategy (`{selected_strategy}`) **is** the current paper trading target.")
+        if _is_live_target:
+            st.caption(f"This strategy (`{selected_strategy}`) **is** the current live trading target.")
         if selected_meta.get("is_generated"):
-            st.caption("Paper/live promotion is disabled for generated drafts. Save a reviewed plugin copy first.")
-        elif selected_meta.get("provenance") == "plugin" and passed_matching_runs.empty:
-            st.caption("Promote to Paper unlocks after this exact reviewed artifact has at least one passing saved backtest.")
-        if str(selected_meta.get("artifact_status") or "").lower() not in {"paper_passed", "live_approved", "live_active"}:
-            st.caption("Approve for Live unlocks after the active paper artifact passes its paper evaluation gate.")
+            st.caption(
+                "**Promote to Paper / Approve for Live are disabled** for generated drafts. "
+                "Use **Review and Save** to create a stable reviewed plugin, then backtest it."
+            )
+        elif selected_meta.get("provenance") != "plugin":
+            st.caption(
+                "**Promote to Paper / Approve for Live are only available for plugin strategies.** "
+                "Built-in strategies cannot be promoted."
+            )
+        elif passed_matching_runs.empty:
+            st.caption(
+                "**Promote to Paper is blocked** — this artifact has no passing saved backtests. "
+                "Run a backtest and ensure it passes the performance gate first."
+            )
+        if _artifact_status not in {"paper_passed", "live_approved", "live_active"}:
+            st.caption(
+                f"**Approve for Live is blocked** — artifact status is `{_artifact_status or 'unknown'}`. "
+                "Approve for Live unlocks only after the paper artifact reaches `paper_passed` status."
+            )
 
     catalog_df = build_strategy_catalog_frame(strategy_catalog, all_backtest_runs, active_strategy["name"])
     st.dataframe(catalog_df, width="stretch", hide_index=True)
@@ -1359,7 +1386,6 @@ with backtest_tab:
     bt_strategy = selector_cols[1].selectbox(
         "Strategy",
         strategy_names,
-        index=default_strategy_index,
         key="bt_strategy",
     )
     selected_bt_meta = strategy_lookup.get(bt_strategy)
@@ -1458,13 +1484,25 @@ with backtest_tab:
         else:
             st.info(f"No named presets saved yet for `{bt_strategy}`.")
 
+    _latest_candle_dt = get_latest_candle_time(bt_symbol)
+    _latest_candle_date = _latest_candle_dt.date() if _latest_candle_dt else datetime.utcnow().date()
+    _bt_end_default = _latest_candle_date
+    _bt_start_default = _latest_candle_date - timedelta(days=30)
+    if _latest_candle_dt:
+        st.caption(
+            f"Latest complete candle for **{bt_symbol}**: `{_latest_candle_date}` — "
+            "end date defaults to this day. Adjust if you want a different window."
+        )
+    else:
+        st.caption(f"No candle data found for **{bt_symbol}** — defaulting to today.")
     date_cols = st.columns(2)
-    bt_start = date_cols[0].date_input("Start", value=datetime.utcnow().date() - timedelta(days=30))
-    bt_end = date_cols[1].date_input("End", value=datetime.utcnow().date())
+    bt_start = date_cols[0].date_input("Start", value=_bt_start_default)
+    bt_end = date_cols[1].date_input("End", value=_bt_end_default)
     bt_start_dt = datetime.combine(bt_start, datetime.min.time())
     bt_end_dt = datetime.combine(bt_end, datetime.min.time())
     audit_result = load_symbol_audit(bt_symbol, bt_start_dt.isoformat(), bt_end_dt.isoformat())
     audit_cols = st.columns([4, 1])
+    st.markdown("#### History Audit")
     if audit_result["is_complete"]:
         audit_cols[0].success(format_audit_summary(audit_result))
     else:
@@ -1497,27 +1535,47 @@ with backtest_tab:
         else:
             st.info(bt_workflow_status["next_step"])
 
+    if not audit_result["is_complete"]:
+        st.error(
+            f"**Backtest blocked — incomplete history for {bt_symbol}** "
+            f"({bt_start} → {bt_end}). "
+            f"{format_audit_summary(audit_result)} "
+            "Use the **Backfill Range** button above to fetch the missing candles, then re-run."
+        )
+
     if run_backtest_now:
-        try:
-            with st.spinner("Running backtest and persisting result..."):
-                result = run_and_persist_backtest(
-                    bt_symbol,
-                    bt_start_dt,
-                    bt_end_dt,
-                    bt_strategy,
-                    params=bt_params,
-                    preset_name=matched_preset_name,
-                )
-        except ValueError as exc:
-            st.error(str(exc))
-            result = None
-        if result is not None:
-            st.session_state["selected_backtest_run_id"] = result["run_id"]
-            load_backtest_runs.clear()
-            load_symbol_audit.clear()
-            load_backtest_run.clear()
-            load_backtest_trades.clear()
-            st.success(f"Backtest run #{result['run_id']} saved.")
+        if not audit_result["is_complete"]:
+            st.warning(
+                f"Run Backtest is blocked: history for **{bt_symbol}** is incomplete over the selected window. "
+                "Backfill the missing range first."
+            )
+        else:
+            try:
+                with st.spinner("Running backtest and persisting result..."):
+                    result = run_and_persist_backtest(
+                        bt_symbol,
+                        bt_start_dt,
+                        bt_end_dt,
+                        bt_strategy,
+                        params=bt_params,
+                        preset_name=matched_preset_name,
+                    )
+            except ValueError as exc:
+                st.error(f"Backtest validation failed: {exc}")
+                result = None
+            except Exception as exc:
+                st.error(f"Backtest run failed unexpectedly: {exc}")
+                result = None
+            else:
+                if result is not None:
+                    st.session_state["selected_backtest_run_id"] = result["run_id"]
+                    load_backtest_runs.clear()
+                    load_symbol_audit.clear()
+                    load_backtest_run.clear()
+                    load_backtest_trades.clear()
+                    st.success(f"Backtest run #{result['run_id']} saved.")
+                else:
+                    st.error("Backtest returned no result. Check the strategy and date range.")
 
     runs_df = load_backtest_runs()
     all_backtest_runs = runs_df
@@ -1625,6 +1683,10 @@ with backtest_tab:
             display_runs["max_drawdown"] = display_runs["max_drawdown"].apply(
                 lambda value: f"{float(value):.1%}" if pd.notna(value) else "—"
             )
+        if "integrity_status" in display_runs.columns:
+            display_runs["integrity"] = display_runs["integrity_status"].apply(integrity_label)
+        else:
+            display_runs["integrity"] = "Valid"
         for col in ["sharpe", "profit_factor"]:
             if col in display_runs.columns:
                 display_runs[col] = display_runs[col].apply(
@@ -1637,6 +1699,7 @@ with backtest_tab:
                     "rank",
                     "id",
                     "status_label",
+                    "integrity",
                     "scenario_label",
                     "symbol",
                     "start_ts",
@@ -1901,7 +1964,19 @@ with inspect_tab:
         run_labels: dict[int, str] = {}
         for _, row in all_runs.iterrows():
             run_id = int(row["id"])
-            run_labels[run_id] = f"{row['strategy_name']} — {row['symbol']} ({row['status']})"
+            run_labels[run_id] = f"#{run_id} · {row['strategy_name']} — {row['symbol']} ({row['status']})"
+
+        preferred_run_id = next(
+            (
+                int(row["id"])
+                for _, row in all_runs.iterrows()
+                if float(row.get("n_trades") or 0) > 0
+                and str(row.get("integrity_status") or "valid").lower() == "valid"
+            ),
+            int(all_runs.iloc[0]["id"]),
+        )
+        if st.session_state.get("inspect_run_label") not in run_labels:
+            st.session_state["inspect_run_label"] = preferred_run_id
 
         selected_run_id = st.selectbox(
             "Saved run",
@@ -1920,35 +1995,66 @@ with inspect_tab:
             equity_curve = compute_trade_equity_curve(trades_df, starting_balance=STARTING_BALANCE_USD)
             win_stats = compute_win_loss_stats(trades_df)
             summary = build_trader_summary(selected_run, equity_curve, STARTING_BALANCE_USD)
+            run_integrity_status = str(selected_run.get("integrity_status") or "valid").lower()
+            run_integrity_note = str(selected_run.get("integrity_note") or "").strip()
+            has_trade_records = not trades_df.empty
+            metrics_available = run_integrity_status != "invalid-metrics"
 
+            _run_start = str(selected_run.get("start_date") or "—")[:10]
+            _run_end = str(selected_run.get("end_date") or "—")[:10]
+            st.caption(
+                f"Run **#{selected_run_id}** · strategy `{selected_run.get('strategy_name', '—')}` · "
+                f"symbol `{selected_run.get('symbol', '—')}` · window `{_run_start}` → `{_run_end}`"
+            )
             artifact_caption = (
-                f"Artifact #{selected_run.get('artifact_id')} · provenance `{selected_run.get('strategy_provenance') or 'unknown'}` · "
+                f"Artifact #{selected_run.get('artifact_id') or '—'} · "
+                f"provenance `{selected_run.get('strategy_provenance') or 'unknown'}` · "
                 f"hash `{str(selected_run.get('strategy_code_hash') or '')[:12] or '—'}`"
             )
             st.caption(artifact_caption)
+            st.caption(f"Integrity: **{integrity_label(run_integrity_status)}**")
+            if run_integrity_status != "valid":
+                warning_text = f"Saved run integrity warning: {integrity_label(run_integrity_status)}."
+                if run_integrity_note:
+                    warning_text += f" {run_integrity_note}"
+                st.warning(warning_text)
 
             metric_cols = st.columns(4)
             metric_cols[0].metric("Total Gain", f"{summary['gain_pct']:+.2f}%")
             metric_cols[1].metric("Win Rate", f"{win_stats['win_rate']:.0%}")
-            metric_cols[2].metric("Sharpe Ratio", f"{float(selected_run.get('sharpe') or 0.0):.2f}")
-            metric_cols[3].metric("Max Drawdown", f"{summary['drawdown_pct']:.2f}%")
-
-            gate_icon = "✅" if summary["gate_passed"] else "❌"
-            st.info(
-                f"{gate_icon} Gate {'passed' if summary['gate_passed'] else 'failed'}. "
-                f"Sharpe quality: {summary['sharpe_label']}. "
-                f"Risk profile: {summary['risk_label']}. "
-                f"Profit factor: {summary['profit_factor']:.2f}. "
-                f"Trades: {summary['n_trades']} total executions, "
-                f"{win_stats['total_pairs']} closed pairs, {win_stats['win_count']} wins, {win_stats['loss_count']} losses."
+            metric_cols[2].metric(
+                "Sharpe Ratio",
+                f"{float(selected_run.get('sharpe') or 0.0):.2f}" if metrics_available else "Unavailable",
+            )
+            metric_cols[3].metric(
+                "Max Drawdown",
+                f"{summary['drawdown_pct']:.2f}%" if metrics_available else "Unavailable",
             )
 
-            if summary["gate_failures"]:
+            if metrics_available:
+                gate_icon = "✅" if summary["gate_passed"] else "❌"
+                gate_message = (
+                    f"{gate_icon} Gate {'passed' if summary['gate_passed'] else 'failed'}. "
+                    f"Sharpe quality: {summary['sharpe_label']}. "
+                    f"Risk profile: {summary['risk_label']}. "
+                    f"Profit factor: {summary['profit_factor']:.2f}. "
+                    f"Trades: {summary['n_trades']} total executions, "
+                    f"{win_stats['total_pairs']} closed pairs, {win_stats['win_count']} wins, {win_stats['loss_count']} losses."
+                )
+                if summary["gate_passed"]:
+                    st.success(gate_message)
+                else:
+                    st.warning(gate_message)
+            else:
+                st.warning("Gate outcome unavailable for this run because the saved metrics payload is invalid.")
+
+            if metrics_available and summary["gate_failures"]:
                 with st.expander("Gate failure details", expanded=False):
                     for failure in summary["gate_failures"]:
                         st.write(f"- {failure}")
 
-            if not equity_curve.empty:
+            st.markdown("#### Equity Audit")
+            if has_trade_records and not equity_curve.empty:
                 inspect_fig = go.Figure()
                 inspect_fig.add_trace(
                     go.Scatter(
@@ -1972,6 +2078,26 @@ with inspect_tab:
                     yaxis=dict(gridcolor="#1e222d"),
                 )
                 st.plotly_chart(inspect_fig, width="stretch")
+            elif run_integrity_status == "missing-trades":
+                st.warning(
+                    "**Equity curve unavailable — missing trades.** "
+                    f"Run #{selected_run_id} has no persisted trade rows in the database. "
+                    "This can happen when a backtest ran but failed before persisting its trade log. "
+                    "Re-run the backtest to generate a fresh result."
+                )
+            elif run_integrity_status == "invalid-metrics":
+                st.warning(
+                    "**Equity curve unavailable — invalid metrics.** "
+                    f"Run #{selected_run_id} has a corrupted metrics payload. "
+                    "Re-run the backtest to replace this entry."
+                )
+            elif not has_trade_records:
+                st.info(
+                    "**Equity curve unavailable — no trades executed.** "
+                    f"Run #{selected_run_id} completed with 0 trades. "
+                    "The strategy may not have generated any signals over the selected date window. "
+                    "Try widening the date range or checking the strategy parameters."
+                )
 
             st.markdown("---")
             st.markdown("#### Strategy Algorithm")
@@ -1980,7 +2106,9 @@ with inspect_tab:
                 None,
             )
             if strat_item is None:
-                st.warning(f"Strategy source could not be located for `{selected_run.get('strategy_name', 'unknown')}`.")
+                source_reason = f"Strategy `{selected_run.get('strategy_name', 'unknown')}` is no longer available in the local catalog."
+                st.warning(source_reason)
+                st.code(f"# Strategy source unavailable\n# Reason: {source_reason}\n", language="python")
             else:
                 if run_artifact and run_artifact.get("path"):
                     current_hash = ""
@@ -1990,4 +2118,14 @@ with inspect_tab:
                         current_hash = ""
                     if current_hash and current_hash != str(selected_run.get("strategy_code_hash") or ""):
                         st.warning("The current plugin file no longer matches the saved run hash. Review the artifact history before trusting this source as an exact historical copy.")
-                st.code(get_strategy_source_code(strat_item), language="python")
+                strategy_path = str(strat_item.get("path") or "").strip()
+                if not strategy_path:
+                    source_reason = "Built-in strategy source is not stored on disk."
+                    st.info(source_reason)
+                    st.code(get_strategy_source_code(strat_item), language="python")
+                elif not os.path.exists(strategy_path):
+                    source_reason = f"Strategy file is missing on disk: {strategy_path}"
+                    st.warning(source_reason)
+                    st.code(f"# Strategy source unavailable\n# Reason: {source_reason}\n", language="python")
+                else:
+                    st.code(get_strategy_source_code(strat_item), language="python")
