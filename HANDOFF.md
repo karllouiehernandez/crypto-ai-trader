@@ -25,6 +25,39 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 Sprint 41 is closed. Sprint 42 is not yet opened as a GitHub issue, but local follow-on work has started.
 
+## Shared-Agent Protection Protocol
+
+Claude Code and Codex must preserve each other's work on this shared branch.
+
+Before doing any substantial work:
+1. Read `HANDOFF.md` first, then `knowledge/agent_resume.md`
+2. Run `git status --short` and inspect existing dirty files before editing anything
+3. Treat `codex/sprint-27-responsive-chart` as the shared continuation branch unless the user explicitly asks for a new branch
+4. Assume existing local changes are intentional shared work unless directly proven otherwise
+
+Never do these without an explicit user request:
+1. `git reset --hard`
+2. `git checkout -- <file>`
+3. deleting or overwriting uncommitted files to "clean up"
+4. changing the active paper/live artifact IDs as incidental test cleanup
+5. truncating or replacing the live SQLite DB for tests
+
+Required safety rules:
+1. `pytest` must run through the repo's `tests/conftest.py` temp-DB isolation; do not bypass it
+2. Do not edit, stage, or revert `knowledge/experiment_log.md` unless the runtime process writing to it has been intentionally stopped
+3. Do not stage runtime-generated artifacts such as `reports/`, `.streamlit_eval.out`, or `.streamlit_eval.err` unless the user explicitly asks for them
+4. If the live DB is found damaged, restore state before moving on:
+   - re-sync strategy artifacts from `strategy.runtime.list_available_strategies()`
+   - re-arm the paper target if needed
+   - restore maintained-universe candles before claiming readiness
+5. Update this file last with what changed, what was verified, and what remains next
+
+Current shared baseline:
+1. Last protection commit: `b207a44` — `Sprint 42 kickoff — isolate pytest DB and restore data gate`
+2. `pytest tests/ -q` leaves the live DB intact
+3. Maintained MVP universe is restored to 30-day local coverage
+4. Active paper target should remain `rsi_mean_reversion_v1` artifact `#2` unless the user explicitly changes it
+
 ### Fresh progress after Sprint 41 close
 
 | Check | Result |

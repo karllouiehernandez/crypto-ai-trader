@@ -178,6 +178,9 @@ Next steps:
 - `knowledge/experiment_log.md` may remain dirty because a background runtime process writes to it
 - Do not edit, stage, or revert `knowledge/experiment_log.md` unless you intentionally stop that process
 - Treat pre-existing dirty files as shared state from the combined Codex/Claude stream, not as separate ownership buckets
+- `tests/conftest.py` is now a hard safety rail: do not bypass repo pytest isolation or point tests back at the live app DB
+- Do not stage runtime-generated `reports/` or `.streamlit_eval.*` files unless the user explicitly asks
+- Do not clear active paper/live artifact settings as part of test cleanup; those are live workspace state, not disposable fixtures
 - Keep the Jesse-like workflow intact
 - Prefer pure helpers in `dashboard/workbench.py` over embedding ranking/formatting logic directly in Streamlit
 - Keep the responsive chart self-contained and locally bundled; do not introduce a Node build step
