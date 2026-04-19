@@ -9,7 +9,18 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from dashboard.chart_component import render_responsive_chart
-from config import DB_PATH, SYMBOLS, STARTING_BALANCE_USD, LIVE_TRADE_ENABLED, LLM_ENABLED, LLM_MODEL, LLM_PROVIDER
+from config import (
+    DB_PATH,
+    LIVE_TRADE_ENABLED,
+    LLM_ENABLED,
+    LLM_MODEL,
+    LLM_PROVIDER,
+    MVP_FRESHNESS_MINUTES,
+    MVP_MIN_HISTORY_DAYS,
+    MVP_RESEARCH_UNIVERSE,
+    STARTING_BALANCE_USD,
+    SYMBOLS,
+)
 from strategy.ta_features import add_indicators
 from strategy.regime import detect_regime, Regime
 from strategy.runtime import (
@@ -42,6 +53,7 @@ from backtester.service import (
     save_backtest_preset,
 )
 from dashboard.workbench import (
+    build_data_health_frame,
     build_artifact_registry_frame,
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
@@ -70,6 +82,7 @@ from dashboard.workbench import (
     normalise_preset_name,
     runtime_mode_table,
     strategy_workflow_status,
+    summarise_data_health,
     runtime_summary,
 )
 from trading_diary.service import (
@@ -92,6 +105,7 @@ from market_data.history import (
     ensure_symbol_history,
     format_audit_summary,
     get_latest_candle_time,
+    sync_recent as sync_recent_history,
 )
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
 from market_data.symbol_readiness import (
@@ -395,6 +409,74 @@ def load_symbol_audit(symbol: str, start_iso: str, end_iso: str) -> dict:
     return audit_history(symbol, start_iso, end_iso, interval="1m")
 
 
+@st.cache_data(ttl=30)
+def load_ready_symbol_health(
+    ready_symbols: tuple[str, ...],
+    mvp_research_universe: tuple[str, ...],
+) -> list[dict]:
+    """Return freshness and 30-day runnable-window status for ready symbols."""
+    now_utc = pd.Timestamp.utcnow()
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.tz_localize("UTC")
+
+    mvp_set = {str(symbol or "").strip().upper() for symbol in mvp_research_universe if str(symbol or "").strip()}
+    rows: list[dict] = []
+    for raw_symbol in ready_symbols:
+        symbol_name = str(raw_symbol or "").strip().upper()
+        if not symbol_name:
+            continue
+
+        latest_candle_dt = get_latest_candle_time(symbol_name)
+        latest_ts = pd.Timestamp(latest_candle_dt) if latest_candle_dt is not None else None
+        age_minutes: int | None = None
+        latest_window_start = None
+        latest_window_end = None
+        window_runnable: bool | None = None
+        has_min_history: bool | None = None
+
+        if latest_ts is not None:
+            if latest_ts.tzinfo is None:
+                latest_ts = latest_ts.tz_localize("UTC")
+            else:
+                latest_ts = latest_ts.tz_convert("UTC")
+            age_minutes = max(0, int((now_utc - latest_ts).total_seconds() // 60))
+
+            if symbol_name in mvp_set:
+                latest_day = latest_ts.date()
+                window_end = datetime.combine(latest_day, datetime.min.time())
+                window_start = window_end - timedelta(days=MVP_MIN_HISTORY_DAYS)
+                audit_result = load_symbol_audit(symbol_name, window_start.isoformat(), window_end.isoformat())
+                latest_window_start = window_start.date().isoformat()
+                latest_window_end = window_end.date().isoformat()
+                window_runnable = bool(audit_result.get("is_complete"))
+                has_min_history = bool(audit_result.get("is_complete"))
+
+        rows.append(
+            {
+                "symbol": symbol_name,
+                "latest_candle_ts": latest_ts.isoformat() if latest_ts is not None else None,
+                "age_minutes": age_minutes,
+                "is_fresh": age_minutes is not None and age_minutes <= MVP_FRESHNESS_MINUTES,
+                "has_min_history": has_min_history,
+                "latest_window_start": latest_window_start,
+                "latest_window_end": latest_window_end,
+                "window_runnable": window_runnable,
+            }
+        )
+    return rows
+
+
+def format_data_age(age_minutes: int | None) -> str:
+    """Return a concise trader-facing age label for candle freshness."""
+    if age_minutes is None:
+        return "No data"
+    if age_minutes >= 1440:
+        return f"{age_minutes // 1440}d"
+    if age_minutes >= 60:
+        return f"{age_minutes // 60}h"
+    return f"{age_minutes}m"
+
+
 @st.cache_data(ttl=15)
 def load_ready_symbols_cached() -> list[str]:
     """Symbols with local candle data, ordered by Binance volume rank."""
@@ -406,6 +488,20 @@ def load_ready_symbols_cached() -> list[str]:
     in_catalog = {row["symbol"] for row in catalog}
     ranked.extend(sorted(s for s in ready if s not in in_catalog))
     return ranked
+
+
+@st.cache_data(ttl=30)
+def choose_backtest_default_symbol(preferred_symbol: str, ready_symbol_options: tuple[str, ...]) -> str:
+    """Choose a stable default symbol without blocking the Backtest Lab on audit scans."""
+    ordered_symbols: list[str] = []
+    for candidate in [preferred_symbol, *ready_symbol_options]:
+        symbol_name = str(candidate or "").strip()
+        if symbol_name and symbol_name not in ordered_symbols:
+            ordered_symbols.append(symbol_name)
+
+    if preferred_symbol in ordered_symbols:
+        return preferred_symbol
+    return ordered_symbols[0] if ordered_symbols else preferred_symbol
 
 
 @st.cache_data(ttl=5)
@@ -802,6 +898,21 @@ if not available_symbols:
 if not ready_symbols:
     ready_symbols = ["BTCUSDT"]
 
+mvp_research_universe = tuple(
+    symbol_name
+    for symbol_name in dict.fromkeys(
+        [str(symbol or "").strip().upper() for symbol in (MVP_RESEARCH_UNIVERSE or SYMBOLS)]
+    )
+    if symbol_name
+)
+ready_symbol_health = load_ready_symbol_health(tuple(ready_symbols), mvp_research_universe)
+data_health_summary = summarise_data_health(
+    ready_symbol_health,
+    mvp_research_universe,
+    MVP_FRESHNESS_MINUTES,
+)
+data_health_frame = build_data_health_frame(ready_symbol_health)
+
 # Persist all user preferences in session_state so auto-refresh never resets them
 _DEFAULTS = {
     "symbol":        runtime_watchlist[0] if runtime_watchlist else available_symbols[0],
@@ -852,6 +963,7 @@ if save_watchlist:
     load_candles_raw.clear()
     load_trades.clear()
     load_equity.clear()
+    load_ready_symbol_health.clear()
     st.success("Runtime watchlist updated.")
     st.rerun()
 
@@ -860,6 +972,7 @@ if sync_symbol:
         ensure_symbol_history(symbol)
     load_candles_raw.clear()
     load_symbol_audit.clear()
+    load_ready_symbol_health.clear()
     st.success(f"Synced recent history for {symbol}.")
     st.rerun()
 
@@ -884,6 +997,7 @@ with st.sidebar.expander(f"Load New Symbol ({len(_unloaded_symbols)} available)"
                 st.success(f"**{_new_sym}** is already ready — refresh to see it in selectors.")
             load_ready_symbols_cached.clear()
             load_symbol_jobs.clear()
+            load_ready_symbol_health.clear()
             st.rerun()
     else:
         st.caption("All discovered Binance symbols are already loaded.")
@@ -907,6 +1021,20 @@ with st.sidebar.expander(f"Load New Symbol ({len(_unloaded_symbols)} available)"
         st.markdown("**Recently Loaded**")
         for _j in _recently_ready:
             st.caption(f"✅ {_j['symbol']}")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**MVP Data Health**")
+if data_health_summary["release_blocked"]:
+    st.sidebar.error("Research-only mode")
+    st.sidebar.caption("MVP data gate is blocked. Do not treat this environment as paper/live ready.")
+else:
+    st.sidebar.success("MVP gate healthy")
+    st.sidebar.caption("Maintained research universe has fresh data and runnable windows.")
+st.sidebar.caption(
+    f"Ready symbols: {data_health_summary['ready_symbol_count']} · "
+    f"Fresh: {data_health_summary['fresh_symbol_count']} · "
+    f"MVP runnable: {data_health_summary['mvp_runnable_count']}/{data_health_summary['mvp_symbol_count']}"
+)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**📉 Chart Layers**")
@@ -1000,6 +1128,52 @@ hero_cols[4].metric(
     "Runtime Targets",
     f"P:{active_paper_artifact['name'] if active_paper_artifact else '—'} · L:{active_live_artifact['name'] if active_live_artifact else '—'}",
 )
+health_cols = st.columns(4)
+health_cols[0].metric("Ready Symbols", str(data_health_summary["ready_symbol_count"]))
+health_cols[1].metric("Fresh Symbols", str(data_health_summary["fresh_symbol_count"]))
+health_cols[2].metric(
+    "MVP Universe",
+    f"{data_health_summary['mvp_ready_count']}/{data_health_summary['mvp_symbol_count']}",
+)
+health_cols[3].metric(
+    "Runnable MVP Windows",
+    f"{data_health_summary['mvp_runnable_count']}/{data_health_summary['mvp_symbol_count']}",
+)
+with st.expander("MVP Data Health Gate", expanded=data_health_summary["release_blocked"]):
+    st.caption(
+        f"Maintained research universe: {', '.join(f'`{symbol}`' for symbol in mvp_research_universe)}. "
+        "This gate determines whether the environment should be treated as paper-readiness capable or research-only."
+    )
+    if data_health_summary["release_blocked"]:
+        st.error(
+            "The MVP data gate is blocked. Keep the system in research-only mode until the maintained universe is fresh and its latest 30-day windows are runnable."
+        )
+        st.markdown("\n".join(f"- {item}" for item in data_health_summary["release_blockers"]))
+    else:
+        st.success(
+            "The maintained research universe is fresh and its latest 30-day windows are runnable. This environment is eligible for supervised paper-readiness evaluation."
+        )
+    st.dataframe(data_health_frame, width="stretch", hide_index=True)
+
+    stale_symbols = [
+        h["symbol"] for h in ready_symbol_health
+        if not h.get("is_fresh", True)
+    ]
+    if stale_symbols:
+        st.caption(f"Stale symbols: {', '.join(f'`{s}`' for s in stale_symbols)}")
+        if st.button("Sync fresh data for stale symbols", key="mvp_sync_stale"):
+            sync_results = {}
+            for _sym in stale_symbols:
+                try:
+                    _res = sync_recent_history(_sym)
+                    sync_results[_sym] = f"+{_res.get('rows_inserted', 0)} rows"
+                except Exception as _sync_err:
+                    sync_results[_sym] = f"error: {_sync_err}"
+            for _sym, _msg in sync_results.items():
+                st.write(f"`{_sym}`: {_msg}")
+            st.cache_data.clear()
+            st.rerun()
+
 _real_issues = []
 if active_paper_artifact and runtime_target_summary["paper"]["error"]:
     _real_issues.append(f"Paper target invalid — {runtime_target_summary['paper']['error']}")
@@ -1384,16 +1558,16 @@ with backtest_tab:
     st.markdown("### Backtest Lab")
     selector_cols = st.columns(2)
     _prefill_sym = st.session_state.pop("focus_prefill_symbol", None)
-    _bt_sym_default = _prefill_sym if _prefill_sym else symbol
+    _bt_sym_default = _prefill_sym if _prefill_sym else choose_backtest_default_symbol(symbol, tuple(ready_symbols))
     _bt_sym_options = ready_symbols if _bt_sym_default in ready_symbols else [_bt_sym_default] + list(ready_symbols)
     bt_symbol = selector_cols[0].selectbox(
-        "Symbol",
+        "Backtest Symbol",
         _bt_sym_options,
         index=0 if _prefill_sym else (_bt_sym_options.index(_bt_sym_default) if _bt_sym_default in _bt_sym_options else 0),
         key="bt_symbol",
     )
     bt_strategy = selector_cols[1].selectbox(
-        "Strategy",
+        "Backtest Strategy",
         strategy_names,
         key="bt_strategy",
     )
@@ -1497,6 +1671,9 @@ with backtest_tab:
     _latest_candle_date = _latest_candle_dt.date() if _latest_candle_dt else datetime.utcnow().date()
     _bt_end_default = _latest_candle_date
     _bt_start_default = _latest_candle_date - timedelta(days=30)
+    _selected_symbol_health = next((item for item in ready_symbol_health if item.get("symbol") == bt_symbol), None)
+    _selected_age_minutes = _selected_symbol_health.get("age_minutes") if _selected_symbol_health else None
+    _selected_fresh = bool(_selected_symbol_health and _selected_symbol_health.get("is_fresh"))
     if _latest_candle_dt:
         st.caption(
             f"Latest complete candle for **{bt_symbol}**: `{_latest_candle_date}` — "
@@ -1505,11 +1682,26 @@ with backtest_tab:
     else:
         st.caption(f"No candle data found for **{bt_symbol}** — defaulting to today.")
     date_cols = st.columns(2)
-    bt_start = date_cols[0].date_input("Start", value=_bt_start_default)
-    bt_end = date_cols[1].date_input("End", value=_bt_end_default)
+    bt_start = date_cols[0].date_input("Backtest Start", value=_bt_start_default)
+    bt_end = date_cols[1].date_input("Backtest End", value=_bt_end_default)
     bt_start_dt = datetime.combine(bt_start, datetime.min.time())
     bt_end_dt = datetime.combine(bt_end, datetime.min.time())
     audit_result = load_symbol_audit(bt_symbol, bt_start_dt.isoformat(), bt_end_dt.isoformat())
+    _freshness_label = "Fresh" if _selected_fresh else f"Stale ({format_data_age(_selected_age_minutes)})"
+    _window_status_label = "Runnable" if audit_result["is_complete"] else "Blocked"
+    st.info(
+        f"Health gate · latest candle age `{format_data_age(_selected_age_minutes)}` · "
+        f"freshness `{_freshness_label}` · current window `{_window_status_label}`"
+    )
+    if _selected_age_minutes is None:
+        st.error(
+            f"`{bt_symbol}` has no local candle data. Load or sync history before treating this symbol as part of the MVP research universe."
+        )
+    elif not _selected_fresh:
+        st.error(
+            f"`{bt_symbol}` is stale by `{format_data_age(_selected_age_minutes)}`. Historical research may still be useful, "
+            "but MVP paper-readiness is blocked until fresh candles are synced."
+        )
     audit_cols = st.columns([4, 1])
     st.markdown("#### History Audit")
     if audit_result["is_complete"]:
@@ -1521,6 +1713,7 @@ with backtest_tab:
             backfill_history(bt_symbol, bt_start_dt, bt_end_dt, interval="1m")
         load_candles_raw.clear()
         load_symbol_audit.clear()
+        load_ready_symbol_health.clear()
         st.success(f"Backfill complete for {bt_symbol}.")
         st.rerun()
     matched_preset_name = find_matching_preset_name(bt_params, presets_view)
@@ -1552,8 +1745,22 @@ with backtest_tab:
             "Use the **Backfill Range** button above to fetch the missing candles, then re-run."
         )
 
+    backtest_attempt_state = st.session_state.get("backtest_attempt_state")
+
     if run_backtest_now:
         if not audit_result["is_complete"]:
+            backtest_attempt_state = {
+                "status": "blocked-history",
+                "strategy_name": bt_strategy,
+                "symbol": bt_symbol,
+                "window": f"{bt_start} → {bt_end}",
+                "detail": (
+                    f"History is incomplete for {bt_symbol} over the selected window. "
+                    "Use Backfill Range, then run the backtest again."
+                ),
+                "recorded_at": datetime.now().strftime("%H:%M:%S"),
+            }
+            st.session_state["backtest_attempt_state"] = backtest_attempt_state
             st.warning(
                 f"Run Backtest is blocked: history for **{bt_symbol}** is incomplete over the selected window. "
                 "Backfill the missing range first."
@@ -1570,13 +1777,41 @@ with backtest_tab:
                         preset_name=matched_preset_name,
                     )
             except ValueError as exc:
+                backtest_attempt_state = {
+                    "status": "blocked-validation",
+                    "strategy_name": bt_strategy,
+                    "symbol": bt_symbol,
+                    "window": f"{bt_start} → {bt_end}",
+                    "detail": str(exc),
+                    "recorded_at": datetime.now().strftime("%H:%M:%S"),
+                }
+                st.session_state["backtest_attempt_state"] = backtest_attempt_state
                 st.error(f"Backtest validation failed: {exc}")
                 result = None
             except Exception as exc:
+                backtest_attempt_state = {
+                    "status": "run-failed",
+                    "strategy_name": bt_strategy,
+                    "symbol": bt_symbol,
+                    "window": f"{bt_start} → {bt_end}",
+                    "detail": str(exc),
+                    "recorded_at": datetime.now().strftime("%H:%M:%S"),
+                }
+                st.session_state["backtest_attempt_state"] = backtest_attempt_state
                 st.error(f"Backtest run failed unexpectedly: {exc}")
                 result = None
             else:
                 if result is not None:
+                    backtest_attempt_state = {
+                        "status": "saved-run",
+                        "strategy_name": bt_strategy,
+                        "symbol": bt_symbol,
+                        "window": f"{bt_start} → {bt_end}",
+                        "detail": f"Backtest run #{result['run_id']} saved.",
+                        "run_id": int(result["run_id"]),
+                        "recorded_at": datetime.now().strftime("%H:%M:%S"),
+                    }
+                    st.session_state["backtest_attempt_state"] = backtest_attempt_state
                     st.session_state["selected_backtest_run_id"] = result["run_id"]
                     load_backtest_runs.clear()
                     load_symbol_audit.clear()
@@ -1584,7 +1819,35 @@ with backtest_tab:
                     load_backtest_trades.clear()
                     st.success(f"Backtest run #{result['run_id']} saved.")
                 else:
+                    backtest_attempt_state = {
+                        "status": "run-failed",
+                        "strategy_name": bt_strategy,
+                        "symbol": bt_symbol,
+                        "window": f"{bt_start} → {bt_end}",
+                        "detail": "Backtest returned no result. Check the strategy and date range.",
+                        "recorded_at": datetime.now().strftime("%H:%M:%S"),
+                    }
+                    st.session_state["backtest_attempt_state"] = backtest_attempt_state
                     st.error("Backtest returned no result. Check the strategy and date range.")
+
+    if backtest_attempt_state:
+        st.markdown("#### Last Backtest Attempt")
+        st.caption(
+            f"{backtest_attempt_state.get('recorded_at', '—')} · "
+            f"`{backtest_attempt_state.get('strategy_name', '—')}` · "
+            f"`{backtest_attempt_state.get('symbol', '—')}` · "
+            f"{backtest_attempt_state.get('window', '—')}"
+        )
+        attempt_status = str(backtest_attempt_state.get("status") or "")
+        attempt_detail = str(backtest_attempt_state.get("detail") or "").strip()
+        if attempt_status == "saved-run":
+            st.success(attempt_detail)
+        elif attempt_status == "blocked-history":
+            st.warning(f"Blocked by history: {attempt_detail}")
+        elif attempt_status == "blocked-validation":
+            st.warning(f"Blocked by validation: {attempt_detail}")
+        else:
+            st.error(f"Run failed: {attempt_detail}")
 
     runs_df = load_backtest_runs()
     all_backtest_runs = runs_df

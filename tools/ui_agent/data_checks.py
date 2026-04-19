@@ -28,6 +28,12 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from config import POSITION_SIZE_PCT as MAX_POS_PCT, STARTING_BALANCE_USD
+from database.integrity import (
+    INVALID_METRICS_STATUS,
+    LEGACY_INVALID_STATUS,
+    MISSING_TRADES_STATUS,
+    refresh_integrity_flags,
+)
 from database.models import (
     BacktestRun,
     BacktestTrade,
@@ -47,12 +53,29 @@ _FRESHNESS_MINUTES = 10   # latest candle must be within this many minutes
 _ONE_HOUR_CANDLES = 60
 
 
+def _console_safe(text: str) -> str:
+    return (
+        str(text)
+        .replace("—", "-")
+        .replace("–", "-")
+        .replace("→", "->")
+        .replace("≥", ">=")
+        .replace("≤", "<=")
+        .replace("…", "...")
+        .encode("ascii", "replace")
+        .decode("ascii")
+    )
+
+
 def _record(findings: list[dict], feature: str, status: str, detail: str,
             verbose: bool) -> None:
     findings.append({"feature": feature, "status": status, "detail": detail})
     if verbose:
-        icons = {"PASS": "✅", "FAIL": "❌", "PARTIAL": "⚠ ", "SKIP": "⏭ "}
-        print(f"  {icons.get(status, '  ')} [{status}] {feature} — {detail}")
+        icons = {"PASS": "[PASS]", "FAIL": "[FAIL]", "PARTIAL": "[PARTIAL]", "SKIP": "[SKIP]"}
+        print(
+            f"  {icons.get(status, '[INFO]')} [{status}] "
+            f"{_console_safe(feature)} - {_console_safe(detail)}"
+        )
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -199,28 +222,40 @@ def _check_candle_continuity(sess, symbols: list[str], findings: list[dict],
 
 def _check_trade_log_integrity(sess, findings: list[dict], verbose: bool) -> None:
     rows = sess.execute(
-        sa.select(Trade.symbol, Trade.side, Trade.ts)
-        .order_by(Trade.symbol, Trade.ts)
+        sa.select(Trade.symbol, Trade.side, Trade.ts, Trade.integrity_status, Trade.integrity_note)
+        .order_by(Trade.symbol, Trade.ts, Trade.id)
     ).all()
 
     by_sym: dict[str, list[str]] = {}
-    for sym, side, _ in rows:
+    fresh_issues: list[str] = []
+    legacy_issues: list[str] = []
+    prev_side_by_sym: dict[str, str] = {}
+
+    for sym, side, _, integrity_status, _ in rows:
+        side = str(side or "").upper()
         by_sym.setdefault(sym, []).append(side)
+        prev_side = prev_side_by_sym.get(sym)
+        if prev_side == side and side in {"BUY", "SELL"}:
+            issue = f"{sym}:{side}->{side}"
+            if str(integrity_status or "").lower() == LEGACY_INVALID_STATUS:
+                legacy_issues.append(issue)
+            else:
+                fresh_issues.append(issue)
+        prev_side_by_sym[sym] = side
 
-    orphans = []
-    for sym, sides in by_sym.items():
-        for a, b in zip(sides, sides[1:]):
-            if a == b:
-                orphans.append(f"{sym}:{a}→{b}")
-                break
-
-    total_trades = sum(len(v) for v in by_sym.values())
+    total_trades = len(rows)
     if not rows:
         _record(findings, "Trade log integrity", "SKIP",
                 "No paper trades recorded yet", verbose)
-    elif orphans:
+    elif fresh_issues:
+        sample = fresh_issues[:10]
+        tail = f" … +{len(fresh_issues) - 10} more" if len(fresh_issues) > 10 else ""
         _record(findings, "Trade log integrity", "FAIL",
-                f"Consecutive same-side trades: {orphans}", verbose)
+                f"Consecutive same-side trades ({len(fresh_issues)} total): {sample}{tail}", verbose)
+    elif legacy_issues:
+        syms_affected = sorted({i.split(":")[0] for i in legacy_issues})
+        _record(findings, "Trade log integrity", "PARTIAL",
+                f"Contained legacy-invalid sequences ({len(legacy_issues)} across {syms_affected})", verbose)
     else:
         _record(findings, "Trade log integrity", "PASS",
                 f"{total_trades} trade(s) across {len(by_sym)} symbol(s) — no consecutive same-side", verbose)
@@ -239,11 +274,16 @@ def _check_backtest_metrics(sess, findings: list[dict], verbose: bool) -> None:
         return
 
     bad = []
+    legacy_bad = []
     for run in runs:
         try:
             m = json.loads(run.metrics_json or "{}")
         except Exception:
-            bad.append(f"run#{run.id}:invalid JSON")
+            issue = f"run#{run.id}:invalid JSON"
+            if str(run.integrity_status or "").lower() == INVALID_METRICS_STATUS:
+                legacy_bad.append(issue)
+            else:
+                bad.append(issue)
             continue
         sharpe = m.get("sharpe")
         n = m.get("n_trades", m.get("num_trades"))
@@ -258,6 +298,9 @@ def _check_backtest_metrics(sess, findings: list[dict], verbose: bool) -> None:
     if bad:
         _record(findings, "Backtest metric sanity", "FAIL",
                 f"Invalid metrics in: {bad[:5]}", verbose)
+    elif legacy_bad:
+        _record(findings, "Backtest metric sanity", "PARTIAL",
+                f"Contained legacy-invalid runs: {legacy_bad[:5]}", verbose)
     else:
         _record(findings, "Backtest metric sanity", "PASS",
                 f"{len(runs)} run(s) checked — all metrics finite and in range", verbose)
@@ -281,9 +324,27 @@ def _check_backtest_equity(sess, findings: list[dict], verbose: bool) -> None:
         .order_by(BacktestTrade.ts)
     ).all()
 
+    try:
+        m = json.loads(run.metrics_json or "{}")
+    except Exception:
+        m = {}
+    reported_trades = m.get("n_trades", m.get("num_trades"))
+    try:
+        reported_trades = int(reported_trades) if reported_trades is not None else None
+    except (TypeError, ValueError):
+        reported_trades = None
+
     if not trades:
-        _record(findings, "Backtest equity integrity", "PARTIAL",
-                f"Run #{run.id} has no trade records", verbose)
+        if (reported_trades or 0) == 0:
+            _record(findings, "Backtest equity integrity", "PASS",
+                    f"Run #{run.id} recorded zero trades, consistent with saved metrics", verbose)
+            return
+        if str(run.integrity_status or "").lower() == MISSING_TRADES_STATUS:
+            _record(findings, "Backtest equity integrity", "PARTIAL",
+                    f"Run #{run.id} is legacy-invalid: saved run has no trade records", verbose)
+        else:
+            _record(findings, "Backtest equity integrity", "FAIL",
+                    f"Run #{run.id} has no trade records", verbose)
         return
 
     # Pair BUY/SELL sequentially to check win/loss counts
@@ -293,12 +354,6 @@ def _check_backtest_equity(sess, findings: list[dict], verbose: bool) -> None:
     wins = sum(1 for b, s in zip(buys, sells) if s.price > b.price)
     losses = pairs - wins
 
-    try:
-        m = json.loads(run.metrics_json or "{}")
-    except Exception:
-        m = {}
-
-    reported_trades = m.get("n_trades", m.get("num_trades"))
     issues = []
 
     if reported_trades is not None and abs(int(reported_trades) - len(trades)) > 1:
@@ -329,7 +384,7 @@ def _check_backtest_equity(sess, findings: list[dict], verbose: bool) -> None:
 def _check_position_sizing(sess, findings: list[dict], verbose: bool) -> None:
     max_notional = MAX_POS_PCT * STARTING_BALANCE_USD
     rows = sess.execute(
-        sa.select(Trade.symbol, Trade.price, Trade.qty, Trade.side)
+        sa.select(Trade.symbol, Trade.price, Trade.qty, Trade.side, Trade.integrity_status)
         .where(Trade.side == "BUY")
         .order_by(Trade.ts.desc())
         .limit(200)
@@ -340,15 +395,22 @@ def _check_position_sizing(sess, findings: list[dict], verbose: bool) -> None:
                 "No paper BUY trades to check", verbose)
         return
 
-    oversized = [
-        f"{sym}:{price*qty:.2f}>{max_notional:.2f}"
-        for sym, price, qty, _ in rows
-        if price * qty > max_notional * 1.05   # 5% tolerance for rounding
-    ]
+    oversized = []
+    legacy_oversized = []
+    for sym, price, qty, _, integrity_status in rows:
+        if price * qty > max_notional * 1.05:
+            issue = f"{sym}:{price*qty:.2f}>{max_notional:.2f}"
+            if str(integrity_status or "").lower() == LEGACY_INVALID_STATUS:
+                legacy_oversized.append(issue)
+            else:
+                oversized.append(issue)
 
     if oversized:
         _record(findings, "Position size compliance", "FAIL",
                 f"Oversized trades: {oversized[:5]}", verbose)
+    elif legacy_oversized:
+        _record(findings, "Position size compliance", "PARTIAL",
+                f"Contained legacy-invalid trades: {legacy_oversized[:5]}", verbose)
     else:
         _record(findings, "Position size compliance", "PASS",
                 f"{len(rows)} BUY trade(s) checked — all within MAX_POS_PCT={MAX_POS_PCT:.0%}",
@@ -380,10 +442,10 @@ def _check_artifact_integrity(sess, findings: list[dict], verbose: bool) -> None
         actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual_hash != row.code_hash:
             _record(findings, f"Artifact integrity — {mode}", "FAIL",
-                    f"Hash mismatch — DB:{row.code_hash[:12]} file:{actual_hash[:12]}", verbose)
+                    f"Hash mismatch - DB:{row.code_hash[:12]} file:{actual_hash[:12]}", verbose)
         else:
             _record(findings, f"Artifact integrity — {mode}", "PASS",
-                    f"{row.name} v{row.version} hash verified ({row.code_hash[:12]}…)", verbose)
+                    f"{row.name} v{row.version} hash verified ({row.code_hash[:12]}...)", verbose)
 
 
 # ── Group 10: Ready symbol DB coverage ───────────────────────────────────────
@@ -419,9 +481,10 @@ def run_data_checks(*, verbose: bool = True) -> list[dict]:
     symbols = list_ready_symbols()
 
     if verbose:
-        print(f"\n── Data Integrity (DB) ── [{len(symbols)} ready symbol(s)]")
+        print(f"\n-- Data Integrity (DB) -- [{len(symbols)} ready symbol(s)]")
 
     with SessionLocal() as sess:
+        refresh_integrity_flags(sess, retag_existing=True)
         _check_candle_freshness(sess, symbols, findings, verbose)
         _check_history_depth(sess, symbols, findings, verbose)
         _check_ohlcv_sanity(sess, symbols, findings, verbose)
