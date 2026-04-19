@@ -96,7 +96,7 @@ class Coordinator:
             "confidence_score":     0.0,   # last LLM score not directly exposed; 0 is safe default
         }
         self._record_promotion(result)
-        mark_artifact_paper_passed(result.get("artifact_id"))
+        mark_artifact_paper_passed(result.get("artifact_id"), force=True)
         self._write_promotion_entry(result)
         self._send_promotion_alert(result)
 

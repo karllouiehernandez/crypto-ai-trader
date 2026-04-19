@@ -1532,6 +1532,47 @@ with strategy_tab:
                 st.success(f"Live target approved for `{selected_strategy}` (artifact #{approved['id']}).")
                 st.rerun()
 
+        can_evaluate_paper = (
+            selected_meta.get("provenance") == "plugin"
+            and selected_meta.get("artifact_id")
+            and str(selected_meta.get("artifact_status") or "").lower() in {"paper_active", "paper_passed", "live_approved", "live_active"}
+        )
+        eval_cols = st.columns([1, 3])
+        if eval_cols[0].button(
+            "Evaluate for Paper Pass",
+            width="stretch",
+            disabled=not can_evaluate_paper,
+            help="Grades real paper-trade evidence against the deterministic threshold gate "
+                 "(min trades, runtime span, Sharpe, profit factor, max drawdown). "
+                 "Promotes to `paper_passed` only if every check passes.",
+        ):
+            from strategy.paper_evaluation import evaluate_paper_evidence
+            from strategy.artifacts import mark_artifact_paper_passed as _mark_paper_passed
+            evidence = evaluate_paper_evidence(int(selected_meta["artifact_id"]))
+            if not evidence.passed:
+                eval_cols[1].error(
+                    "Paper evidence gate failed:\n- " + "\n- ".join(evidence.reasons)
+                )
+                with eval_cols[1].expander("Metrics seen by the gate"):
+                    st.json(evidence.as_dict())
+            else:
+                try:
+                    _mark_paper_passed(int(selected_meta["artifact_id"]))
+                except ValueError as exc:
+                    eval_cols[1].error(str(exc))
+                else:
+                    load_strategy_catalog.clear()
+                    st.cache_data.clear()
+                    eval_cols[1].success(
+                        f"`{selected_strategy}` promoted to `paper_passed` "
+                        f"(Sharpe {evidence.metrics['sharpe']:.2f}, "
+                        f"PF {evidence.metrics['profit_factor']:.2f}, "
+                        f"DD {evidence.metrics['max_drawdown']:.1%}, "
+                        f"{int(evidence.metrics['n_trades'])} trades over "
+                        f"{evidence.runtime_days:.1f}d). Approve for Live is now unlocked."
+                    )
+                    st.rerun()
+
         _artifact_status = str(selected_meta.get("artifact_status") or "").lower()
         _is_paper_target = bool(selected_meta.get("active_paper_artifact"))
         _is_live_target = bool(selected_meta.get("active_live_artifact"))

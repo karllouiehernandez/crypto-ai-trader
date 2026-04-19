@@ -9,11 +9,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Codex |
-| **Last updated** | 2026-04-19 (Sprint 42 kickoff: data-health alignment + pytest DB isolation + MVP data restored) |
+| **Last active agent** | Claude Code |
+| **Last updated** | 2026-04-19 (Sprint 42 Priority #2: deterministic paper-evidence gate landed, live DB intact) |
 | **Active sprint** | Sprint 42 kickoff — trust hardening follow-on (GitHub sprint issue not yet opened) |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **614 passed, 4 warnings** |
+| **Tests** | `pytest tests/ -q` → **624 passed, 4 warnings** (+10 new in `tests/test_paper_evaluation.py`) |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -75,7 +75,15 @@ The dashboard MVP data gate already uses the maintained research universe (`BTCU
 ### Next priorities
 
 1. **Paper trader forward evaluation** — keep `run_live.py --paper` running on the current paper target (`rsi_mean_reversion_v1`) and capture first real paper trades
+   - **Status (2026-04-19 12:25 UTC)**: paper runtime is armed and healthy. Portfolio snapshots tagged `artifact_id=2 / rsi_mean_reversion_v1` are being written every minute; maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) candles are fresh to the current minute; balance/equity flat at `$100` (no entries yet — RSI mean-reversion requires RSI<30 + BB lower touch + MACD cross, entries are sparse).
+   - **Known ops concern**: two concurrent `run_live.py` processes are running (PIDs `2616` and `11744`, both started within 6 ms at 16:41:30 local). They share one DB and will race on trade writes once a signal fires. Needs user decision on which to terminate — Claude will not kill processes unilaterally.
+   - **No paper trades on artifact #2 yet**. The existing 1,253 paper trades in the DB predate artifact tagging (`artifact_id=NULL`) and are not evidence for the paper→live gate.
 2. **Live trader gate** — establish the `paper_passed` → `live_approved` path with real paper evidence
+   - **Status (2026-04-19, Claude Code)**: deterministic, non-LLM evidence gate now lives in [strategy/paper_evaluation.py](strategy/paper_evaluation.py). `evaluate_paper_evidence(artifact_id)` reads the actual `Trade` rows tagged with the artifact (run_mode='paper', side='SELL') and grades against `PaperEvidenceThresholds` (default: ≥20 trades, ≥3 days runtime, Sharpe ≥1.5, profit factor ≥1.5, max drawdown ≤20%).
+   - [strategy/artifacts.py:308](strategy/artifacts.py#L308) `mark_artifact_paper_passed` now **requires** a passing evidence result by default; the LLM coordinator path in [simulator/coordinator.py:99](simulator/coordinator.py#L99) explicitly passes `force=True` so its own confidence gate stays authoritative.
+   - Dashboard Strategies tab: new **"Evaluate for Paper Pass"** button below the four primary action buttons. Surfaces the metric snapshot + per-rule failure reasons when the gate fails, and promotes + unlocks "Approve for Live" when it passes.
+   - Tests: 10 new cases in `tests/test_paper_evaluation.py` cover no-artifact, no-trades, low trade count, short runtime, high drawdown, passing evidence, force bypass, full promotion, and the legacy-untagged-trades exclusion (legacy `artifact_id=NULL` paper trades are correctly ignored as evidence).
+   - Once the live paper runtime under Priority #1 produces real artifact-#2 trades, this gate will determine eligibility for `approve_artifact_for_live` automatically.
 3. **Legacy integrity cleanup** — the remaining data-check PARTIALs are legacy trade-sequence rows and one legacy-invalid backtest metrics row; decide whether to repair, archive, or surface them more explicitly
 4. **Maintained universe policy** — decide whether extra ready symbols should auto-refresh, or remain research-only and outside the release health gate
 5. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–41 plus this Sprint 42 kickoff fix

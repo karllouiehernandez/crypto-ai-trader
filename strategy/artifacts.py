@@ -305,9 +305,26 @@ def promote_artifact_to_paper(artifact_id: int) -> dict[str, Any]:
     return promoted
 
 
-def mark_artifact_paper_passed(artifact_id: int | None) -> dict[str, Any] | None:
+def mark_artifact_paper_passed(
+    artifact_id: int | None,
+    *,
+    force: bool = False,
+    thresholds: "PaperEvidenceThresholds | None" = None,
+) -> dict[str, Any] | None:
+    """Promote an artifact to ``paper_passed``.
+
+    By default this requires real paper-trade evidence (deterministic gate).
+    Pass ``force=True`` to bypass the evidence check — used by the LLM
+    coordinator path, which has its own confidence gate upstream.
+    """
     if not artifact_id:
         return None
+    if not force:
+        from strategy.paper_evaluation import evaluate_paper_evidence
+        evidence = evaluate_paper_evidence(int(artifact_id), thresholds=thresholds)
+        if not evidence.passed:
+            joined = "; ".join(evidence.reasons) or "evidence missing"
+            raise ValueError(f"Paper evidence gate failed: {joined}")
     return _set_artifact_status(int(artifact_id), "paper_passed")
 
 
