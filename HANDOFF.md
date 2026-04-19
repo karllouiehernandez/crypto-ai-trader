@@ -9,32 +9,48 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-19 (Sprint 38 implemented) |
-| **Sprint completed** | Sprint 38 ✅ — Trader Journey Trust Fixes — 594 tests passing |
-| **Next sprint** | Sprint 39 — TBD (check GitHub Projects board) |
+| **Last active agent** | Codex |
+| **Last updated** | 2026-04-19 (Sprint 39 implemented) |
+| **Sprint completed** | Sprint 39 ✅ — Trading Diary + Backtest Knowledge — 607 tests passing |
+| **Next sprint** | Sprint 40 — TBD (check GitHub Projects board) |
 | **Blocking issues** | To enable LLM: add `OPENROUTER_API_KEY` + `LLM_ENABLED=true` to `.env`. To deploy on Jetson: follow `deployment/README.md`. |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
-| **Reason for handoff** | Sprint 38 is complete. Dashboard trust surfaces hardened; ready for next sprint planning. |
+| **Reason for handoff** | Sprint 39 is complete. Trading Diary UI, diary knowledge export, and diary/backtest insight tests are now in place; ready for next sprint planning. |
 
 ---
 
-## Resume Here — Sprint 39
+## Resume Here — Sprint 40
 
-**Sprint 38 is closed.** Check GitHub Projects board `#1` for the next queued sprint, or ask the user for the next priority.
+**Sprint 39 is closed.** Check GitHub Projects board `#1` for the next queued sprint, or ask the user for the next priority.
 
-### Sprint 38 summary (just closed)
+### Sprint 39 summary (just closed)
 
-All trader-trust fixes from issue `#40` are implemented in `dashboard/streamlit_app.py` and `tools/ui_agent/trader_journey.py`:
+Issue `#41` on GitHub Projects board `#1` is implemented locally and ready as the current baseline:
 
-1. **Backtest Lab date defaults** — end date now defaults to `get_latest_candle_time(symbol).date()`, not `datetime.utcnow().date()`. A "latest complete candle" status caption is always visible above the date inputs.
-2. **Explicit blocked-state banner** — when `audit_result["is_complete"]` is False, a red error banner appears *above* the Run Backtest button explaining exactly what is blocked and what to do.
-3. **No more silent Run Backtest no-ops** — every click produces one of: run saved, blocked-by-history (explicit error), validation failure (explicit error), or unexpected failure (explicit error). All three exception variants are now caught and reported.
-4. **Inspect identity row** — a persistent run identity caption (`Run #N · strategy · symbol · window`) always appears above the artifact and integrity captions.
-5. **Inspect equity section** — three distinct explanations are now shown when no chart can be rendered: `missing-trades`, `invalid-metrics`, or zero-trade run (with actionable next steps).
-6. **Promotion state clarity** — durable captions now explicitly state whether the selected strategy IS the current paper/live target, and explain exactly why each button is blocked (generated draft, wrong provenance, no passing backtest, insufficient artifact status).
-7. **Trader-journey harness** — detection patterns updated for new copy; `blocked-missing-data` now also catches the "Backtest blocked" error banner; equity region detection covers all new no-chart explanations.
+1. **Trading Diary tab completed** — `dashboard/streamlit_app.py` now renders the declared `diary_tab` with five guarded sections:
+   trading summary metrics, P&L-by-strategy and P&L-by-symbol bar charts, recent diary entry filters and annotation form, session-summary recording, recent backtest insights, and knowledge export.
+2. **Trader-facing diary services reused, not duplicated** — the tab uses existing helpers from `trading_diary.service`, `trading_diary.export`, and `dashboard.workbench`, keeping the workbench workflow consistent.
+3. **Diary coverage added** — `tests/test_trading_diary.py` adds 13 mocked unit tests covering trade diary content, backtest insight verdicts, summary win-rate calculation, regime suggestions, export output, and filtered entry queries.
+4. **Verification raised the baseline** — `pytest tests/ -q` now reports **607 passed, 4 warnings**.
+
+### GitHub tracking
+
+- Issue: `#41` — `Sprint 39 — Trading Diary + Backtest Knowledge`
+- Project board: added to GitHub Projects board `#1`
+
+### What to inspect first if continuing
+
+- `dashboard/streamlit_app.py` — final `with diary_tab:` block at the end of the file
+- `trading_diary/service.py` — diary entry creation/query/summarisation
+- `trading_diary/backtest_insights.py` — deterministic backtest learnings
+- `trading_diary/export.py` — knowledge export
+- `tests/test_trading_diary.py` — mocked regression coverage
+
+### Latest verified state
+
+- `pytest tests/ -q` → **607 passed, 4 warnings**
+- `python -m py_compile dashboard/streamlit_app.py` → passes
 
 ### What was done in Sprint 37
 
@@ -262,13 +278,66 @@ No queued roadmap item. Next agent should check GitHub Projects board `#1` or as
 **Partial work notes:** (anything the next agent needs to know)
 ```
 
-## In Progress — Codex left off here
+## In Progress — Claude Code left off here (Sprint 39)
 
-**Sprint:** Sprint 34 — Promotion Control Panel Hardening
-**Last file edited:** `knowledge/sprint_log.md`
-**What was done:** Closed out the handoff state for Sprint 33 and queued Sprint 34 as the next dashboard/runtime hardening sprint.
-**What's next:** Implement the promotion control panel hardening work without weakening the current reviewed-artifact fail-closed runtime checks.
-**Partial work notes:** The worktree still has shared unrelated dirty files such as `knowledge/experiment_log.md` and `market_data/history.py`; leave them alone unless the user asks for them specifically.
+**Sprint:** Sprint 39 — Trading Diary + Backtest Knowledge
+**Last file edited:** `dashboard/streamlit_app.py` (write was rejected due to token limit — not yet written)
+**What was done:**
+- `database/models.py` — Added `TradingDiaryEntry` ORM model + migration block for `outcome_rating`, `learnings`, `strategy_suggestion`
+- `trading_diary/__init__.py` — Created (package marker)
+- `trading_diary/backtest_insights.py` — Created: `extract_backtest_insights`, `_regime_analysis`, `_hour_analysis`, `_loss_streak_analysis`, `_parameter_hints`, `_pair_trades_pnl`
+- `trading_diary/service.py` — Created: `record_trade_diary_entry`, `record_backtest_insight`, `record_session_summary`, `list_diary_entries`, `update_diary_entry`, `get_trading_summary`
+- `trading_diary/export.py` — Created: `export_diary_to_knowledge()` → `knowledge/diary_learnings.md`
+- `backtester/service.py` — Wired `record_backtest_insight` after `sess.commit()` (try/except guard)
+- `simulator/paper_trader.py` — Pulled `Trade()` out of `with` block; wired `record_trade_diary_entry` after commit
+- `dashboard/workbench.py` — Added `build_diary_summary_metrics` and `build_diary_entries_frame` helpers
+- `dashboard/streamlit_app.py` — Added diary imports and changed tabs from 5 to 6 (declared `diary_tab`)
+
+**What's next (exact next step):**
+Append the `with diary_tab:` content block to the END of `dashboard/streamlit_app.py` (currently 2141 lines). The tab is declared but has no content. Add the following 5 sections:
+
+```python
+# ── Trading Diary tab ──────────────────────────────────────────────────────────
+with diary_tab:
+    st.markdown("### Trading Diary")
+    st.caption("Auto-generated entries from paper/live trades and backtests. Annotate entries with learnings and export to the knowledge base.")
+
+    # a. Trading Summary — 4 metrics (st.columns(4)), P&L by strategy bar chart, P&L by symbol bar chart
+    #    Use go.Bar (already imported as `go`), NOT plotly.express
+    #    summary_raw = get_trading_summary()
+    #    dsm = build_diary_summary_metrics(summary_raw)
+    #    by_strategy = summary_raw.get("by_strategy") or {}
+    #    by_symbol = summary_raw.get("by_symbol") or {}
+    #    Wrap in try/except, show st.warning on error
+
+    # b. Recent Diary Entries — 4 filters (run_mode selectbox, symbol text_input, strategy text_input, entry_type selectbox)
+    #    diary_df = build_diary_entries_frame(list_diary_entries(...))
+    #    st.dataframe(diary_df, use_container_width=True) or st.info("No entries")
+    #    Annotation form: st.number_input entry ID → st.expander → st.form with slider(1-5), 2x text_area, form_submit_button → update_diary_entry()
+
+    # c. Session Summary — st.selectbox(["paper","live"]) + st.button → record_session_summary(mode) → st.success
+
+    # d. Backtest Insights — list_diary_entries(entry_type="backtest_insight", limit=20)
+    #    for each entry: st.expander with st.text(entry["content"])
+
+    # e. Export Knowledge — st.button → export_diary_to_knowledge() → st.success(path)
+```
+
+**Then write `tests/test_trading_diary.py`** (13 tests, all mocked — no real DB). See plan file at `C:\Users\karll\.claude\plans\whats-next-fluttering-cocke.md` for the full test list.
+
+**Then run:** `pytest tests/ -q` → must stay at 594+ passed
+
+**Then commit and push** with message: `Sprint 39 — Trading Diary + Backtest Knowledge`
+
+**Then create GitHub issue** and add to Projects board #1.
+
+**Partial work notes:**
+- `knowledge/experiment_log.md` and `market_data/history.py` are dirty from earlier sprints — leave them unless specifically requested
+- All diary writes are wrapped in `try/except Exception: pass` — they must never break the primary workflow
+- Use soft FKs only (no `ForeignKey()`) — codebase convention
+- Tags stored as JSON string (consistent with `params_json`/`metrics_json`)
+- `go.Bar` only in dashboard — NOT `plotly.express`
+- Full plan is at: `C:\Users\karll\.claude\plans\whats-next-fluttering-cocke.md`
 
 ---
 

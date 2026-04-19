@@ -11,10 +11,10 @@ Read order for a new agent:
 
 ## Current Sprint
 
-- Sprint: `Sprint 38 — Trader Journey Trust Fixes` ✅ CLOSED
-- Status: All trust-surface fixes implemented in `dashboard/streamlit_app.py` and `tools/ui_agent/trader_journey.py`. Pushed to master.
-- Baseline: `pytest tests/ -q` shows `594 passed, 4 warnings`
-- Next: Sprint 39 — check GitHub Projects board `#1` or ask user
+- Sprint: `Sprint 39 — Trading Diary + Backtest Knowledge` ✅ CLOSED
+- Status: Trading Diary backend is now surfaced in the dashboard, diary knowledge export is wired, and diary/backtest insight regression tests are in place.
+- Baseline: `pytest tests/ -q` shows `607 passed, 4 warnings`
+- Next: Sprint 40 — check GitHub Projects board `#1` or ask user
 
 ## Why This Exists
 
@@ -26,6 +26,12 @@ Read order for a new agent:
   - Codex and Claude Code must act as one developer on this repo
   - Do not treat local dirty files as belonging to one specific agent unless the user explicitly asks for attribution
   - Continue from the current worktree as shared in-progress state
+- Sprint 39 is now the latest closed sprint:
+  - GitHub issue: `#41` — `Sprint 39 — Trading Diary + Backtest Knowledge`
+  - Project board: issue added to GitHub Projects board `#1`
+  - `dashboard/streamlit_app.py` now fully renders the `Trading Diary` tab with summary metrics, diary filters, annotation form, session summary action, recent backtest insights, and knowledge export
+  - `tests/test_trading_diary.py` adds 13 mocked tests covering trade diary content, insight verdicts, regime suggestions, export writing, and filtered diary queries
+  - `python -m py_compile dashboard/streamlit_app.py` passes
 - Sprint 37 trader-journey coverage is now in the repo locally:
   - `tools/ui_agent/trader_journey.py` — new stateful Playwright runner that behaves like a normal trader: checks lifecycle status, attempts backtests across the visible strategy catalog, opens `Inspect`, and verifies paper/live readiness UX without placing live orders
   - `run_ui_agent.py` — added `--journey trader`
@@ -140,7 +146,7 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-Sprint 38 is closed. Next: determine Sprint 39 from GitHub Projects board `#1` or user direction.
+Sprint 39 is closed. Next: determine Sprint 40 from GitHub Projects board `#1` or user direction.
 
 ## Likely Files
 
@@ -166,11 +172,11 @@ Sprint 38 is closed. Next: determine Sprint 39 from GitHub Projects board `#1` o
 
 ## Last Verified State
 
-- Tests: `594 passed, 4 warnings`
+- Tests: `607 passed, 4 warnings`
 - Headless dashboard startup: verified on fresh ports during Sprint 37 work
 - Latest smoke UI run: `60/61`
 - Trader journey run: completes and writes a report with operator concerns instead of failing at harness level
-- Last sprint fully closed/pushed: `Sprint 38`
+- Last sprint fully closed/pushed: `Sprint 39`
 
 ## Token-Saving Rule
 

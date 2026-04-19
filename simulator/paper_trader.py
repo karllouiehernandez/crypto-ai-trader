@@ -236,16 +236,22 @@ class PaperTrader:
                         prices: Optional[Dict[str, float]] = None, regime: str = "UNKNOWN"):
         if price <= 0:
             return
+        if self.positions.get(sym, 0) > 0:
+            log.info("AUTO BUY skipped: open position already exists.", extra={"symbol": sym})
+            return
 
         # Use all known prices for accurate equity; merge sym's current price in
         all_prices = dict(prices or {})
         all_prices[sym] = price
+        max_notional = float(STARTING_BALANCE_USD) * float(POSITION_SIZE_PCT)
 
         # ATR-based sizing; fall back to flat POSITION_SIZE_PCT when ATR unavailable
         if atr > 0:
             qty = atr_position_size(self._equity(all_prices), atr)
         else:
-            qty = (self.cash * POSITION_SIZE_PCT) / price
+            qty = max_notional / price
+
+        qty = min(float(qty), max_notional / price if price > 0 else 0.0)
 
         if qty <= 0:
             return
@@ -393,27 +399,35 @@ class PaperTrader:
         pnl: float,
         regime: str,
     ) -> None:
-        trade_ts = datetime.now(tz=timezone.utc)
+        trade_ts  = datetime.now(tz=timezone.utc)
+        trade_obj = Trade(
+            ts=trade_ts,
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            price=price,
+            fee=fee,
+            pnl=pnl,
+            artifact_id=self._strategy_artifact_id,
+            strategy_name=self._strategy_name,
+            strategy_version=self._strategy_version,
+            strategy_code_hash=self._strategy_code_hash,
+            strategy_provenance=self._strategy_provenance,
+            run_mode="live" if LIVE_TRADE_ENABLED else "paper",
+            regime=regime,
+            integrity_status="valid",
+            integrity_note=None,
+        )
         with SessionLocal() as sess:
-            sess.add(
-                Trade(
-                    ts=trade_ts,
-                    symbol=symbol,
-                    side=side,
-                    qty=qty,
-                    price=price,
-                    fee=fee,
-                    pnl=pnl,
-                    artifact_id=self._strategy_artifact_id,
-                    strategy_name=self._strategy_name,
-                    strategy_version=self._strategy_version,
-                    strategy_code_hash=self._strategy_code_hash,
-                    strategy_provenance=self._strategy_provenance,
-                    run_mode="live" if LIVE_TRADE_ENABLED else "paper",
-                    regime=regime,
-                )
-            )
+            sess.add(trade_obj)
             sess.commit()
+
+        try:
+            from trading_diary.service import record_trade_diary_entry as _rde
+            _rde(trade_obj)
+        except Exception:
+            pass  # diary write must never break paper trading
+
         self._last_trade_ts = trade_ts
 
 

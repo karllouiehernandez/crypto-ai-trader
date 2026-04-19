@@ -9,6 +9,7 @@ import pandas as pd
 
 from backtester.engine import build_equity_curve, run_backtest
 from backtester.metrics import acceptance_gate, compute_metrics
+from database.integrity import assess_backtest_run_integrity, refresh_integrity_flags
 from database.models import BacktestPreset, BacktestRun, BacktestTrade, SessionLocal, init_db
 from dashboard.workbench import normalise_preset_name, parse_metrics_json, parse_params_json
 from market_focus.selector import (
@@ -40,6 +41,8 @@ def run_and_persist_backtest(
     equity_curve = build_equity_curve(trades)
     metrics = compute_metrics(trades, equity_curve)
     passed, failures = acceptance_gate(metrics)
+    metrics_payload = json.dumps({**metrics, "passed": passed, "failures": failures}, sort_keys=True)
+    integrity_status, integrity_note = assess_backtest_run_integrity(metrics_payload, len(trades))
 
     with SessionLocal() as sess:
         strategy_version = ""
@@ -57,8 +60,10 @@ def run_and_persist_backtest(
             strategy_provenance=str(strategy_meta.get("provenance") or strategy_meta.get("source") or "") if strategy_meta else "",
             preset_name=preset_name,
             params_json=json.dumps(params, sort_keys=True),
-            metrics_json=json.dumps({**metrics, "passed": passed, "failures": failures}),
+            metrics_json=metrics_payload,
             status="passed" if passed else "failed",
+            integrity_status=integrity_status,
+            integrity_note=integrity_note,
         )
         sess.add(run)
         sess.flush()
@@ -82,6 +87,20 @@ def run_and_persist_backtest(
             )
         sess.commit()
 
+    try:
+        from trading_diary.service import record_backtest_insight as _rbi
+        _rbi({
+            "run_id":        run.id,
+            "trades":        trades,
+            "metrics":       metrics,
+            "passed":        passed,
+            "failures":      failures,
+            "symbol":        symbol,
+            "strategy_name": strategy_name,
+        })
+    except Exception:
+        pass  # diary write must never break backtesting
+
     mark_artifact_backtest_result(strategy_meta.get("artifact_id") if strategy_meta else None, passed)
 
     return {
@@ -99,6 +118,7 @@ def run_and_persist_backtest(
 def list_backtest_runs(limit: int = 100) -> pd.DataFrame:
     init_db()
     with SessionLocal() as sess:
+        refresh_integrity_flags(sess)
         rows = (
             sess.query(BacktestRun)
             .order_by(BacktestRun.created_at.desc())
@@ -120,6 +140,8 @@ def list_backtest_runs(limit: int = 100) -> pd.DataFrame:
             "strategy_provenance": row.strategy_provenance or "",
             "preset_name": row.preset_name,
             "status": row.status,
+            "integrity_status": row.integrity_status or "valid",
+            "integrity_note": row.integrity_note,
             "params": parse_params_json(row.params_json),
             **parse_metrics_json(row.metrics_json),
         }
@@ -131,6 +153,7 @@ def list_backtest_runs(limit: int = 100) -> pd.DataFrame:
 def get_backtest_run(run_id: int) -> dict | None:
     init_db()
     with SessionLocal() as sess:
+        refresh_integrity_flags(sess)
         row = sess.get(BacktestRun, run_id)
 
     if row is None:
@@ -148,6 +171,8 @@ def get_backtest_run(run_id: int) -> dict | None:
         "strategy_provenance": row.strategy_provenance or "",
         "preset_name": row.preset_name,
         "status": row.status,
+        "integrity_status": row.integrity_status or "valid",
+        "integrity_note": row.integrity_note,
         "params": parse_params_json(row.params_json),
         **parse_metrics_json(row.metrics_json),
     }

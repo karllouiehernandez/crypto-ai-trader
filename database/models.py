@@ -46,6 +46,8 @@ class Trade(Base):
     strategy_provenance = Column(String(32), nullable=True)
     run_mode = Column(String(16), nullable=True)
     regime = Column(String(32), nullable=True)
+    integrity_status = Column(String(32), nullable=True)
+    integrity_note = Column(String(256), nullable=True)
 
 class Portfolio(Base):
     __tablename__ = "portfolio"
@@ -110,6 +112,8 @@ class BacktestRun(Base):
     params_json      = Column(String, nullable=False, default="{}")
     metrics_json     = Column(String, nullable=False, default="{}")
     status           = Column(String(32), nullable=False, default="completed")
+    integrity_status = Column(String(32), nullable=True)
+    integrity_note   = Column(String(256), nullable=True)
 
 
 class BacktestPreset(Base):
@@ -198,6 +202,25 @@ class SymbolLoadJob(Base):
     error_msg    = Column(String(512), nullable=True)
 
 
+class TradingDiaryEntry(Base):
+    """Auto-generated and operator-annotated journal entries for paper/live trades and backtests."""
+    __tablename__ = "trading_diary_entries"
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    created_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc))
+    entry_type          = Column(String(32), nullable=False)   # trade | backtest_insight | manual | session_summary
+    run_mode            = Column(String(16), nullable=True)    # paper | live | None for backtest entries
+    symbol              = Column(String(32), nullable=True, index=True)
+    strategy_name       = Column(String(128), nullable=True, index=True)
+    trade_id            = Column(Integer, nullable=True)        # soft FK → trades.id
+    backtest_run_id     = Column(Integer, nullable=True)        # soft FK → backtest_runs.id
+    content             = Column(sa.Text, nullable=False)
+    tags                = Column(String, nullable=True)         # JSON array string
+    pnl                 = Column(Float, nullable=True)
+    outcome_rating      = Column(Integer, nullable=True)        # 1–5, operator-supplied
+    learnings           = Column(sa.Text, nullable=True)
+    strategy_suggestion = Column(sa.Text, nullable=True)
+
+
 # ────────────────────────── helpers ──────────────────────────────────────────
 def get_engine(echo: bool = False):
     Path(DB_PATH).parent.mkdir(exist_ok=True)
@@ -226,6 +249,8 @@ def _ensure_runtime_schema(bind) -> None:
             "strategy_provenance": "ALTER TABLE trades ADD COLUMN strategy_provenance VARCHAR(32)",
             "run_mode": "ALTER TABLE trades ADD COLUMN run_mode VARCHAR(16)",
             "regime": "ALTER TABLE trades ADD COLUMN regime VARCHAR(32)",
+            "integrity_status": "ALTER TABLE trades ADD COLUMN integrity_status VARCHAR(32)",
+            "integrity_note": "ALTER TABLE trades ADD COLUMN integrity_note VARCHAR(256)",
         }
         with bind.begin() as conn:
             for column, ddl in migrations.items():
@@ -251,6 +276,8 @@ def _ensure_runtime_schema(bind) -> None:
             "preset_name": "ALTER TABLE backtest_runs ADD COLUMN preset_name VARCHAR(128)",
             "strategy_code_hash": "ALTER TABLE backtest_runs ADD COLUMN strategy_code_hash VARCHAR(64)",
             "strategy_provenance": "ALTER TABLE backtest_runs ADD COLUMN strategy_provenance VARCHAR(32)",
+            "integrity_status": "ALTER TABLE backtest_runs ADD COLUMN integrity_status VARCHAR(32)",
+            "integrity_note": "ALTER TABLE backtest_runs ADD COLUMN integrity_note VARCHAR(256)",
         }
         with bind.begin() as conn:
             for column, ddl in migrations.items():
@@ -277,6 +304,18 @@ def _ensure_runtime_schema(bind) -> None:
             "strategy_version": "ALTER TABLE promotions ADD COLUMN strategy_version VARCHAR(32)",
             "strategy_code_hash": "ALTER TABLE promotions ADD COLUMN strategy_code_hash VARCHAR(64)",
             "strategy_provenance": "ALTER TABLE promotions ADD COLUMN strategy_provenance VARCHAR(32)",
+        }
+        with bind.begin() as conn:
+            for column, ddl in migrations.items():
+                if column not in existing_columns:
+                    conn.execute(text(ddl))
+
+    if "trading_diary_entries" in existing_tables:
+        existing_columns = {col["name"] for col in inspector.get_columns("trading_diary_entries")}
+        migrations = {
+            "outcome_rating":      "ALTER TABLE trading_diary_entries ADD COLUMN outcome_rating INTEGER",
+            "learnings":           "ALTER TABLE trading_diary_entries ADD COLUMN learnings TEXT",
+            "strategy_suggestion": "ALTER TABLE trading_diary_entries ADD COLUMN strategy_suggestion TEXT",
         }
         with bind.begin() as conn:
             for column, ddl in migrations.items():

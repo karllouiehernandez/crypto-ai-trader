@@ -1259,3 +1259,43 @@ def list_rollback_candidates(
         and str(a.get("status") or "").lower() in eligible
         and a.get("id") != current_artifact_id
     ]
+
+
+# ── Trading Diary helpers ─────────────────────────────────────────────────────
+
+def build_diary_summary_metrics(summary: dict[str, Any]) -> dict[str, Any]:
+    """Return headline metrics dict ready for st.metric() calls."""
+    return {
+        "total_trades":    int(summary.get("total_trades", 0)),
+        "win_rate_label":  f"{float(summary.get('win_rate', 0.0)):.1%}",
+        "total_pnl_label": f"{float(summary.get('total_pnl', 0.0)):+.4f}",
+        "best_strategy":   summary.get("best_strategy") or "N/A",
+    }
+
+
+def build_diary_entries_frame(entries: list[dict[str, Any]]) -> pd.DataFrame:
+    """Return a dashboard-ready DataFrame from a list of diary entry dicts."""
+    if not entries:
+        return pd.DataFrame(columns=[
+            "id", "created_at", "entry_type", "run_mode", "symbol",
+            "strategy_name", "pnl", "outcome_rating", "content_preview",
+        ])
+
+    rows = []
+    for e in entries:
+        content = str(e.get("content") or "")
+        rows.append({
+            "id":              e.get("id"),
+            "created_at":      pd.to_datetime(e.get("created_at"), errors="coerce"),
+            "entry_type":      e.get("entry_type", ""),
+            "run_mode":        e.get("run_mode") or "—",
+            "symbol":          e.get("symbol") or "—",
+            "strategy_name":   e.get("strategy_name") or "—",
+            "pnl":             e.get("pnl"),
+            "outcome_rating":  e.get("outcome_rating"),
+            "content_preview": content[:100] + ("…" if len(content) > 100 else ""),
+        })
+    frame = pd.DataFrame(rows)
+    if "created_at" in frame.columns:
+        frame["created_at"] = pd.to_datetime(frame["created_at"], errors="coerce")
+    return frame.reset_index(drop=True)

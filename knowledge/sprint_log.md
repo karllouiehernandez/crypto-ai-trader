@@ -1245,3 +1245,105 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 ### Outcome
 - `pytest tests/ -q` → **530 passed, 1 warning**
 - Sprint 32 user goal is complete and the dashboard workbench now exposes saved-run inspection without breaking the existing tab workflow.
+
+---
+
+## Sprint 37 — Trader Journey Playwright Coverage
+**Date started:** 2026-04-19
+**Date closed:** In progress locally
+**Goal:** Add a trader-style Playwright mode that verifies the application the way a normal trader actually uses it: strategy status, backtesting, inspect/audit, and paper/live readiness.
+**Status:** IN PROGRESS
+
+### Changes Made
+- [x] `tools/ui_agent/trader_journey.py`
+  - added a new stateful Playwright journey runner
+  - iterates the visible Backtest Lab strategy catalog
+  - inspects lifecycle/readiness in the `Strategies` tab
+  - attempts a backtest per strategy
+  - opens `Inspect` for persisted runs
+  - verifies paper/live readiness without placing real live orders
+- [x] `run_ui_agent.py`
+  - added `--journey trader`
+  - kept the existing smoke run as the default path
+- [x] `tools/ui_agent/report.py`
+  - report payload now supports a `journey` block
+  - Markdown/JSON output now includes trader summary counts, per-strategy audit rows, and operator concerns
+- [x] `dashboard/streamlit_app.py`
+  - `Inspect` saved-run labels now include `#run_id` for deterministic selection
+- [x] `tests/test_ui_agent_smoke.py`
+  - added report/CLI regression tests for journey mode
+
+### Verification
+- `pytest tests/ -q` → **594 passed, 4 warnings**
+- `python run_ui_agent.py --ui-only --url http://localhost:8779` → **60/61**
+- `python run_ui_agent.py --journey trader --ui-only --url http://localhost:8780`
+  - completes successfully
+  - writes a trader-audit report instead of failing at harness level
+  - latest report: `reports/ui_test_20260419_001825.md`
+
+### Product Learnings From Trader Journey
+- Smoke coverage is not enough. A workflow can look healthy at the widget level while still being confusing or blocked for a real trader.
+- Default backtest dates can land on an incomplete-history window even when the symbol is otherwise ready. This creates a trader-facing trap: the backtest action looks available, but the actual run does not complete cleanly.
+- Not every unsuccessful backtest attempt is a bug. The key product question is whether the dashboard shows a clear, explicit blocked state instead of a silent no-op.
+- Promotion flows should be observable from durable state, not just transient success messages. A trader needs to see what is currently active for paper/live without relying on short-lived banners.
+- `Inspect` is the trust surface for saved runs. If the run cannot show chart/code/audit data, the warning state must remain explicit and easy to understand.
+
+### Operator Concerns Exposed By The New Journey
+- Some strategies still end in explicit warning/blocked states rather than persisted runs in the current local environment.
+- The journey runner showed that strategy-by-strategy blocked-state messaging is not yet fully uniform.
+- Promotion-to-paper verification is still easier to confirm from backend state than from strong persistent UI cues; the dashboard should make this more obvious.
+- Inspect placeholder detection is still slightly weaker than the rest of the smoke suite and should be hardened.
+
+### Recommended Follow-Up Sprint Focus
+- Improve Backtest Lab guidance around latest-complete windows and history-blocked states.
+- Standardize explicit trader-facing messages when a backtest attempt does not persist a run.
+- Strengthen persistent promotion/runtime status surfaces so paper/live target changes are obvious without transient alerts.
+- Keep using the trader journey report as the source of truth for operator-trust regressions.
+
+### GitHub Tracking Update
+- Created GitHub issue `#40` — `Sprint 38 — Trader Journey Trust Fixes`
+- Added issue `#40` to GitHub Projects board `#1` so the next agent can pick it up from the remote sprint queue
+
+---
+
+## Sprint 39 — Trading Diary + Backtest Knowledge
+**Date started:** 2026-04-19
+**Date closed:** 2026-04-19
+**Goal:** Finish the trader-facing Trading Diary dashboard tab, wire diary knowledge export into the workbench, and lock the diary/backtest insight behavior with mocked regression coverage.
+**Status:** CLOSED ✓
+
+### Changes Made
+- [x] `dashboard/streamlit_app.py`
+  - completed the previously declared `diary_tab`
+  - added guarded Trading Summary metrics using `get_trading_summary()` and `build_diary_summary_metrics()`
+  - added P&L-by-strategy and P&L-by-symbol `go.Bar` charts
+  - added Recent Diary Entries filters, table view, and entry-annotation form
+  - added Session Summary action, Backtest Insights view, and Export Knowledge button
+- [x] `tests/test_trading_diary.py` (NEW)
+  - added 13 mocked unit tests covering:
+    - SELL win/loss diary wording
+    - BUY trade entry typing
+    - regime tag capture
+    - PASSED / FAILED backtest verdict text
+    - backtest insight entry typing
+    - trading summary win-rate calculation
+    - regime-driven backtest suggestions
+    - diary knowledge export writing
+    - filtered diary listing behavior
+    - empty result handling
+- [x] GitHub tracking
+  - created issue `#41` — `Sprint 39 — Trading Diary + Backtest Knowledge`
+  - added issue `#41` to GitHub Projects board `#1`
+- [x] Resume state
+  - updated `HANDOFF.md`
+  - updated `knowledge/agent_resume.md`
+
+### Verification
+- `pytest tests/test_trading_diary.py -q` → **13 passed**
+- `python -m py_compile dashboard/streamlit_app.py` → **passes**
+- `pytest tests/ -q` → **607 passed, 4 warnings**
+
+### Outcome
+- The dashboard now exposes the Trading Diary backend that had already been implemented but not surfaced in the UI.
+- Traders can review aggregate outcomes, annotate entries, record a paper/live session summary, read deterministic backtest insights, and export diary knowledge into `knowledge/diary_learnings.md`.
+- The repo baseline increased from **594** to **607** passing tests without regressions.

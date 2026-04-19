@@ -45,6 +45,8 @@ from dashboard.workbench import (
     build_artifact_registry_frame,
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
+    build_diary_entries_frame,
+    build_diary_summary_metrics,
     build_focus_candidate_frame,
     build_runtime_target_summary,
     build_trader_summary,
@@ -70,6 +72,13 @@ from dashboard.workbench import (
     strategy_workflow_status,
     runtime_summary,
 )
+from trading_diary.service import (
+    get_trading_summary,
+    list_diary_entries,
+    record_session_summary,
+    update_diary_entry,
+)
+from trading_diary.export import export_diary_to_knowledge
 from database.promotion_queries import query_promotions
 from database.models import init_db
 from database.integrity import integrity_label
@@ -999,8 +1008,8 @@ if active_live_artifact and runtime_target_summary["live"]["error"]:
 if _real_issues:
     st.warning("⚠ Runtime target validation failed. See **Promotion Control Panel** in the Strategies tab.  \n" + "  \n".join(_real_issues))
 
-strategy_tab, backtest_tab, runtime_tab, focus_tab, inspect_tab = st.tabs(
-    ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect"]
+strategy_tab, backtest_tab, runtime_tab, focus_tab, inspect_tab, diary_tab = st.tabs(
+    ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect", "Trading Diary"]
 )
 
 with strategy_tab:
@@ -2129,3 +2138,186 @@ with inspect_tab:
                     st.code(f"# Strategy source unavailable\n# Reason: {source_reason}\n", language="python")
                 else:
                     st.code(get_strategy_source_code(strat_item), language="python")
+
+with diary_tab:
+    st.markdown("### Trading Diary")
+    st.caption(
+        "Review trade outcomes, annotate learnings, capture session summaries, and export repeatable knowledge."
+    )
+
+    try:
+        st.markdown("#### Trading Summary")
+        diary_summary = get_trading_summary()
+        diary_metrics = build_diary_summary_metrics(diary_summary)
+
+        diary_metric_cols = st.columns(4)
+        diary_metric_cols[0].metric("Completed Trades", diary_metrics["total_trades"])
+        diary_metric_cols[1].metric("Win Rate", diary_metrics["win_rate_label"])
+        diary_metric_cols[2].metric("Total PnL", diary_metrics["total_pnl_label"])
+        diary_metric_cols[3].metric("Best Strategy", diary_metrics["best_strategy"])
+
+        strategy_chart_col, symbol_chart_col = st.columns(2)
+
+        strategy_fig = go.Figure()
+        strategy_names = list((diary_summary.get("by_strategy") or {}).keys())
+        strategy_pnls = [
+            float((diary_summary.get("by_strategy") or {}).get(name, {}).get("total_pnl", 0.0))
+            for name in strategy_names
+        ]
+        strategy_fig.add_trace(
+            go.Bar(
+                x=strategy_names,
+                y=strategy_pnls,
+                marker_color="#26a69a",
+                name="Strategy PnL",
+            )
+        )
+        strategy_fig.update_layout(
+            title="P&L by Strategy",
+            height=320,
+            paper_bgcolor="#0e1117",
+            plot_bgcolor="#0e1117",
+            font=dict(color="#d1d4dc"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            xaxis=dict(gridcolor="#1e222d"),
+            yaxis=dict(gridcolor="#1e222d"),
+        )
+
+        symbol_fig = go.Figure()
+        symbol_names = list((diary_summary.get("by_symbol") or {}).keys())
+        symbol_pnls = [
+            float((diary_summary.get("by_symbol") or {}).get(name, {}).get("total_pnl", 0.0))
+            for name in symbol_names
+        ]
+        symbol_fig.add_trace(
+            go.Bar(
+                x=symbol_names,
+                y=symbol_pnls,
+                marker_color="#2962ff",
+                name="Symbol PnL",
+            )
+        )
+        symbol_fig.update_layout(
+            title="P&L by Symbol",
+            height=320,
+            paper_bgcolor="#0e1117",
+            plot_bgcolor="#0e1117",
+            font=dict(color="#d1d4dc"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            xaxis=dict(gridcolor="#1e222d"),
+            yaxis=dict(gridcolor="#1e222d"),
+        )
+
+        with strategy_chart_col:
+            st.plotly_chart(strategy_fig, width="stretch")
+        with symbol_chart_col:
+            st.plotly_chart(symbol_fig, width="stretch")
+    except Exception as exc:
+        st.warning(f"Trading Summary unavailable: {exc}")
+
+    try:
+        st.markdown("#### Recent Diary Entries")
+        diary_filter_cols = st.columns(4)
+        filter_run_mode = diary_filter_cols[0].selectbox(
+            "Run Mode",
+            options=["all", "paper", "live"],
+            key="diary_filter_run_mode",
+        )
+        filter_symbol = diary_filter_cols[1].text_input(
+            "Symbol",
+            key="diary_filter_symbol",
+            placeholder="BTCUSDT",
+        ).strip()
+        filter_strategy = diary_filter_cols[2].text_input(
+            "Strategy",
+            key="diary_filter_strategy",
+            placeholder="mean_reversion_v1",
+        ).strip()
+        filter_entry_type = diary_filter_cols[3].selectbox(
+            "Entry Type",
+            options=["all", "trade", "backtest_insight", "session_summary", "manual"],
+            key="diary_filter_entry_type",
+        )
+
+        filtered_entries = list_diary_entries(
+            run_mode=None if filter_run_mode == "all" else filter_run_mode,
+            symbol=filter_symbol or None,
+            strategy=filter_strategy or None,
+            entry_type=None if filter_entry_type == "all" else filter_entry_type,
+            limit=100,
+        )
+        diary_entries_frame = build_diary_entries_frame(filtered_entries)
+        st.dataframe(diary_entries_frame, hide_index=True, use_container_width=True)
+
+        default_entry_id = int(filtered_entries[0]["id"]) if filtered_entries else 1
+        selected_entry_id = st.number_input(
+            "Entry ID to annotate",
+            min_value=1,
+            value=default_entry_id,
+            step=1,
+            key="diary_entry_id",
+        )
+        with st.expander("Annotate diary entry", expanded=False):
+            with st.form("diary_annotation_form"):
+                outcome_rating = st.slider(
+                    "Outcome Rating",
+                    min_value=1,
+                    max_value=5,
+                    value=3,
+                    key="diary_outcome_rating",
+                )
+                learnings = st.text_area(
+                    "Learnings",
+                    key="diary_learnings",
+                    placeholder="What worked or failed in this setup?",
+                )
+                strategy_suggestion = st.text_area(
+                    "Strategy Suggestion",
+                    key="diary_strategy_suggestion",
+                    placeholder="What should change before the next run?",
+                )
+                if st.form_submit_button("Save Annotation"):
+                    update_diary_entry(
+                        int(selected_entry_id),
+                        learnings=learnings,
+                        strategy_suggestion=strategy_suggestion,
+                        outcome_rating=outcome_rating,
+                    )
+                    st.success(f"Diary entry #{int(selected_entry_id)} updated.")
+    except Exception as exc:
+        st.warning(f"Recent Diary Entries unavailable: {exc}")
+
+    try:
+        st.markdown("#### Session Summary")
+        session_mode = st.selectbox(
+            "Session Mode",
+            options=["paper", "live"],
+            key="diary_session_mode",
+        )
+        if st.button("Record Session Summary", key="diary_record_session_summary"):
+            record_session_summary(session_mode)
+            st.success(f"Session summary recorded for {session_mode}.")
+    except Exception as exc:
+        st.warning(f"Session Summary unavailable: {exc}")
+
+    try:
+        st.markdown("#### Backtest Insights")
+        recent_insights = list_diary_entries(entry_type="backtest_insight", limit=20)
+        if not recent_insights:
+            st.info("No backtest insights recorded yet.")
+        for entry in recent_insights:
+            entry_symbol = entry.get("symbol") or "—"
+            entry_strategy = entry.get("strategy_name") or "—"
+            entry_id = entry.get("backtest_run_id") or entry.get("id")
+            with st.expander(f"Run #{entry_id} — {entry_symbol} / {entry_strategy}", expanded=False):
+                st.text(entry.get("content") or "")
+    except Exception as exc:
+        st.warning(f"Backtest Insights unavailable: {exc}")
+
+    try:
+        st.markdown("#### Export Knowledge")
+        if st.button("Export Diary Learnings", key="diary_export_knowledge"):
+            export_path = export_diary_to_knowledge()
+            st.success(export_path)
+    except Exception as exc:
+        st.warning(f"Export Knowledge unavailable: {exc}")
