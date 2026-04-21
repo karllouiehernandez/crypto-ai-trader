@@ -12,9 +12,11 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 
 from backtester.engine import run_backtest, BacktestResult
+from config import EMA_LOOKBACK
 from strategy.regime import Regime
 from strategy.runtime import StrategyDecision
 from strategy.signals import Signal
@@ -26,7 +28,11 @@ def _make_candle(symbol: str, minutes_offset: int, close: float):
     c = MagicMock()
     c.symbol    = symbol
     c.open_time = datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=minutes_offset)
+    c.open      = close - 0.5
+    c.high      = close + 1.0
+    c.low       = close - 1.0
     c.close     = close
+    c.volume    = 1000.0 + minutes_offset
     return c
 
 
@@ -217,3 +223,31 @@ class TestMultipleRoundTrips:
 
         # BUY → SELL → (no cash for BUY? depends on math) — at minimum 2 trades
         assert len(result) >= 2
+
+
+class TestBacktestIndicatorWindows:
+    def test_backtest_passes_trailing_indicator_window_per_candle(self):
+        candles = [_make_candle("BTCUSDT", i, 100.0 + i) for i in range(260)]
+        session = _session_with_candles(candles)
+        seen_windows: list[tuple[datetime, pd.DataFrame]] = []
+
+        def _capture_window(_sess, candle, **kwargs):
+            seen_windows.append((candle.open_time, kwargs.get("indicator_frame")))
+            return _decision(Signal.HOLD)
+
+        with patch("backtester.engine.SessionLocal", return_value=session), \
+             patch("backtester.engine.compute_strategy_decision", side_effect=_capture_window):
+            result = run_backtest("BTCUSDT", START, _covered_end(candles))
+
+        assert result.empty
+        assert len(seen_windows) == len(candles)
+
+        early_window = next(frame for ts, frame in seen_windows if ts == candles[50].open_time)
+        assert early_window.empty
+
+        late_ts = candles[-1].open_time
+        late_window = next(frame for ts, frame in seen_windows if ts == late_ts)
+        assert not late_window.empty
+        assert late_window["open_time"].max() == late_ts
+        assert late_window["open_time"].min() >= late_ts - timedelta(minutes=EMA_LOOKBACK - 1)
+        assert len(late_window) <= EMA_LOOKBACK

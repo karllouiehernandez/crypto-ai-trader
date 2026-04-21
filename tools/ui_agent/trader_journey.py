@@ -17,7 +17,7 @@ from strategy.runtime import get_active_runtime_artifact, list_available_strateg
 _RERENDER = 1.5
 _SHORT = 3_000
 _LONG = 10_000
-_BACKTEST_TIMEOUT = 60_000
+_BACKTEST_TIMEOUT = 90_000
 _OPTION_LIST = "[data-testid='stSelectboxVirtualDropdown'] [role='option'], [data-testid='stSelectboxVirtualDropdown'] li"
 
 

@@ -15,9 +15,9 @@ Read order for a new agent:
 - Active local follow-on work: `Sprint 42 — Paper Evidence & Legacy Integrity Closure`
 - GitHub status: Sprint 42 is now issue `#44` on Projects board `#1`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `635 passed, 4 warnings`
-  - `python run_ui_agent.py --data-only` -> `0 FAIL, 1 PARTIAL (freshness), 1 SKIP`
-  - `python run_ui_agent.py --headed --ui-only --url http://localhost:8785` -> `64/64 PASS`
+  - `pytest tests/ -q` -> `636 passed, 4 warnings`
+  - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP`
+  - `python run_ui_agent.py --headed --ui-only --url http://localhost:8785` -> `0 FAIL, 2 PARTIAL`
   - `python run_ui_agent.py --headed --journey trader --ui-only --url http://localhost:8785` -> `0 FAIL, 7 PARTIAL, 3 SKIP`
   - `tools/ui_agent/data_checks.py` now grades candle freshness against the maintained MVP research universe first, instead of every symbol with any candle rows
   - `tests/conftest.py` now redirects the full pytest session to a dedicated temp SQLite DB, so the suite no longer mutates the live workbench database
@@ -25,6 +25,9 @@ Read order for a new agent:
   - Sprint 42 now has GitHub tracking: [issue #44](https://github.com/karllouiehernandez/crypto-ai-trader/issues/44)
   - Live DB legacy archive has now been applied: `731` trades + `83` backtest runs archived, `0` archivable legacy rows remain
   - Archive-gap refresh bug was fixed so archived rows no longer cause new false `legacy-invalid` tags across sequence gaps
+  - `run_live.py` has been restarted; maintained-universe freshness is live again and candle freshness is no longer the data-check blocker
+  - `backtester/engine.py` no longer rebuilds indicators from the DB on every candle; backtests now precompute one indicator source per run and pass trailing historical windows into `strategy/runtime.py`
+  - This also fixes a correctness issue: backtests were previously reading the latest candles instead of an as-of historical window
 
 ## Why This Exists
 
@@ -159,8 +162,8 @@ Read order for a new agent:
 **Sprint 42 kickoff** — continue from the now-aligned data-health contract instead of redoing Sprint 41.
 
 Next steps:
-1. Restore runtime freshness by starting/monitoring `run_live.py` again; there is currently no active `run_live.py` process and candle freshness is the only remaining data-check PARTIAL
-2. Establish at least one complete reviewed-strategy path that ends in a saved, promotable backtest result in the current environment; headed trader journey still blocks or times out across all visible strategies
+1. Establish at least one complete reviewed-strategy path that ends in a saved, promotable backtest result in the default environment; the trader journey now has zero FAILs, but it still only reaches explicit blocked states
+2. Tighten the Backtest Lab runnable-window/default-window contract so strategies are blocked less often by date-range selection drift
 3. Decide whether non-maintained ready symbols should auto-refresh or remain explicitly research-only, so the product contract stays honest
 4. Keep Sprint 42 issue `#44` updated as work lands
 5. Keep `HANDOFF.md` current; this file should stay compact and secondary
@@ -192,9 +195,9 @@ Next steps:
 
 ## Last Verified State
 
-- Tests: `635 passed, 4 warnings`
-- Data checks: `0 FAIL, 1 PARTIAL, 1 SKIP`
-- Smoke UI: `60/64 passed, 0 FAIL, 0 PARTIAL, 4 SKIP` on the currently running dashboard instance
+- Tests: `636 passed, 4 warnings`
+- Data checks: `0 FAIL, 0 PARTIAL, 1 SKIP`
+- Smoke UI: `0 FAIL, 2 PARTIAL` on the current headed validation run
 - Dashboard compile: `python -m py_compile dashboard/streamlit_app.py` previously passed; not rechecked in this kickoff slice
 - Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
 - Freshness contract: maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) now passes freshness; stale exploratory symbols no longer create false freshness PARTIALs
@@ -202,8 +205,8 @@ Next steps:
 - Maintained-universe recovery: `BTCUSDT`, `ETHUSDT`, `BNBUSDT` each restored to `43201` local 1m candles
 - GitHub: Sprint 41 issue `#43` is closed history; Sprint 42 is now tracked as issue `#44` on board `#1`
 - Live DB legacy containment: applied and consistent (`731` archived legacy trades, `83` archived legacy runs, `0` archivable rows remain)
-- Current operational blocker: no active `run_live.py` process; latest maintained-universe candles and paper snapshot are both from `2026-04-19 13:36 UTC`
-- Headed production validation conclusion: UI shell is strong (`64/64` smoke pass), but the app is not yet production-ready because runtime freshness is stale and the trader journey still lacks one complete reviewed-strategy promotion path
+- Current operational blocker: no artifact-tagged paper evidence yet, and the trader journey still lacks one complete reviewed-strategy promotion path
+- Headed production validation conclusion: UI shell is strong and the trader journey now has zero FAILs, but the app is still not yet production-ready because the default environment does not yet yield a complete reviewed-strategy backtest -> inspect -> paper-promotion path
 
 ## Token-Saving Rule
 

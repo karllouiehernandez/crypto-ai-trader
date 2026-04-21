@@ -205,18 +205,22 @@ def resolve_runtime_strategy_descriptor(run_mode: str) -> dict:
     }
 
 
-def _fetch_recent_candles(session: Session, symbol: str, lookback: int = EMA_LOOKBACK) -> list[Candle]:
-    return (
+def _fetch_recent_candles(
+    session: Session,
+    symbol: str,
+    lookback: int = EMA_LOOKBACK,
+    as_of_time=None,
+) -> list[Candle]:
+    query = (
         session.query(Candle)
         .filter(Candle.symbol == symbol)
-        .order_by(Candle.open_time.desc())
-        .limit(lookback)
-        .all()
     )
+    if as_of_time is not None:
+        query = query.filter(Candle.open_time <= as_of_time)
+    return query.order_by(Candle.open_time.desc()).limit(lookback).all()
 
 
-def build_indicator_frame(session: Session, symbol: str, lookback: int = EMA_LOOKBACK) -> pd.DataFrame:
-    candles = _fetch_recent_candles(session, symbol, lookback=lookback)
+def _candles_to_indicator_frame(candles: list[Candle]) -> pd.DataFrame:
     if len(candles) < MIN_CANDLES_EMA200:
         return pd.DataFrame()
 
@@ -230,12 +234,23 @@ def build_indicator_frame(session: Session, symbol: str, lookback: int = EMA_LOO
     return add_indicators(df)
 
 
+def build_indicator_frame(
+    session: Session,
+    symbol: str,
+    lookback: int = EMA_LOOKBACK,
+    as_of_time=None,
+) -> pd.DataFrame:
+    candles = _fetch_recent_candles(session, symbol, lookback=lookback, as_of_time=as_of_time)
+    return _candles_to_indicator_frame(candles)
+
+
 def compute_strategy_decision(
     session: Session,
     candle: Candle,
     strategy_name: Optional[str] = None,
     strategy_params: Optional[dict] = None,
     strategy: StrategyBase | None = None,
+    indicator_frame: pd.DataFrame | None = None,
 ) -> StrategyDecision:
     """Resolve a strategy and compute the current signal for the given candle."""
     if strategy is None:
@@ -251,7 +266,7 @@ def compute_strategy_decision(
             strategy_version="",
         )
 
-    df = build_indicator_frame(session, candle.symbol)
+    df = indicator_frame if indicator_frame is not None else build_indicator_frame(session, candle.symbol)
     if df.empty or len(df) < 2:
         return StrategyDecision(
             signal=Signal.HOLD,

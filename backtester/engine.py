@@ -17,15 +17,38 @@ import pandas as pd
 
 from database.models import Candle, SessionLocal
 from market_data.history import evaluate_candle_coverage, format_audit_summary
+from strategy.ta_features import add_indicators
 from strategy.runtime import compute_strategy_decision, get_active_strategy_config, get_strategy_instance
 from strategy.signals import Signal
-from config import FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD, SLIPPAGE_PCT
+from config import EMA_LOOKBACK, FEE_RATE, POSITION_SIZE_PCT, STARTING_BALANCE_USD, SLIPPAGE_PCT
 
 log = logging.getLogger(__name__)
 
 
 class BacktestResult(pd.DataFrame):
     """Just a typed alias; behaves exactly like DataFrame."""
+
+
+def _build_backtest_indicator_source(candles: list[Candle]) -> tuple[pd.DataFrame, dict]:
+    if not candles:
+        return pd.DataFrame(), {}
+
+    raw_frame = pd.DataFrame(
+        [
+            (c.open_time, c.open, c.high, c.low, c.close, c.volume)
+            for c in candles
+        ],
+        columns=["open_time", "open", "high", "low", "close", "volume"],
+    )
+    indicator_frame = add_indicators(raw_frame)
+    if indicator_frame.empty:
+        return pd.DataFrame(), {}
+
+    indicator_positions = {
+        open_time: idx
+        for idx, open_time in enumerate(indicator_frame["open_time"].tolist())
+    }
+    return indicator_frame, indicator_positions
 
 
 def run_backtest(
@@ -70,13 +93,20 @@ def run_backtest(
         if not coverage["is_complete"]:
             raise ValueError(format_audit_summary(coverage))
 
+        indicator_source, indicator_positions = _build_backtest_indicator_source(candles)
         for c in candles:
+            indicator_frame = pd.DataFrame()
+            row_index = indicator_positions.get(c.open_time)
+            if row_index is not None:
+                window_start = max(0, row_index - EMA_LOOKBACK + 1)
+                indicator_frame = indicator_source.iloc[window_start:row_index + 1]
             decision = compute_strategy_decision(
                 sess,
                 c,
                 strategy_name=selected_strategy,
                 strategy_params=selected_params,
                 strategy=strategy,
+                indicator_frame=indicator_frame,
             )
             sig   = decision.signal
             price = c.close
