@@ -12,14 +12,15 @@ Read order for a new agent:
 ## Current Sprint
 
 - Sprint 41 is closed.
-- Active local follow-on work: `Sprint 42 kickoff — trust hardening follow-on`
-- GitHub status: Sprint 42 issue is not yet opened; `HANDOFF.md` is the source of truth for the current local continuation stream.
-- Baseline after the current Sprint 42 kickoff work:
-  - `pytest tests/ -q` -> `614 passed, 4 warnings`
-  - `python run_ui_agent.py --data-only` -> `0 FAIL, 2 PARTIAL (legacy), 1 SKIP`
+- Active local follow-on work: `Sprint 42 — Paper Evidence & Legacy Integrity Closure`
+- GitHub status: Sprint 42 is now issue `#44` on Projects board `#1`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
+- Baseline after the current Sprint 42 work:
+  - `pytest tests/ -q` -> `634 passed, 4 warnings`
+  - `python run_ui_agent.py --data-only` -> `0 FAIL, 2 PARTIAL (legacy, unapplied archive), 1 SKIP`
   - `tools/ui_agent/data_checks.py` now grades candle freshness against the maintained MVP research universe first, instead of every symbol with any candle rows
   - `tests/conftest.py` now redirects the full pytest session to a dedicated temp SQLite DB, so the suite no longer mutates the live workbench database
   - The maintained MVP universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) was directly backfilled back to 30-day coverage after the earlier live-DB corruption was discovered
+  - Sprint 42 now has GitHub tracking: [issue #44](https://github.com/karllouiehernandez/crypto-ai-trader/issues/44)
 
 ## Why This Exists
 
@@ -154,10 +155,10 @@ Read order for a new agent:
 **Sprint 42 kickoff** — continue from the now-aligned data-health contract instead of redoing Sprint 41.
 
 Next steps:
-1. Keep paper runtime under observation and verify `run_live.py --paper` advances the active paper target (`rsi_mean_reversion_v1`) with fresh candles and first real paper trades
-2. Decide how to handle the remaining legacy integrity PARTIALs (`Trade` same-side legacy rows and one invalid-metrics backtest run)
+1. Decide whether to apply the new live-DB archive action for legacy fixture rows, or keep the PARTIALs visible as an honest operator signal
+2. Keep paper runtime under observation and verify `run_live.py --paper` advances the active paper target (`rsi_mean_reversion_v1`) with fresh candles and first real tagged SELL trades
 3. Decide whether non-maintained ready symbols should auto-refresh or remain explicitly research-only, so the product contract stays honest
-4. Open the formal Sprint 42 GitHub issue/board item once the next slice is clearly defined
+4. Keep Sprint 42 issue `#44` updated as work lands
 5. Keep `HANDOFF.md` current; this file should stay compact and secondary
 
 ## Likely Files
@@ -187,7 +188,7 @@ Next steps:
 
 ## Last Verified State
 
-- Tests: `614 passed, 4 warnings`
+- Tests: `634 passed, 4 warnings`
 - Data checks: `0 FAIL, 2 PARTIAL, 1 SKIP`
 - Smoke UI: `60/64 passed, 0 FAIL, 0 PARTIAL, 4 SKIP` on the currently running dashboard instance
 - Dashboard compile: `python -m py_compile dashboard/streamlit_app.py` previously passed; not rechecked in this kickoff slice
@@ -195,7 +196,7 @@ Next steps:
 - Freshness contract: maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) now passes freshness; stale exploratory symbols no longer create false freshness PARTIALs
 - Test isolation: full `pytest` now runs against a temp DB and no longer wipes live candles, artifacts, or app settings
 - Maintained-universe recovery: `BTCUSDT`, `ETHUSDT`, `BNBUSDT` each restored to `43201` local 1m candles
-- GitHub: Sprint 41 issue `#43` was reported as Done by the prior agent; Sprint 42 issue not yet created
+- GitHub: Sprint 41 issue `#43` is closed history; Sprint 42 is now tracked as issue `#44` on board `#1`
 
 ## Token-Saving Rule
 

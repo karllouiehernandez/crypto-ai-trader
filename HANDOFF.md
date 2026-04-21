@@ -9,9 +9,9 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 | Field | Value |
 |-------|-------|
-| **Last active agent** | Claude Code |
-| **Last updated** | 2026-04-19 (Sprint 42 Priority #3: legacy integrity containment archive landed; live DB unchanged) |
-| **Active sprint** | Sprint 42 kickoff — trust hardening follow-on (GitHub sprint issue not yet opened) |
+| **Last active agent** | Codex |
+| **Last updated** | 2026-04-21 (Sprint 42 issue + board tracking created; repo handoff aligned) |
+| **Active sprint** | Sprint 42 — `#44` — Paper Evidence & Legacy Integrity Closure |
 | **Sprint 40** | `#42` — Done on board |
 | **Tests** | `pytest tests/ -q` → **634 passed, 4 warnings** (+10 new in `tests/test_integrity_archive.py`, +3 new in `tests/test_data_checks.py`) |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
@@ -21,9 +21,9 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 Kickoff
+## Resume Here — Sprint 42
 
-Sprint 41 is closed. Sprint 42 is not yet opened as a GitHub issue, but local follow-on work has started.
+Sprint 41 is closed. Sprint 42 is now tracked as GitHub issue `#44` and has been added to Projects board `#1`.
 
 ## Shared-Agent Protection Protocol
 
@@ -57,6 +57,7 @@ Current shared baseline:
 2. `pytest tests/ -q` leaves the live DB intact
 3. Maintained MVP universe is restored to 30-day local coverage
 4. Active paper target should remain `rsi_mean_reversion_v1` artifact `#2` unless the user explicitly changes it
+5. Sprint 42 tracking issue: `#44` — `Sprint 42 — Paper Evidence & Legacy Integrity Closure`
 
 ### Fresh progress after Sprint 41 close
 
@@ -95,8 +96,9 @@ The dashboard MVP data gate already uses the maintained research universe (`BTCU
    - **Tests**: 10 new cases in `tests/test_integrity_archive.py` (refresh classifies, count before/after, archive preserves prior status in note, refresh does not regress archived, unarchive reverts + reclassifies, archive is idempotent) + 3 new cases in `tests/test_data_checks.py` covering archived trade/backtest/BUY row acknowledgment.
    - **Live DB status — NOT YET ARCHIVED**: the archive helper has not been run against the live DB. To apply: open the dashboard Strategies tab → "Legacy Integrity Containment" → "Archive legacy rows". Expected effect: data-check Trade log integrity + Backtest metric sanity flip from PARTIAL → PASS with "N archived legacy row(s) excluded" in the detail string.
 4. **Maintained universe policy** — decide whether extra ready symbols should auto-refresh, or remain research-only and outside the release health gate
-5. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–41 plus this Sprint 42 kickoff fix
+5. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–42 work; prepare merge once operator decisions are stable
 6. **Operator decision point** — click "Archive legacy rows" in the dashboard (or leave the PARTIALs as explicit legacy-invalid signals if you prefer them visible in the release gate)
+7. **GitHub tracking** — Sprint 42 is now issue `#44` on Projects board `#1`; keep that issue current instead of opening a new sprint ticket
 ### Sprint 41 Final Verification (all gates green)
 
 | Gate | Result |
