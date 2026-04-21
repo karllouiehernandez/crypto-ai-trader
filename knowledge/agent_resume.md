@@ -17,6 +17,8 @@ Read order for a new agent:
 - Baseline after the current Sprint 42 work:
   - `pytest tests/ -q` -> `635 passed, 4 warnings`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 1 PARTIAL (freshness), 1 SKIP`
+  - `python run_ui_agent.py --headed --ui-only --url http://localhost:8785` -> `64/64 PASS`
+  - `python run_ui_agent.py --headed --journey trader --ui-only --url http://localhost:8785` -> `0 FAIL, 7 PARTIAL, 3 SKIP`
   - `tools/ui_agent/data_checks.py` now grades candle freshness against the maintained MVP research universe first, instead of every symbol with any candle rows
   - `tests/conftest.py` now redirects the full pytest session to a dedicated temp SQLite DB, so the suite no longer mutates the live workbench database
   - The maintained MVP universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) was directly backfilled back to 30-day coverage after the earlier live-DB corruption was discovered
@@ -158,7 +160,7 @@ Read order for a new agent:
 
 Next steps:
 1. Restore runtime freshness by starting/monitoring `run_live.py` again; there is currently no active `run_live.py` process and candle freshness is the only remaining data-check PARTIAL
-2. Keep paper runtime under observation and verify it advances the active paper target (`rsi_mean_reversion_v1`) with fresh candles and first real tagged SELL trades
+2. Establish at least one complete reviewed-strategy path that ends in a saved, promotable backtest result in the current environment; headed trader journey still blocks or times out across all visible strategies
 3. Decide whether non-maintained ready symbols should auto-refresh or remain explicitly research-only, so the product contract stays honest
 4. Keep Sprint 42 issue `#44` updated as work lands
 5. Keep `HANDOFF.md` current; this file should stay compact and secondary
@@ -201,6 +203,7 @@ Next steps:
 - GitHub: Sprint 41 issue `#43` is closed history; Sprint 42 is now tracked as issue `#44` on board `#1`
 - Live DB legacy containment: applied and consistent (`731` archived legacy trades, `83` archived legacy runs, `0` archivable rows remain)
 - Current operational blocker: no active `run_live.py` process; latest maintained-universe candles and paper snapshot are both from `2026-04-19 13:36 UTC`
+- Headed production validation conclusion: UI shell is strong (`64/64` smoke pass), but the app is not yet production-ready because runtime freshness is stale and the trader journey still lacks one complete reviewed-strategy promotion path
 
 ## Token-Saving Rule
 

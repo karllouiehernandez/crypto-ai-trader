@@ -10,10 +10,10 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-21 (live DB archive applied; archive-gap refresh fixed; only freshness partial remains) |
+| **Last updated** | 2026-04-21 (headed production-readiness validation run recorded; UI strong, runtime still stale) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence & Legacy Integrity Closure |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **635 passed, 4 warnings** (+11 new in `tests/test_integrity_archive.py`, +3 new in `tests/test_data_checks.py`) |
+| **Tests** | `pytest tests/ -q` → **635 passed, 4 warnings**; headed smoke `64/64 PASS`; headed trader journey `0 FAIL, 7 PARTIAL, 3 SKIP` |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -99,9 +99,14 @@ The dashboard MVP data gate already uses the maintained research universe (`BTCU
 4. **Paper trader forward evaluation / runtime freshness** — this is now the main active blocker.
    - **Status (2026-04-21)**: no `run_live.py` process is currently running. Latest maintained-universe candle and paper snapshot timestamps are both `2026-04-19 13:36 UTC`. `python run_ui_agent.py --data-only` is now `0 FAIL, 1 PARTIAL, 1 SKIP`; the sole PARTIAL is candle freshness.
    - **Implication**: the legacy-contamination operator decision is complete. The next meaningful operational task is restarting and monitoring the paper runtime so fresh candles and paper evidence can resume.
-5. **Maintained universe policy** — decide whether extra ready symbols should auto-refresh, or remain research-only and outside the release health gate
-6. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–42 work; prepare merge once operator decisions are stable
-7. **GitHub tracking** — Sprint 42 is now issue `#44` on Projects board `#1`; keep that issue current instead of opening a new sprint ticket
+5. **Headed production validation (2026-04-21)** — current app is not yet production-ready.
+   - **Headed smoke**: `python run_ui_agent.py --headed --ui-only --url http://localhost:8785` → `64/64 PASS`
+   - **Headed trader journey**: `python run_ui_agent.py --headed --journey trader --ui-only --url http://localhost:8785` → `0 FAIL, 7 PARTIAL, 3 SKIP`
+   - **Observed operator outcome**: no hard UI failures, but every visible strategy either hit an explicit history-incomplete block or, in one case (`ema200_filtered_momentum`), remained visibly running with a spinner past the journey timeout. No reviewed strategy completed a saved, promotable backtest path in the current environment.
+   - **Conclusion**: strong workbench UI, but not ready for real production use yet. The release blockers are stale runtime freshness and lack of one complete reviewed-strategy path from backtest to paper-readiness in the current environment.
+6. **Maintained universe policy** — decide whether extra ready symbols should auto-refresh, or remain research-only and outside the release health gate
+7. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–42 work; prepare merge once operator decisions are stable
+8. **GitHub tracking** — Sprint 42 is now issue `#44` on Projects board `#1`; keep that issue current instead of opening a new sprint ticket
 ### Sprint 41 Final Verification (all gates green)
 
 | Gate | Result |
