@@ -10,10 +10,10 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-21 (Sprint 42 issue + board tracking created; repo handoff aligned) |
+| **Last updated** | 2026-04-21 (live DB archive applied; archive-gap refresh fixed; only freshness partial remains) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence & Legacy Integrity Closure |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **634 passed, 4 warnings** (+10 new in `tests/test_integrity_archive.py`, +3 new in `tests/test_data_checks.py`) |
+| **Tests** | `pytest tests/ -q` → **635 passed, 4 warnings** (+11 new in `tests/test_integrity_archive.py`, +3 new in `tests/test_data_checks.py`) |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -85,7 +85,7 @@ The dashboard MVP data gate already uses the maintained research universe (`BTCU
    - Dashboard Strategies tab: new **"Evaluate for Paper Pass"** button below the four primary action buttons. Surfaces the metric snapshot + per-rule failure reasons when the gate fails, and promotes + unlocks "Approve for Live" when it passes.
    - Tests: 10 new cases in `tests/test_paper_evaluation.py` cover no-artifact, no-trades, low trade count, short runtime, high drawdown, passing evidence, force bypass, full promotion, and the legacy-untagged-trades exclusion (legacy `artifact_id=NULL` paper trades are correctly ignored as evidence).
    - Once the live paper runtime under Priority #1 produces real artifact-#2 trades, this gate will determine eligibility for `approve_artifact_for_live` automatically.
-3. **Legacy integrity cleanup** — containment archive is now available (code landed, not yet applied to live DB).
+3. **Legacy integrity cleanup** — containment archive is now available and has now been applied to the live DB.
    - **Actual live-DB inventory** (previously misreported in HANDOFF as "1 legacy row"):
      - 731 legacy-invalid `Trade` rows (all BTCUSDT, all `artifact_id=NULL`, ts range 2026-04-17 13:00 → 2026-04-19 09:24)
      - 62 `invalid-metrics` + 21 `missing-trades` backtest runs (all fixture-era)
@@ -94,10 +94,13 @@ The dashboard MVP data gate already uses the maintained research universe (`BTCU
    - **Release-gate behavior**: [tools/ui_agent/data_checks.py](tools/ui_agent/data_checks.py) — `_check_trade_log_integrity`, `_check_backtest_metrics`, `_check_backtest_equity`, and `_check_position_sizing` now exclude `archived-legacy` rows from grading and report the excluded count in the detail string (e.g. `"... (613 archived legacy row(s) excluded)"`).
    - **Dashboard maintenance UI**: new "Legacy Integrity Containment" expander in the Strategies tab with row counts + Archive / Unarchive buttons (below Promotion Control Panel → Artifact Registry).
    - **Tests**: 10 new cases in `tests/test_integrity_archive.py` (refresh classifies, count before/after, archive preserves prior status in note, refresh does not regress archived, unarchive reverts + reclassifies, archive is idempotent) + 3 new cases in `tests/test_data_checks.py` covering archived trade/backtest/BUY row acknowledgment.
-   - **Live DB status — NOT YET ARCHIVED**: the archive helper has not been run against the live DB. To apply: open the dashboard Strategies tab → "Legacy Integrity Containment" → "Archive legacy rows". Expected effect: data-check Trade log integrity + Backtest metric sanity flip from PARTIAL → PASS with "N archived legacy row(s) excluded" in the detail string.
-4. **Maintained universe policy** — decide whether extra ready symbols should auto-refresh, or remain research-only and outside the release health gate
-5. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–42 work; prepare merge once operator decisions are stable
-6. **Operator decision point** — click "Archive legacy rows" in the dashboard (or leave the PARTIALs as explicit legacy-invalid signals if you prefer them visible in the release gate)
+   - **Live DB status — ARCHIVED APPLIED (2026-04-21)**: live DB archive action has now been executed. Current inventory is `731` archived legacy trades + `83` archived legacy backtest runs, with `0` archivable legacy rows remaining. `python run_ui_agent.py --data-only` now reports trade integrity and backtest metric sanity as `PASS` with archived-row exclusions in the detail.
+   - **Follow-up bug fixed in code**: archived rows were initially being excluded from `refresh_integrity_flags()` traversal, which could create false new `legacy-invalid` tags across archived gaps. Fixed by traversing all trades, treating archived rows as sequence barriers, and preserving them without retagging. Added a regression test in `tests/test_integrity_archive.py`.
+4. **Paper trader forward evaluation / runtime freshness** — this is now the main active blocker.
+   - **Status (2026-04-21)**: no `run_live.py` process is currently running. Latest maintained-universe candle and paper snapshot timestamps are both `2026-04-19 13:36 UTC`. `python run_ui_agent.py --data-only` is now `0 FAIL, 1 PARTIAL, 1 SKIP`; the sole PARTIAL is candle freshness.
+   - **Implication**: the legacy-contamination operator decision is complete. The next meaningful operational task is restarting and monitoring the paper runtime so fresh candles and paper evidence can resume.
+5. **Maintained universe policy** — decide whether extra ready symbols should auto-refresh, or remain research-only and outside the release health gate
+6. **Merge to master** — the branch `codex/sprint-27-responsive-chart` now contains Sprint 27–42 work; prepare merge once operator decisions are stable
 7. **GitHub tracking** — Sprint 42 is now issue `#44` on Projects board `#1`; keep that issue current instead of opening a new sprint ticket
 ### Sprint 41 Final Verification (all gates green)
 

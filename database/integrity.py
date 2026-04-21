@@ -86,17 +86,9 @@ def refresh_integrity_flags(session, *, retag_existing: bool = False) -> dict[st
         updates["backtest_runs"] += 1
 
     max_notional = float(POSITION_SIZE_PCT) * float(STARTING_BALANCE_USD)
-    if retag_existing:
-        trade_filter = sa.or_(
-            Trade.integrity_status.is_(None),
-            Trade.integrity_status != ARCHIVED_LEGACY_STATUS,
-        )
-    else:
-        trade_filter = Trade.integrity_status.is_(None)
     trades = (
         session.execute(
             sa.select(Trade)
-            .where(trade_filter)
             .order_by(Trade.symbol.asc(), Trade.ts.asc(), Trade.id.asc())
         )
         .scalars()
@@ -105,9 +97,21 @@ def refresh_integrity_flags(session, *, retag_existing: bool = False) -> dict[st
 
     prev_side_by_symbol: dict[str, str] = {}
     for trade in trades:
-        notes: list[str] = []
-        side = str(trade.side or "").upper()
         symbol = str(trade.symbol or "")
+        status = str(trade.integrity_status or "").strip().lower()
+        side = str(trade.side or "").upper()
+
+        if status == ARCHIVED_LEGACY_STATUS:
+            # Archived fixture rows are historical barriers. They should stay archived
+            # and should not cause later active rows to be retagged across the gap.
+            prev_side_by_symbol.pop(symbol, None)
+            continue
+
+        if not retag_existing and trade.integrity_status is not None:
+            prev_side_by_symbol[symbol] = side
+            continue
+
+        notes: list[str] = []
         if prev_side_by_symbol.get(symbol) == side and side in {"BUY", "SELL"}:
             notes.append(f"Consecutive same-side sequence detected: {side}->{side}.")
         if side == "BUY":

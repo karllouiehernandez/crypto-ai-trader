@@ -190,3 +190,38 @@ def test_archive_is_idempotent():
         second = archive_legacy_integrity_rows(sess)
     assert first == {"trades": 2, "backtest_runs": 2}
     assert second == {"trades": 0, "backtest_runs": 0}
+
+
+def test_refresh_does_not_create_new_legacy_rows_across_archived_gaps():
+    base = datetime.now(tz=timezone.utc) - timedelta(days=1)
+    with SessionLocal() as sess:
+        sess.add(Trade(
+            ts=base,
+            symbol="BTCUSDT", side="SELL",
+            qty=0.001, price=50000.0, fee=0.0, pnl=1.0,
+            run_mode="paper", integrity_status=VALID_STATUS,
+        ))
+        sess.add(Trade(
+            ts=base + timedelta(seconds=1),
+            symbol="BTCUSDT", side="BUY",
+            qty=0.001, price=49900.0, fee=0.0, pnl=0.0,
+            run_mode="paper", integrity_status=ARCHIVED_LEGACY_STATUS,
+            integrity_note="[archived-legacy] archived test fixture",
+        ))
+        sess.add(Trade(
+            ts=base + timedelta(seconds=2),
+            symbol="BTCUSDT", side="SELL",
+            qty=0.001, price=50100.0, fee=0.0, pnl=1.0,
+            run_mode="paper", integrity_status=VALID_STATUS,
+        ))
+        sess.commit()
+
+    with SessionLocal() as sess:
+        refresh_integrity_flags(sess, retag_existing=True)
+        statuses = sess.query(Trade.integrity_status).order_by(Trade.id).all()
+
+    assert statuses == [
+        (VALID_STATUS,),
+        (ARCHIVED_LEGACY_STATUS,),
+        (VALID_STATUS,),
+    ]
