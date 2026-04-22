@@ -11,7 +11,7 @@ from typing import Any
 import requests
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from config import DAYS_BACK
+from config import DAYS_BACK, MVP_FRESHNESS_MINUTES, MVP_RESEARCH_UNIVERSE
 from database.models import Candle, SessionLocal, init_db
 
 _SUPPORTED_INTERVALS = {"1m": timedelta(minutes=1)}
@@ -165,6 +165,12 @@ def get_latest_candle_time(symbol: str) -> datetime | None:
     return _normalise_utc(row[0])
 
 
+def _age_minutes(latest: datetime | None, now: datetime) -> float | None:
+    if latest is None:
+        return None
+    return max(0.0, (now - _normalise_utc(latest)).total_seconds() / 60.0)
+
+
 def backfill(symbol: str, start: datetime | str, end: datetime | str, interval: str = "1m") -> dict[str, Any]:
     """Backfill one symbol over an explicit date range using archive files plus API fallback."""
     step = _validate_interval(interval)
@@ -209,6 +215,54 @@ def sync_recent(symbol: str, interval: str = "1m") -> dict[str, Any]:
     result = audit(symbol, start, now, interval=interval)
     result["rows_inserted"] = inserted
     return result
+
+
+def maintain_symbol_freshness(
+    symbols: list[str] | None = None,
+    *,
+    interval: str = "1m",
+    max_age_minutes: int = MVP_FRESHNESS_MINUTES,
+) -> dict[str, dict[str, Any]]:
+    """Refresh stale symbols and report per-symbol freshness status."""
+    _validate_interval(interval)
+    now = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
+    ordered_symbols: list[str] = []
+    seen: set[str] = set()
+    for raw_symbol in symbols or MVP_RESEARCH_UNIVERSE:
+        symbol = _normalise_symbol(raw_symbol)
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        ordered_symbols.append(symbol)
+
+    results: dict[str, dict[str, Any]] = {}
+    for symbol in ordered_symbols:
+        latest_before = get_latest_candle_time(symbol)
+        age_before = _age_minutes(latest_before, now)
+        stale = latest_before is None or age_before is None or age_before > float(max_age_minutes)
+        if stale:
+            sync_result = sync_recent(symbol, interval=interval)
+            refreshed_latest = get_latest_candle_time(symbol)
+            refreshed_now = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
+            results[symbol] = {
+                "status": "synced",
+                "age_minutes_before": age_before,
+                "age_minutes_after": _age_minutes(refreshed_latest, refreshed_now),
+                "rows_inserted": int(sync_result.get("rows_inserted", 0) or 0),
+                "is_complete": bool(sync_result.get("is_complete", False)),
+                "latest_candle_ts": refreshed_latest,
+            }
+            continue
+
+        results[symbol] = {
+            "status": "fresh",
+            "age_minutes_before": age_before,
+            "age_minutes_after": age_before,
+            "rows_inserted": 0,
+            "is_complete": True,
+            "latest_candle_ts": latest_before,
+        }
+    return results
 
 
 def ensure_symbol_history(symbol: str, interval: str = "1m") -> dict[str, Any]:

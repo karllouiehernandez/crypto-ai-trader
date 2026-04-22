@@ -14,7 +14,7 @@ from market_data import history as history_module
 from market_data import runtime_watchlist as runtime_watchlist_module
 from market_data import symbol_readiness as symbol_readiness_module
 from market_data.binance_symbols import list_binance_spot_usdt_symbol_names, list_binance_spot_usdt_symbols
-from market_data.history import _download_archive_day, audit, backfill, sync_recent
+from market_data.history import _download_archive_day, audit, backfill, maintain_symbol_freshness, sync_recent
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
 from market_data.symbol_readiness import (
     is_symbol_ready,
@@ -194,6 +194,94 @@ def test_sync_recent_is_idempotent_when_no_new_rows():
 
     assert result["actual_bars"] == 0
     assert result["is_complete"] is False
+
+
+def test_maintain_symbol_freshness_skips_fresh_symbols(monkeypatch):
+    _clear_market_data_state()
+    fresh_open = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=2)
+    with SessionLocal() as sess:
+        sess.add(Candle(
+            symbol="BTCUSDT",
+            open_time=fresh_open,
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.5,
+            volume=10.0,
+        ))
+        sess.commit()
+
+    sync_calls: list[str] = []
+
+    def _unexpected_sync(symbol: str, interval: str = "1m"):
+        sync_calls.append(symbol)
+        return {"rows_inserted": 0, "is_complete": True}
+
+    monkeypatch.setattr(history_module, "sync_recent", _unexpected_sync)
+    results = maintain_symbol_freshness(["BTCUSDT"], max_age_minutes=10)
+
+    assert sync_calls == []
+    assert results["BTCUSDT"]["status"] == "fresh"
+    assert results["BTCUSDT"]["rows_inserted"] == 0
+
+
+def test_maintain_symbol_freshness_syncs_stale_symbols(monkeypatch):
+    _clear_market_data_state()
+    stale_open = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=30)
+    with SessionLocal() as sess:
+        sess.add(Candle(
+            symbol="ETHUSDT",
+            open_time=stale_open,
+            open=200.0,
+            high=201.0,
+            low=199.0,
+            close=200.5,
+            volume=12.0,
+        ))
+        sess.commit()
+
+    sync_calls: list[str] = []
+
+    def _fake_sync(symbol: str, interval: str = "1m"):
+        sync_calls.append(symbol)
+        now = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
+        with SessionLocal() as sess:
+            sess.add(Candle(
+                symbol=symbol,
+                open_time=now,
+                open=201.0,
+                high=202.0,
+                low=200.0,
+                close=201.5,
+                volume=15.0,
+            ))
+            sess.commit()
+        return {"rows_inserted": 5, "is_complete": True}
+
+    monkeypatch.setattr(history_module, "sync_recent", _fake_sync)
+    results = maintain_symbol_freshness(["ETHUSDT"], max_age_minutes=10)
+
+    assert sync_calls == ["ETHUSDT"]
+    assert results["ETHUSDT"]["status"] == "synced"
+    assert results["ETHUSDT"]["rows_inserted"] == 5
+    assert results["ETHUSDT"]["age_minutes_after"] is not None
+    assert results["ETHUSDT"]["age_minutes_after"] <= 1.0
+
+
+def test_maintain_symbol_freshness_uses_default_universe_and_dedupes(monkeypatch):
+    sync_calls: list[str] = []
+    monkeypatch.setattr(history_module, "MVP_RESEARCH_UNIVERSE", ["BTCUSDT", "BTCUSDT", "ETHUSDT"])
+    monkeypatch.setattr(history_module, "get_latest_candle_time", lambda symbol: None)
+
+    def _fake_sync(symbol: str, interval: str = "1m"):
+        sync_calls.append(symbol)
+        return {"rows_inserted": 1, "is_complete": True}
+
+    monkeypatch.setattr(history_module, "sync_recent", _fake_sync)
+    results = maintain_symbol_freshness()
+
+    assert sync_calls == ["BTCUSDT", "ETHUSDT"]
+    assert list(results.keys()) == ["BTCUSDT", "ETHUSDT"]
 
 
 # ── symbol_readiness tests ────────────────────────────────────────────────────

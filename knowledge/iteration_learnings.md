@@ -62,3 +62,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Ran `market_data.history.sync_recent()` for each maintained symbol, verified full coverage with no missing ranges, reran `python run_ui_agent.py --data-only`, and updated the handoff/resume files so the clean operator baseline is documented.
 **What to try next:** Keep monitoring whether freshness stays green passively while the current runtime runs. If it ages out again without operator action, the next improvement should be an explicit automated freshness-maintenance path instead of more manual resyncs.
 **Status:** OPEN
+
+---
+
+## 2026-04-22 Maintained-Universe Freshness Guard — Recovery should become continuous, not manual
+**What happened:** A shared freshness-maintenance helper and runner loop were added so the maintained universe can self-repair when candles age out. The helper detected all three maintained symbols stale by 14 minutes, repaired them back to current, and the data-only gate returned to `0 FAIL, 0 PARTIAL, 1 SKIP`.
+**Why it happened:** The earlier learning was correct: manual `sync_recent()` works, but it is not a production discipline. The right fix is a reusable helper plus a long-lived runner path that calls it automatically on startup and on a fixed cadence.
+**Impact:** Product continuity improved because data freshness is no longer only an operator memory problem. The remaining operational caveat is explicit: the guard works in code today, but it only runs continuously when `run_live.py` is actually active.
+**What we changed:** Added `maintain_symbol_freshness()` to `market_data/history.py`, wired `run_live.py` to run it once at startup and then every 5 minutes, added unit coverage in `tests/test_market_data_services.py` and `tests/test_run_live.py`, and reran the full suite to `656 passed`.
+**What to try next:** Start or restart `run_live.py` so the new guard runs continuously, then observe whether candle freshness stays green over time without any manual sync intervention.
+**Status:** OPEN

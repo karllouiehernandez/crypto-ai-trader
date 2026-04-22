@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from run_live import _status_fields, log_runner_snapshot
+from run_live import _format_freshness_maintenance_summary, _status_fields, log_runner_snapshot
 
 
 def test_status_fields_formats_snapshot_values():
@@ -84,3 +84,19 @@ def test_log_runner_snapshot_emits_single_operator_line():
     assert args[1] == "paper"
     assert args[2] == "42"
     assert args[3] == "regime_router_v1@1.2.3"
+
+
+def test_format_freshness_maintenance_summary_only_reports_refreshed_symbols():
+    summary = _format_freshness_maintenance_summary(
+        {
+            "BTCUSDT": {"status": "fresh", "rows_inserted": 0},
+            "ETHUSDT": {"status": "synced", "rows_inserted": 12},
+            "BNBUSDT": {"status": "synced", "rows_inserted": 3},
+        }
+    )
+
+    assert summary == "refreshed=ETHUSDT(+12 rows),BNBUSDT(+3 rows)"
+
+
+def test_format_freshness_maintenance_summary_returns_none_when_nothing_refreshed():
+    assert _format_freshness_maintenance_summary({"BTCUSDT": {"status": "fresh", "rows_inserted": 0}}) is None

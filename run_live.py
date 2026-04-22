@@ -13,6 +13,7 @@ from config import (
 )
 from collectors.historical_loader import main as load_history
 from collectors.live_streamer     import main as live_stream
+from market_data.history          import maintain_symbol_freshness
 from simulator.paper_trader       import PaperTrader
 from simulator.coordinator        import Coordinator
 from llm.self_learner             import SelfLearner
@@ -26,6 +27,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 HEARTBEAT_SECONDS = 30
+FRESHNESS_GUARD_SECONDS = 300
 
 
 def _format_status_timestamp(value) -> str:
@@ -95,6 +97,19 @@ def log_runner_snapshot(message: str, snapshot: dict, *, llm_enabled: bool | Non
     )
 
 
+def _format_freshness_maintenance_summary(results: dict) -> str | None:
+    if not results:
+        return None
+    refreshed = [
+        f"{symbol}(+{int(payload.get('rows_inserted', 0) or 0)} rows)"
+        for symbol, payload in results.items()
+        if payload.get("status") == "synced"
+    ]
+    if refreshed:
+        return "refreshed=" + ",".join(refreshed)
+    return None
+
+
 async def heartbeat_loop(trader: PaperTrader, interval_seconds: int = HEARTBEAT_SECONDS) -> None:
     """Emit a concise runner heartbeat so quiet markets do not look like a dead process."""
     while True:
@@ -102,8 +117,25 @@ async def heartbeat_loop(trader: PaperTrader, interval_seconds: int = HEARTBEAT_
         await asyncio.sleep(interval_seconds)
 
 
+async def freshness_guard_loop(interval_seconds: int = FRESHNESS_GUARD_SECONDS) -> None:
+    """Keep the maintained research universe fresh without manual operator syncs."""
+    while True:
+        try:
+            results = await asyncio.to_thread(maintain_symbol_freshness)
+            summary = _format_freshness_maintenance_summary(results)
+            if summary:
+                log.info("Maintained-universe sync | %s", summary)
+        except Exception:
+            log.exception("Maintained-universe sync failed")
+        await asyncio.sleep(interval_seconds)
+
+
 async def boot():
     await load_history()          # idempotent — skips already-stored candles
+    initial_freshness = await asyncio.to_thread(maintain_symbol_freshness)
+    initial_summary = _format_freshness_maintenance_summary(initial_freshness)
+    if initial_summary:
+        log.info("Maintained-universe sync at startup | %s", initial_summary)
 
     runtime_mode = "live" if LIVE_TRADE_ENABLED else "paper"
     runtime_descriptor = resolve_runtime_strategy_descriptor(runtime_mode)
@@ -155,6 +187,7 @@ async def boot():
             trader.run(),
             coordinator.run_loop(),
             heartbeat_loop(trader),
+            freshness_guard_loop(),
         )
     finally:
         if binance_client is not None:

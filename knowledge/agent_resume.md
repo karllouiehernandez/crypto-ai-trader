@@ -15,13 +15,14 @@ Read order for a new agent:
 - Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure`
 - GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `651 passed, 4 warnings`
+  - `pytest tests/ -q` -> `656 passed, 4 warnings`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22` after maintained-universe sync
   - `python run_ui_agent.py --ui-only --headed --url http://localhost:8785` -> `64/64 PASS`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `27/28 PASS`, `0 FAIL`, `0 PARTIAL`, `1 SKIP`
   - The trader journey now exits deterministically and writes a report; the remaining operator gap is real paper evidence, not UI audit completion
   - Phase 1 persistence/recovery validation is now in the repo via `database/persistence.py`, `tests/test_persistence.py`, and the Strategies-tab `Persistence & Recovery` expander
   - Phase 2 deterministic paper-evidence progress surfaces are now in the repo via `strategy/paper_evaluation.py`, `simulator/paper_trader.py`, `run_live.py`, and the Strategies-tab `Paper Evidence Progress` section
+  - Maintained-universe freshness auto-repair is now in the repo via `market_data/history.py::maintain_symbol_freshness()` and `run_live.py::freshness_guard_loop()`
   - Repo-root `install_once.bat` now exists as the non-destructive one-time Windows bootstrap path and has been validated locally
   - `tools/ui_agent/data_checks.py` now grades candle freshness against the maintained MVP research universe first, instead of every symbol with any candle rows
   - `tests/conftest.py` now redirects the full pytest session to a dedicated temp SQLite DB, so the suite no longer mutates the live workbench database
@@ -175,10 +176,10 @@ Read order for a new agent:
 **Sprint 42 continuation** — persistence/recovery and evidence-progress visibility are implemented. The next work is operational follow-through, not another redesign.
 
 Next steps:
-1. Keep `run_live.py` running on paper target `rsi_mean_reversion_v1` artifact `#2` until real artifact-tagged SELL trades exist
-2. Once real SELL trades exist, use the new deterministic evidence summary to verify whether the artifact can legitimately move from `paper_active` toward `paper_passed`
-3. Decide whether the default environment should include one generated draft so the draft-promotion guard is exercised instead of permanently skipped in the trader journey
-4. Decide whether non-maintained ready symbols should auto-refresh or remain explicitly research-only, so the product contract stays honest
+1. Start or restart `run_live.py` so the new periodic maintained-universe freshness guard runs continuously in the operator environment
+2. Keep `run_live.py` on paper target `rsi_mean_reversion_v1` artifact `#2` until real artifact-tagged SELL trades exist
+3. Once real SELL trades exist, use the new deterministic evidence summary to verify whether the artifact can legitimately move from `paper_active` toward `paper_passed`
+4. Decide whether the default environment should include one generated draft so the draft-promotion guard is exercised instead of permanently skipped in the trader journey
 5. Keep Sprint 42 issue `#44` updated as work lands
 6. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
 7. Keep `HANDOFF.md` current; this file should stay compact and secondary
@@ -210,13 +211,14 @@ Next steps:
 
 ## Last Verified State
 
-- Tests: `651 passed, 4 warnings`
+- Tests: `656 passed, 4 warnings`
 - Data checks: `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22`
 - Smoke UI: `64/64 PASS` on the latest headed validation run
 - Dashboard compile: `python -m py_compile dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py` passed in the latest Sprint 42 validation slice
 - Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
 - Freshness contract: maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) now passes freshness; stale exploratory symbols no longer create false freshness PARTIALs
 - Maintained-universe sync on `2026-04-22` inserted `1295` fresh `1m` candles each for `BTCUSDT`, `ETHUSDT`, and `BNBUSDT`, restoring the clean data-only baseline
+- New continuity guard: `maintain_symbol_freshness()` repaired an additional `14` stale minutes per maintained symbol during live verification; `run_live.py` now includes this guard at startup and every 5 minutes, but it still requires an active runner process to operate continuously
 - Test isolation: full `pytest` now runs against a temp DB and no longer wipes live candles, artifacts, or app settings
 - Maintained-universe recovery: `BTCUSDT`, `ETHUSDT`, `BNBUSDT` each restored to `43201` local 1m candles
 - GitHub: Sprint 41 issue `#43` is closed history; Sprint 42 is now tracked as issue `#44` on board `#1`
