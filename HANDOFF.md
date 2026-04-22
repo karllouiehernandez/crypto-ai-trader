@@ -10,10 +10,10 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-22 (Sprint 42 maintained-universe freshness guard implemented) |
+| **Last updated** | 2026-04-22 (Sprint 42 runner restarted with active freshness guard and ASCII-safe logs) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **656 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 after maintained-universe sync; headed smoke UI `64/64 PASS` on 2026-04-21; headed trader journey `27/28 PASS` with **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-21 |
+| **Tests** | `pytest tests/ -q` → **657 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; headed smoke UI `64/64 PASS` on 2026-04-21; headed trader journey `27/28 PASS` with **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-21 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -78,24 +78,34 @@ The Sprint 42 issue title/body have now been updated and the board card is set t
   - Added tests in:
     - [tests/test_market_data_services.py](tests/test_market_data_services.py)
     - [tests/test_run_live.py](tests/test_run_live.py)
+  - Implemented **ASCII-safe runtime logging for Windows console capture**.
+  - Updated:
+    - [run_live.py](run_live.py)
+    - [llm/self_learner.py](llm/self_learner.py)
+    - [llm/client.py](llm/client.py)
+    - [collectors/live_streamer.py](collectors/live_streamer.py)
+  - Replaced non-ASCII runtime log strings and placeholders so stderr/stdout capture stays readable under default Windows console encoding.
 - **What was verified**
   - `python -m py_compile database/persistence.py dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py tests/test_persistence.py` → clean
   - `pytest tests/test_persistence.py tests/test_workbench_helpers.py tests/test_paper_evaluation.py tests/test_paper_trader.py tests/test_run_live.py -q` → **97 passed**
   - `python -m py_compile market_data/history.py run_live.py tests/test_market_data_services.py tests/test_run_live.py` → clean
   - `pytest tests/test_market_data_services.py tests/test_run_live.py -q` → **25 passed**
-  - `pytest tests/ -q` → **656 passed, 4 warnings**
+  - `pytest tests/test_llm_client.py tests/test_run_live.py -q` → **19 passed**
+  - `pytest tests/ -q` → **657 passed, 4 warnings**
   - Maintained-universe sync executed successfully on 2026-04-22:
     - initial repair inserted `1295` fresh `1m` candles per symbol with no missing ranges
     - freshness-helper verification later repaired another `14` stale minutes per symbol back to current
   - `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP**
     - Only remaining SKIP is expected: no active live artifact configured
   - Operational note:
-    - there was no long-lived `run_live.py` process active during this slice, so the new periodic freshness guard will take effect continuously on the next runner start
+    - `run_live.py` is now active again in paper mode as the normal parent/child Python pair
+    - heartbeat lines and startup lines are now ASCII-clean in `.run_live_eval.err`
+    - maintained-universe candles are advancing to the current minute while the runner is active
   - Sprint 42 issue `#44` remains the active tracking issue and already contains the phased pre-deploy plan comment:
     - [Issue #44 comment](https://github.com/karllouiehernandez/crypto-ai-trader/issues/44#issuecomment-4295460139)
 - **What remains next**
   - **Phase 2 implementation is complete in code, but the real-world evidence gate is still waiting on actual artifact-tagged SELL trades for paper target `#2`.**
-  - Restart or launch `run_live.py` when ready so the new periodic maintained-universe freshness guard runs continuously instead of only through manual helper calls.
+  - Keep the current paper-mode `run_live.py` process healthy long enough to collect real artifact-tagged SELL trades for paper target `#2`.
   - Use the new Persistence & Recovery panel to manually confirm the live operator environment before making stronger production-readiness claims.
   - Decide whether to create and keep one generated draft in the default environment. The only remaining trader-journey skip is still the draft-promotion guard because no generated draft is currently present in the catalog.
   - Continue adding one structured entry to [knowledge/iteration_learnings.md](knowledge/iteration_learnings.md) after each meaningful implementation or validation slice so this operator-trust history stays cumulative.
@@ -125,7 +135,8 @@ Required safety rules:
    - re-sync strategy artifacts from `strategy.runtime.list_available_strategies()`
    - re-arm the paper target if needed
    - restore maintained-universe candles before claiming readiness
-5. Update this file last with what changed, what was verified, and what remains next
+5. Do not run multiple `pytest` invocations in parallel; `tests/conftest.py` uses one shared temp DB path and concurrent bootstrap can create a false `table candles already exists` failure
+6. Update this file last with what changed, what was verified, and what remains next
 
 Current shared baseline:
 1. Last protection commit: `b207a44` — `Sprint 42 kickoff — isolate pytest DB and restore data gate`

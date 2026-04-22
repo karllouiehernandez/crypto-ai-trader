@@ -40,7 +40,7 @@ except ImportError:  # user might be running script *inside* package dir
         from utils.telegram_utils import send_telegram_alert
     except ImportError:
         def send_telegram_alert(*_a, **_kw):  # type: ignore
-            logging.warning("Telegram utils not found – alerts disabled")
+            logging.warning("Telegram utils not found - alerts disabled")
             return
 
 from database.models import Candle, SessionLocal, init_db
@@ -104,7 +104,7 @@ async def main() -> None:
     init_db()
     log.info("try TELEGRAM")
 
-    safe_telegram("✅ Live streamer started – Telegram OK")
+    safe_telegram("Live streamer started - Telegram OK")
 
     client = await AsyncClient.create(
         BINANCE_API_KEY, BINANCE_API_SECRET, testnet=BINANCE_TESTNET,

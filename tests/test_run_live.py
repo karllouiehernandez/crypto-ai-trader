@@ -44,6 +44,16 @@ def test_status_fields_formats_snapshot_values():
     assert fields["force_halt"] == "false"
 
 
+def test_status_fields_use_ascii_placeholders_when_values_missing():
+    fields = _status_fields({})
+
+    assert fields["strategy"] == "-@-"
+    assert fields["artifact"] == "-"
+    assert fields["symbols"] == "-"
+    assert fields["last_candle"] == "-"
+    assert fields["last_trade"] == "-"
+
+
 def test_log_runner_snapshot_emits_single_operator_line():
     snapshot = {
         "run_mode": "paper",

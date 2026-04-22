@@ -161,7 +161,7 @@ def call_llm(
 
 def _call_anthropic(system_prompt: str, user_prompt: str, max_tokens: int) -> LLMResponse:
     if not ANTHROPIC_API_KEY:
-        log.warning("ANTHROPIC_API_KEY not set — LLM fallback")
+        log.warning("ANTHROPIC_API_KEY not set - LLM fallback")
         return LLMResponse(content="", fallback=True)
 
     client = _get_anthropic()
@@ -190,7 +190,7 @@ def _call_openai_compat(system_prompt: str, user_prompt: str, max_tokens: int) -
     key = GROQ_API_KEY if LLM_PROVIDER == "groq" else OPENROUTER_API_KEY
     if not key:
         env_var = "GROQ_API_KEY" if LLM_PROVIDER == "groq" else "OPENROUTER_API_KEY"
-        log.warning("%s not set — LLM fallback", env_var)
+        log.warning("%s not set - LLM fallback", env_var)
         return LLMResponse(content="", fallback=True)
 
     client = _get_openai_client()

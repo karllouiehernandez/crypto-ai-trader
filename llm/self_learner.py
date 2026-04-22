@@ -61,7 +61,7 @@ class SelfLearner:
 
     async def run_loop(self) -> None:
         """Run forever — call once via asyncio.create_task()."""
-        log.info("SelfLearner started — evaluation every %dh", self._interval // 3600)
+        log.info("SelfLearner started - evaluation every %dh", self._interval // 3600)
         while True:
             try:
                 result = await self.evaluate()
@@ -75,7 +75,7 @@ class SelfLearner:
                     },
                 )
             except asyncio.CancelledError:
-                log.info("SelfLearner loop cancelled — shutting down")
+                log.info("SelfLearner loop cancelled - shutting down")
                 return
             except Exception as exc:   # noqa: BLE001
                 log.exception("SelfLearner evaluation error: %s", exc)
@@ -153,11 +153,11 @@ class SelfLearner:
                         .all()
                 )
         except Exception as exc:   # noqa: BLE001
-            log.warning("SelfLearner: DB query failed — using zero metrics (%s)", exc)
+            log.warning("SelfLearner: DB query failed - using zero metrics (%s)", exc)
             return _zero_metrics()
 
         if not trades:
-            log.info("SelfLearner: no completed trades in window — using zero metrics")
+            log.info("SelfLearner: no completed trades in window - using zero metrics")
             return _zero_metrics()
 
         pnls = [float(t.pnl) for t in trades]

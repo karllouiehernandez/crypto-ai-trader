@@ -1,6 +1,6 @@
 # crypto_ai_trader/run_live.py
 """
-Boot sequence: load history → start live streamer → launch paper trader + coordinator
+Boot sequence: load history, start live streamer, then launch paper trader + coordinator.
 """
 import asyncio
 import logging
@@ -32,7 +32,7 @@ FRESHNESS_GUARD_SECONDS = 300
 
 def _format_status_timestamp(value) -> str:
     if value is None:
-        return "—"
+        return "-"
     ts = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
@@ -44,9 +44,9 @@ def _format_status_timestamp(value) -> str:
 def _status_fields(snapshot: dict) -> dict:
     return {
         "run_mode": snapshot.get("run_mode", "paper"),
-        "strategy": f"{snapshot.get('strategy_name', '—')}@{snapshot.get('strategy_version') or '—'}",
-        "artifact": str(snapshot.get("artifact_id") or "—"),
-        "symbols": ",".join(snapshot.get("symbols", [])) or "—",
+        "strategy": f"{snapshot.get('strategy_name', '-')}@{snapshot.get('strategy_version') or '-'}",
+        "artifact": str(snapshot.get("artifact_id") or "-"),
+        "symbols": ",".join(snapshot.get("symbols", [])) or "-",
         "cash": f"{float(snapshot.get('cash', 0.0)):.2f}",
         "equity": f"{float(snapshot.get('equity', 0.0)):.2f}",
         "realized": f"{float(snapshot.get('realized_pnl', 0.0)):+.2f}",
@@ -131,7 +131,7 @@ async def freshness_guard_loop(interval_seconds: int = FRESHNESS_GUARD_SECONDS) 
 
 
 async def boot():
-    await load_history()          # idempotent — skips already-stored candles
+    await load_history()          # idempotent; skips already-stored candles
     initial_freshness = await asyncio.to_thread(maintain_symbol_freshness)
     initial_summary = _format_freshness_maintenance_summary(initial_freshness)
     if initial_summary:
@@ -176,7 +176,7 @@ async def boot():
         )
         trader._binance_client = binance_client
         log.warning("=" * 60)
-        log.warning("⚡  LIVE TRADING ENABLED — real orders will be submitted")
+        log.warning("LIVE TRADING ENABLED - real orders will be submitted")
         log.warning("=" * 60)
         send_telegram_alert(_token(), _chat_id(),
             "⚡ *LIVE TRADING ENABLED*\nBot is now submitting real Binance orders.")

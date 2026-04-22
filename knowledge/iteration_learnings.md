@@ -72,3 +72,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Added `maintain_symbol_freshness()` to `market_data/history.py`, wired `run_live.py` to run it once at startup and then every 5 minutes, added unit coverage in `tests/test_market_data_services.py` and `tests/test_run_live.py`, and reran the full suite to `656 passed`.
 **What to try next:** Start or restart `run_live.py` so the new guard runs continuously, then observe whether candle freshness stays green over time without any manual sync intervention.
 **Status:** OPEN
+
+---
+
+## 2026-04-22 Runtime Console Hardening — Production logs must stay readable on Windows defaults
+**What happened:** The live runner was healthy, but redirected stderr still showed mojibake because several runtime log strings used non-ASCII characters such as em dashes, arrows, checkmarks, and placeholder glyphs. After replacing those with ASCII-safe text and restarting the runner, the startup and heartbeat logs became clean while behavior stayed unchanged.
+**Why it happened:** Earlier Windows-safe work normalized the UI-agent CLI, but runtime logging still had legacy Unicode strings scattered across `run_live.py`, `llm/self_learner.py`, `llm/client.py`, and `collectors/live_streamer.py`. Redirected console output on the default Windows encoding path exposed that gap immediately.
+**Impact:** Operator trust improved because the live process now looks healthy instead of corrupted when watched from PowerShell or redirected files. This matters for production readiness: if heartbeat logs are unreadable, a quiet but healthy bot can still look broken.
+**What we changed:** Replaced non-ASCII runtime log strings and placeholder values with ASCII-safe equivalents, added a regression test for ASCII placeholders in `tests/test_run_live.py`, reran targeted tests plus the full suite to `657 passed`, and restarted `run_live.py` so the live process actually uses the cleaned output.
+**What to try next:** Keep the runner alive long enough to confirm the maintained-universe freshness guard keeps candles current over time, and avoid running multiple `pytest` commands in parallel because the shared temp-DB bootstrap can create a false isolation failure.
+**Status:** OPEN
