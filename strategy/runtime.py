@@ -77,7 +77,7 @@ def get_strategy_instance(name: str, params: Optional[dict] = None) -> Optional[
     return strategy
 
 
-def list_available_strategies() -> list[dict]:
+def list_available_strategies(refresh: bool = False) -> list[dict]:
     """Return built-in and plugin strategies for dashboard display."""
     builtins = []
     for strategy in _builtin_registry().values():
@@ -96,7 +96,7 @@ def list_available_strategies() -> list[dict]:
             }
         )
 
-    load_all()
+    load_all(force=refresh)
     plugins = sync_strategy_artifacts(list_plugin_strategies())
     return sorted(
         builtins + plugins,
@@ -107,8 +107,8 @@ def list_available_strategies() -> list[dict]:
     )
 
 
-def list_available_strategy_errors() -> list[dict]:
-    load_all()
+def list_available_strategy_errors(refresh: bool = False) -> list[dict]:
+    load_all(force=refresh)
     return list_strategy_errors()
 
 

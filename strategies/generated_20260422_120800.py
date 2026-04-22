@@ -25,8 +25,9 @@ class GeneratedRangeProbeStrategy(StrategyBase):
         prev = df.iloc[-2]
         return bool(
             last["rsi_14"] < 28
-            and last["close"] <= last["bb_lower"]
-            and last["macd_hist"] > prev["macd_hist"]
+            and last["close"] <= last["bb_lo"]
+            and last["macd"] > last["macd_s"]
+            and prev["macd"] <= prev["macd_s"]
         )
 
     def should_short(self, df: pd.DataFrame) -> bool:
@@ -34,6 +35,7 @@ class GeneratedRangeProbeStrategy(StrategyBase):
         prev = df.iloc[-2]
         return bool(
             last["rsi_14"] > 68
-            and last["close"] >= last["bb_upper"]
-            and last["macd_hist"] < prev["macd_hist"]
+            and last["close"] >= last["bb_hi"]
+            and last["macd"] < last["macd_s"]
+            and prev["macd"] >= prev["macd_s"]
         )

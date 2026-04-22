@@ -232,12 +232,12 @@ def load_promotions() -> pd.DataFrame:
 
 @st.cache_data(ttl=10)
 def load_strategy_catalog() -> list[dict]:
-    return list_available_strategies()
+    return list_available_strategies(refresh=True)
 
 
 @st.cache_data(ttl=10)
 def load_strategy_errors() -> list[dict]:
-    return list_available_strategy_errors()
+    return list_available_strategy_errors(refresh=True)
 
 
 @st.cache_data(ttl=10)

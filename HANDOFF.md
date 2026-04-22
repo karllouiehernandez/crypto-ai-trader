@@ -10,10 +10,10 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-22 (Sprint 42 paper-runner observation and generated-draft validation complete) |
+| **Last updated** | 2026-04-22 (Sprint 42 trader-journey false partials resolved; headed journey now clean) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **657 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; latest trader journey `python run_ui_agent.py --journey trader --ui-only --url http://localhost:8785` → **0 FAIL, 4 PARTIAL, 2 SKIP** on 2026-04-22 with the draft-promotion guard now exercised instead of skipped; headed smoke UI `64/64 PASS` on 2026-04-21 |
+| **Tests** | `pytest tests/ -q` → **660 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; latest headed trader journey `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` → **0 FAIL, 0 PARTIAL, 2 SKIP** on 2026-04-22; latest smoke UI `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-22 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -29,6 +29,18 @@ The Sprint 42 issue title/body have now been updated and the board card is set t
 ### Latest Slice (2026-04-22)
 
 - **What changed**
+  - Resolved the remaining Sprint 42 trader-journey false partials.
+  - Updated [tools/ui_agent/trader_journey.py](tools/ui_agent/trader_journey.py) so terminal-state detection reads the actual `Last Backtest Attempt` block instead of scanning the whole page body.
+    - This prevents one strategy's stale `Run failed:` banner from being misattributed to a different strategy later in the same operator journey.
+  - Updated [strategy/runtime.py](strategy/runtime.py), [backtester/service.py](backtester/service.py), and cached dashboard loaders in [dashboard/streamlit_app.py](dashboard/streamlit_app.py) so dashboard backtests refresh the plugin strategy registry from disk before execution and catalog rendering.
+    - This fixed the long-lived Streamlit-process case where the generated draft still used the old `'bb_upper'` code path after the file had already been corrected on disk.
+  - Kept the generated draft plugin fix in:
+    - [strategies/generated_20260422_120800.py](strategies/generated_20260422_120800.py)
+    - Uses `bb_lo` / `bb_hi` and `macd` / `macd_s` cross logic instead of stale nonexistent indicator keys.
+  - Added regression coverage in:
+    - [tests/test_backtester_service.py](tests/test_backtester_service.py)
+    - [tests/test_ui_agent_smoke.py](tests/test_ui_agent_smoke.py)
+  - Restarted only the Streamlit dashboard process on port `8785` so the updated modules were loaded cleanly.
   - Implemented **Sprint 42 Phase 1 — persistence and restart/recovery validation**.
   - Added new module [database/persistence.py](database/persistence.py) with:
     - `evaluate_restart_survival()` — audits DB presence, paper/live runtime targets, registered artifact file/hash integrity, saved-run counts, and MVP-symbol candle freshness.
@@ -92,6 +104,15 @@ The Sprint 42 issue title/body have now been updated and the board card is set t
     - lifecycle status `draft`
   - Verified the trader journey now sees and exercises the draft-promotion guard instead of skipping it for lack of any generated draft.
 - **What was verified**
+  - `pytest tests/test_backtester_service.py tests/test_ui_agent_smoke.py -q` → **23 passed**
+  - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` → **29/31 PASS, 0 FAIL, 0 PARTIAL, 2 SKIP**
+    - All 8 visible strategies now save backtest runs successfully
+    - All 8 visible strategies now reach complete Inspect surfaces
+    - Remaining skips are expected: no reviewed strategy currently has a passing saved backtest to unlock paper promotion in the default environment, and no live target is configured
+  - `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS**
+  - `pytest tests/ -q` → **660 passed, 4 warnings**
+  - `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP**
+    - Only remaining skip is expected: no active live artifact configured
   - `python -m py_compile database/persistence.py dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py tests/test_persistence.py` → clean
   - `pytest tests/test_persistence.py tests/test_workbench_helpers.py tests/test_paper_evaluation.py tests/test_paper_trader.py tests/test_run_live.py -q` → **97 passed**
   - `python -m py_compile market_data/history.py run_live.py tests/test_market_data_services.py tests/test_run_live.py` → clean
@@ -116,10 +137,10 @@ The Sprint 42 issue title/body have now been updated and the board card is set t
   - Sprint 42 issue `#44` remains the active tracking issue and already contains the phased pre-deploy plan comment:
     - [Issue #44 comment](https://github.com/karllouiehernandez/crypto-ai-trader/issues/44#issuecomment-4295460139)
 - **What remains next**
-  - **Phase 2 implementation is complete in code, but the real-world evidence gate is still blocked because paper target `#2` has produced no tagged trades at all yet.**
+  - **Phase 2 implementation is complete in code, and the trader-journey audit is now clean; the main remaining blocker is still real paper evidence, not dashboard trust surfaces.**
   - Keep the current paper-mode `run_live.py` process healthy long enough to collect the first real artifact-tagged BUY and then SELL trades for paper target `#2`.
+  - If artifact `#2` still shows zero tagged BUY trades after a meaningful additional observation window, open the next corrective sprint around entry scarcity / market fit rather than paper-evidence scoring.
   - Use the new Persistence & Recovery panel to manually confirm the live operator environment before making stronger production-readiness claims.
-  - Investigate why several reviewed strategies and the new generated draft still end in persistent `run-failed` backtest states on the current environment, even though the UI now surfaces those failures honestly.
   - Continue adding one structured entry to [knowledge/iteration_learnings.md](knowledge/iteration_learnings.md) after each meaningful implementation or validation slice so this operator-trust history stays cumulative.
 
 ## Shared-Agent Protection Protocol

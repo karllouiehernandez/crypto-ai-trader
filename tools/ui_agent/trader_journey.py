@@ -78,6 +78,29 @@ def _body_text(page: Page) -> str:
         return ""
 
 
+def _extract_last_backtest_attempt(body: str) -> dict[str, str] | None:
+    marker = "Last Backtest Attempt"
+    if marker not in body:
+        return None
+
+    tail = body.split(marker, 1)[1]
+    lines = [line.strip() for line in tail.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+
+    return {
+        "meta": lines[0],
+        "detail": lines[1],
+    }
+
+
+def _last_backtest_attempt_matches_strategy(body: str, strategy_name: str) -> bool:
+    attempt = _extract_last_backtest_attempt(body)
+    if attempt is None:
+        return False
+    return str(strategy_name or "").strip().lower() in attempt["meta"].lower()
+
+
 def _active_panel(page: Page) -> Locator:
     return page.locator("[role='tabpanel']:visible").first
 
@@ -349,12 +372,14 @@ def _wait_for_backtest_terminal_state(
 
         body = _body_text(page)
         lowered_body = body.lower()
-        if "last backtest attempt" in lowered_body and normalized_strategy in lowered_body:
-            if "blocked by history:" in lowered_body:
+        attempt = _extract_last_backtest_attempt(body)
+        if attempt is not None and _last_backtest_attempt_matches_strategy(body, strategy_name):
+            attempt_detail = attempt["detail"].lower()
+            if "blocked by history:" in attempt_detail:
                 return {"state": "blocked-history"}
-            if "blocked by validation:" in lowered_body:
+            if "blocked by validation:" in attempt_detail:
                 return {"state": "blocked-validation"}
-            if "run failed:" in lowered_body:
+            if "run failed:" in attempt_detail:
                 return {"state": "run-failed"}
 
         spinner_visible = _visible(page, "[data-testid='stSpinner']")

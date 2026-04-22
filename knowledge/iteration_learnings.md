@@ -102,3 +102,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Added `strategies/generated_20260422_120800.py`, verified discovery via `list_available_strategies()`, confirmed artifact `#4` is `draft`, and reran the trader journey to verify `Draft promotion guard` now passes instead of skipping.
 **What to try next:** Investigate the remaining trader-journey partials where reviewed strategies or the new draft end in persistent `run-failed` states, because the lifecycle coverage gap is closed but some strategy operability gaps still remain.
 **Status:** OPEN
+
+---
+
+## 2026-04-22 Trader Journey False Partials — A stale attempt banner can corrupt operator audits if the harness reads the whole page
+**What happened:** The trader journey was still reporting four plugin strategies as `run-failed`, even though direct `run_and_persist_backtest()` calls and manual browser reproduction showed those same strategies could save runs successfully. The generated draft also still failed inside the long-lived Streamlit process with the old `'bb_upper'` error, despite the file already being fixed on disk.
+**Why it happened:** Two separate issues overlapped. First, the journey harness was scanning the entire page body for `Run failed:` and accidentally reusing the previous strategy's `Last Backtest Attempt` banner. Second, the dashboard backtest path depended on the in-memory plugin registry, which had not been refreshed from disk before backtests in the long-lived Streamlit process.
+**Impact:** Trader-facing audits looked worse than the actual product state, which could have driven the next sprint in the wrong direction. It also proved that draft/plugin edits must be reloaded explicitly for backtests if the dashboard stays up for a long time.
+**What we changed:** Scoped trader-journey terminal-state detection to the actual `Last Backtest Attempt` block, refreshed the strategy catalog from disk before persisted backtests, updated dashboard strategy catalog/error loaders to use the refreshed registry, kept the generated draft on the corrected `bb_lo`/`bb_hi` and `macd`/`macd_s` logic, and restarted only the Streamlit dashboard so the updated modules were loaded cleanly.
+**What to try next:** Keep `run_live.py` running for real artifact-`#2` trades, and once real tagged BUY/SELL rows exist, use the deterministic evidence gate to decide whether the next corrective sprint is about entry scarcity or paper-performance quality.
+**Status:** RESOLVED

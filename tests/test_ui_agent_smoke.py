@@ -9,6 +9,10 @@ import pytest
 
 import run_ui_agent
 from tools.ui_agent.report import build_report, write_report
+from tools.ui_agent.trader_journey import (
+    _extract_last_backtest_attempt,
+    _last_backtest_attempt_matches_strategy,
+)
 
 
 def test_build_report_counts():
@@ -149,3 +153,36 @@ def test_run_ui_agent_trader_journey_invokes_runner():
         run_ui_agent.main()
 
     journey_mock.assert_called_once_with("page", verbose=True)
+
+
+def test_extract_last_backtest_attempt_parses_latest_attempt_block():
+    body = """
+    Backtest Lab
+    Last Backtest Attempt
+
+    21:03:32 · generated_range_probe_v1 · BTCUSDT · 2026-04-15 -> 2026-04-21
+
+    Run failed: 'bb_upper'
+    """
+
+    attempt = _extract_last_backtest_attempt(body)
+
+    assert attempt == {
+        "meta": "21:03:32 · generated_range_probe_v1 · BTCUSDT · 2026-04-15 -> 2026-04-21",
+        "detail": "Run failed: 'bb_upper'",
+    }
+
+
+def test_last_backtest_attempt_match_ignores_other_strategy_mentions_on_page():
+    body = """
+    Last Backtest Attempt
+
+    21:03:32 · generated_range_probe_v1 · BTCUSDT · 2026-04-15 -> 2026-04-21
+
+    Run failed: 'bb_upper'
+
+    rsi_mean_reversion_v1 is ranked #2 in saved evaluations.
+    """
+
+    assert _last_backtest_attempt_matches_strategy(body, "generated_range_probe_v1") is True
+    assert _last_backtest_attempt_matches_strategy(body, "rsi_mean_reversion_v1") is False

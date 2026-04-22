@@ -15,12 +15,11 @@ Read order for a new agent:
 - Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure`
 - GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `657 passed, 4 warnings`
+  - `pytest tests/ -q` -> `660 passed, 4 warnings`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22` with `run_live.py` active
-  - `python run_ui_agent.py --journey trader --ui-only --url http://localhost:8785` -> `0 FAIL, 4 PARTIAL, 2 SKIP` on `2026-04-22`
-  - `python run_ui_agent.py --ui-only --headed --url http://localhost:8785` -> `64/64 PASS`
-  - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `27/28 PASS`, `0 FAIL`, `0 PARTIAL`, `1 SKIP`
-  - The trader journey now exits deterministically and writes a report; the remaining operator gap is real paper evidence, not UI audit completion
+  - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
+  - `python run_ui_agent.py --ui-only --url http://localhost:8785` -> `64/64 PASS`
+  - The trader journey now exits deterministically, writes a report, and no longer produces false plugin `run-failed` partials; the remaining operator gap is real paper evidence, not UI audit completion
   - Phase 1 persistence/recovery validation is now in the repo via `database/persistence.py`, `tests/test_persistence.py`, and the Strategies-tab `Persistence & Recovery` expander
   - Phase 2 deterministic paper-evidence progress surfaces are now in the repo via `strategy/paper_evaluation.py`, `simulator/paper_trader.py`, `run_live.py`, and the Strategies-tab `Paper Evidence Progress` section
   - Maintained-universe freshness auto-repair is now in the repo via `market_data/history.py::maintain_symbol_freshness()` and `run_live.py::freshness_guard_loop()`
@@ -182,6 +181,10 @@ Next steps:
 1. Keep the active paper-mode `run_live.py` process on paper target `rsi_mean_reversion_v1` artifact `#2` until the first real tagged BUY and SELL trades exist
 2. Once real SELL trades exist, use the deterministic evidence summary to decide whether `paper_passed` is justified or which metric gate is failing
 3. Investigate the current trader-journey partials: `generated_range_probe_v1`, `ema200_filtered_momentum`, `mtf_confirmation`, and `rsi_mean_reversion_v1` all show persistent `run-failed` backtest states rather than saved runs in the current environment
+3. Trader-journey false partials are now resolved:
+   - the harness scopes terminal-state detection to the actual `Last Backtest Attempt` block
+   - dashboard backtests refresh plugin strategies from disk before execution
+   - all 8 visible strategies now save runs and open complete Inspect surfaces in the headed journey
 4. Keep Sprint 42 issue `#44` updated as work lands
 5. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
 6. Avoid parallel pytest invocations; the current session-level temp DB bootstrap is not safe for concurrent pytest commands

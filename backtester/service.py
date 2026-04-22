@@ -34,7 +34,7 @@ def run_and_persist_backtest(
     params = parse_params_json(json.dumps(params or {}))
     preset_name = normalise_preset_name(preset_name) or None
     strategy_meta = next(
-        (item for item in list_available_strategies() if item.get("name") == strategy_name),
+        (item for item in list_available_strategies(refresh=True) if item.get("name") == strategy_name),
         None,
     )
     trades = run_backtest(symbol, start, end, strategy_name=strategy_name, params=params)

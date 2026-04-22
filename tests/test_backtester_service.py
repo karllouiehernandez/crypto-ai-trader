@@ -242,6 +242,43 @@ def test_run_and_persist_backtest_persists_artifact_identity():
     mock_mark.assert_called_once_with(321, True)
 
 
+def test_run_and_persist_backtest_refreshes_strategy_catalog_before_running():
+    init_db()
+    trades = pd.DataFrame(
+        [
+            {
+                "time": datetime(2024, 4, 1, tzinfo=timezone.utc),
+                "side": "BUY",
+                "qty": 1.0,
+                "price": 100.0,
+                "regime": "RANGING",
+                "strategy_name": "generated_range_probe_v1",
+                "strategy_version": "1.0.0",
+            }
+        ]
+    )
+    strategy_meta = {
+        "name": "generated_range_probe_v1",
+        "artifact_id": 4,
+        "artifact_code_hash": "fresh-hash",
+        "provenance": "generated",
+    }
+    with patch("backtester.service.list_available_strategies", return_value=[strategy_meta]) as mock_catalog, \
+         patch("backtester.service.run_backtest", return_value=trades), \
+         patch("backtester.service.build_equity_curve", return_value=pd.Series([100.0, 101.0])), \
+         patch("backtester.service.compute_metrics", return_value={"sharpe": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0, "n_trades": 1.0}), \
+         patch("backtester.service.acceptance_gate", return_value=(False, ["Trade count 1 < 200"])), \
+         patch("backtester.service.mark_artifact_backtest_result"):
+        run_and_persist_backtest(
+            "BTCUSDT",
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 2, tzinfo=timezone.utc),
+            "generated_range_probe_v1",
+        )
+
+    mock_catalog.assert_called_once_with(refresh=True)
+
+
 def test_list_backtest_runs_flags_missing_trade_rows():
     init_db()
     with SessionLocal() as sess:

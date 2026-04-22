@@ -347,7 +347,7 @@ def format_audit_summary(result: dict[str, Any], max_ranges: int = 3) -> str:
         )
     ranges = result.get("missing_ranges") or []
     preview = ", ".join(
-        f"{item['start'].strftime('%Y-%m-%d %H:%M')} → {item['end'].strftime('%Y-%m-%d %H:%M')}"
+        f"{item['start'].strftime('%Y-%m-%d %H:%M')} -> {item['end'].strftime('%Y-%m-%d %H:%M')}"
         for item in ranges[:max_ranges]
     )
     remaining = len(ranges) - min(len(ranges), max_ranges)
