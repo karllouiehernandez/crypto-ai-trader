@@ -17,6 +17,7 @@ Read order for a new agent:
 - Baseline after the current Sprint 42 work:
   - `pytest tests/ -q` -> `657 passed, 4 warnings`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22` with `run_live.py` active
+  - `python run_ui_agent.py --journey trader --ui-only --url http://localhost:8785` -> `0 FAIL, 4 PARTIAL, 2 SKIP` on `2026-04-22`
   - `python run_ui_agent.py --ui-only --headed --url http://localhost:8785` -> `64/64 PASS`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `27/28 PASS`, `0 FAIL`, `0 PARTIAL`, `1 SKIP`
   - The trader journey now exits deterministically and writes a report; the remaining operator gap is real paper evidence, not UI audit completion
@@ -24,6 +25,7 @@ Read order for a new agent:
   - Phase 2 deterministic paper-evidence progress surfaces are now in the repo via `strategy/paper_evaluation.py`, `simulator/paper_trader.py`, `run_live.py`, and the Strategies-tab `Paper Evidence Progress` section
   - Maintained-universe freshness auto-repair is now in the repo via `market_data/history.py::maintain_symbol_freshness()` and `run_live.py::freshness_guard_loop()`
   - Runtime log output is now ASCII-safe in `run_live.py`, `llm/self_learner.py`, `llm/client.py`, and `collectors/live_streamer.py`, so Windows stderr capture no longer fills with mojibake placeholders
+  - Default environment now includes one generated draft strategy: `generated_range_probe_v1` from `strategies/generated_20260422_120800.py`, registered as draft artifact `#4`
   - Repo-root `install_once.bat` now exists as the non-destructive one-time Windows bootstrap path and has been validated locally
   - `tools/ui_agent/data_checks.py` now grades candle freshness against the maintained MVP research universe first, instead of every symbol with any candle rows
   - `tests/conftest.py` now redirects the full pytest session to a dedicated temp SQLite DB, so the suite no longer mutates the live workbench database
@@ -177,9 +179,9 @@ Read order for a new agent:
 **Sprint 42 continuation** — persistence/recovery and evidence-progress visibility are implemented. The next work is operational follow-through, not another redesign.
 
 Next steps:
-1. Keep the active paper-mode `run_live.py` process on paper target `rsi_mean_reversion_v1` artifact `#2` until real artifact-tagged SELL trades exist
-2. Once real SELL trades exist, use the new deterministic evidence summary to verify whether the artifact can legitimately move from `paper_active` toward `paper_passed`
-3. Decide whether the default environment should include one generated draft so the draft-promotion guard is exercised instead of permanently skipped in the trader journey
+1. Keep the active paper-mode `run_live.py` process on paper target `rsi_mean_reversion_v1` artifact `#2` until the first real tagged BUY and SELL trades exist
+2. Once real SELL trades exist, use the deterministic evidence summary to decide whether `paper_passed` is justified or which metric gate is failing
+3. Investigate the current trader-journey partials: `generated_range_probe_v1`, `ema200_filtered_momentum`, `mtf_confirmation`, and `rsi_mean_reversion_v1` all show persistent `run-failed` backtest states rather than saved runs in the current environment
 4. Keep Sprint 42 issue `#44` updated as work lands
 5. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
 6. Avoid parallel pytest invocations; the current session-level temp DB bootstrap is not safe for concurrent pytest commands
@@ -221,6 +223,8 @@ Next steps:
 - Maintained-universe sync on `2026-04-22` inserted `1295` fresh `1m` candles each for `BTCUSDT`, `ETHUSDT`, and `BNBUSDT`, restoring the clean data-only baseline
 - New continuity guard: `maintain_symbol_freshness()` repaired an additional `14` stale minutes per maintained symbol during live verification; `run_live.py` now includes this guard at startup and every 5 minutes, but it still requires an active runner process to operate continuously
 - Current runtime validation: `run_live.py` is active again in paper mode, startup and heartbeat logs are ASCII-clean, and maintained-universe candles are advancing in real time
+- Paper-evidence blocker is now classified precisely: artifact `#2` has `0` artifact-tagged trades total (`0` BUY, `0` SELL), so the current gate failure is `no entries yet`
+- Trader-journey draft-path coverage is now active: the generated draft guard passes against artifact `#4` instead of being skipped
 - Verification caveat: do not run multiple `pytest` commands in parallel; the shared temp-DB bootstrap in `tests/conftest.py` can race and produce a false `table candles already exists` error
 - Test isolation: full `pytest` now runs against a temp DB and no longer wipes live candles, artifacts, or app settings
 - Maintained-universe recovery: `BTCUSDT`, `ETHUSDT`, `BNBUSDT` each restored to `43201` local 1m candles

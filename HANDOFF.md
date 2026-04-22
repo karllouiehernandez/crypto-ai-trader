@@ -10,10 +10,10 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-22 (Sprint 42 runner restarted with active freshness guard and ASCII-safe logs) |
+| **Last updated** | 2026-04-22 (Sprint 42 paper-runner observation and generated-draft validation complete) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **657 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; headed smoke UI `64/64 PASS` on 2026-04-21; headed trader journey `27/28 PASS` with **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-21 |
+| **Tests** | `pytest tests/ -q` → **657 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; latest trader journey `python run_ui_agent.py --journey trader --ui-only --url http://localhost:8785` → **0 FAIL, 4 PARTIAL, 2 SKIP** on 2026-04-22 with the draft-promotion guard now exercised instead of skipped; headed smoke UI `64/64 PASS` on 2026-04-21 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -85,6 +85,12 @@ The Sprint 42 issue title/body have now been updated and the board card is set t
     - [llm/client.py](llm/client.py)
     - [collectors/live_streamer.py](collectors/live_streamer.py)
   - Replaced non-ASCII runtime log strings and placeholders so stderr/stdout capture stays readable under default Windows console encoding.
+  - Added one default-environment generated draft plugin:
+    - [strategies/generated_20260422_120800.py](strategies/generated_20260422_120800.py)
+    - discovered as `generated_range_probe_v1`
+    - registered as artifact `#4`
+    - lifecycle status `draft`
+  - Verified the trader journey now sees and exercises the draft-promotion guard instead of skipping it for lack of any generated draft.
 - **What was verified**
   - `python -m py_compile database/persistence.py dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py tests/test_persistence.py` → clean
   - `pytest tests/test_persistence.py tests/test_workbench_helpers.py tests/test_paper_evaluation.py tests/test_paper_trader.py tests/test_run_live.py -q` → **97 passed**
@@ -101,13 +107,19 @@ The Sprint 42 issue title/body have now been updated and the board card is set t
     - `run_live.py` is now active again in paper mode as the normal parent/child Python pair
     - heartbeat lines and startup lines are now ASCII-clean in `.run_live_eval.err`
     - maintained-universe candles are advancing to the current minute while the runner is active
+    - after a live observation window on 2026-04-22, artifact `#2` still has `0` tagged BUY trades and `0` tagged SELL trades in `trades`
+    - deterministic paper-evidence status for artifact `#2` remains `waiting-for-first-close`
+    - blocker classification is now exact: **no entries yet**, not merely "no closes yet"
+  - `python run_ui_agent.py --journey trader --ui-only --url http://localhost:8785` → **0 FAIL, 4 PARTIAL, 2 SKIP**
+    - `Draft promotion guard` now passes against `generated_range_probe_v1`
+    - partials are persistent `run-failed` states, not silent no-ops
   - Sprint 42 issue `#44` remains the active tracking issue and already contains the phased pre-deploy plan comment:
     - [Issue #44 comment](https://github.com/karllouiehernandez/crypto-ai-trader/issues/44#issuecomment-4295460139)
 - **What remains next**
-  - **Phase 2 implementation is complete in code, but the real-world evidence gate is still waiting on actual artifact-tagged SELL trades for paper target `#2`.**
-  - Keep the current paper-mode `run_live.py` process healthy long enough to collect real artifact-tagged SELL trades for paper target `#2`.
+  - **Phase 2 implementation is complete in code, but the real-world evidence gate is still blocked because paper target `#2` has produced no tagged trades at all yet.**
+  - Keep the current paper-mode `run_live.py` process healthy long enough to collect the first real artifact-tagged BUY and then SELL trades for paper target `#2`.
   - Use the new Persistence & Recovery panel to manually confirm the live operator environment before making stronger production-readiness claims.
-  - Decide whether to create and keep one generated draft in the default environment. The only remaining trader-journey skip is still the draft-promotion guard because no generated draft is currently present in the catalog.
+  - Investigate why several reviewed strategies and the new generated draft still end in persistent `run-failed` backtest states on the current environment, even though the UI now surfaces those failures honestly.
   - Continue adding one structured entry to [knowledge/iteration_learnings.md](knowledge/iteration_learnings.md) after each meaningful implementation or validation slice so this operator-trust history stays cumulative.
 
 ## Shared-Agent Protection Protocol

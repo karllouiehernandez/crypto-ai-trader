@@ -82,3 +82,23 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Replaced non-ASCII runtime log strings and placeholder values with ASCII-safe equivalents, added a regression test for ASCII placeholders in `tests/test_run_live.py`, reran targeted tests plus the full suite to `657 passed`, and restarted `run_live.py` so the live process actually uses the cleaned output.
 **What to try next:** Keep the runner alive long enough to confirm the maintained-universe freshness guard keeps candles current over time, and avoid running multiple `pytest` commands in parallel because the shared temp-DB bootstrap can create a false isolation failure.
 **Status:** OPEN
+
+---
+
+## 2026-04-22 Paper Evidence Observation — The current blocker is no entries, not weak exits
+**What happened:** The paper runner for `rsi_mean_reversion_v1` artifact `#2` was kept alive through multiple heartbeat intervals while candles advanced normally across `BTCUSDT`, `ETHUSDT`, and `BNBUSDT`. The artifact still produced `0` tagged trades total: no BUY entries and therefore no SELL closes. The deterministic evidence evaluator remained at `waiting-for-first-close`.
+**Why it happened:** The strategy is healthy from an operator/runtime perspective, but its entry conditions are currently too sparse to trigger in the observed market window. This is not yet a Sharpe, profit-factor, drawdown, or "too few closes" problem because the system has not reached the first entry.
+**Impact:** The next decision point is much clearer. There is no basis yet for paper promotion or live-readiness evaluation because the gate is blocked before trade sampling starts. Any corrective sprint should focus first on entry opportunity frequency or observation time, not on exit metrics.
+**What we changed:** Kept `run_live.py` active in paper mode, queried the live DB directly for artifact-tagged trades, evaluated `evaluate_paper_evidence(2)`, and recorded the exact blocker as `no entries yet`.
+**What to try next:** Let the runner continue longer to catch the first real entry, and if the artifact still shows zero tagged BUY trades after a meaningful additional window, open the next corrective sprint around entry scarcity rather than paper-evidence scoring.
+**Status:** OPEN
+
+---
+
+## 2026-04-22 Generated Draft Presence — The draft lifecycle must be visible in the default environment
+**What happened:** A generated draft strategy file was added to the default environment and discovered successfully as `generated_range_probe_v1`, registered as draft artifact `#4`. The trader journey now exercises the draft-promotion guard against a real generated artifact instead of skipping that path.
+**Why it happened:** The previous environment had no generated draft present, so the trader journey could not verify whether generated drafts were correctly blocked from paper/live promotion. That left a blind spot in the research-to-review lifecycle.
+**Impact:** Product trust improved because one more workflow is now exercised in the real workspace: generated drafts are visible, backtestable, and explicitly blocked from promotion until reviewed. The remaining trader-journey gaps are now specific run-failed backtests, not missing lifecycle coverage.
+**What we changed:** Added `strategies/generated_20260422_120800.py`, verified discovery via `list_available_strategies()`, confirmed artifact `#4` is `draft`, and reran the trader journey to verify `Draft promotion guard` now passes instead of skipping.
+**What to try next:** Investigate the remaining trader-journey partials where reviewed strategies or the new draft end in persistent `run-failed` states, because the lifecycle coverage gap is closed but some strategy operability gaps still remain.
+**Status:** OPEN
