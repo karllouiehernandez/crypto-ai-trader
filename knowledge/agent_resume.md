@@ -16,7 +16,7 @@ Read order for a new agent:
 - GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - Baseline after the current Sprint 42 work:
   - `pytest tests/ -q` -> `651 passed, 4 warnings`
-  - `python run_ui_agent.py --data-only` -> `0 FAIL, 1 PARTIAL, 1 SKIP` on `2026-04-22`
+  - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22` after maintained-universe sync
   - `python run_ui_agent.py --ui-only --headed --url http://localhost:8785` -> `64/64 PASS`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `27/28 PASS`, `0 FAIL`, `0 PARTIAL`, `1 SKIP`
   - The trader journey now exits deterministically and writes a report; the remaining operator gap is real paper evidence, not UI audit completion
@@ -175,10 +175,10 @@ Read order for a new agent:
 **Sprint 42 continuation** — persistence/recovery and evidence-progress visibility are implemented. The next work is operational follow-through, not another redesign.
 
 Next steps:
-1. Refresh maintained-universe candles so `python run_ui_agent.py --data-only` returns to `0 FAIL, 0 PARTIAL, 1 SKIP`
-2. Keep `run_live.py` running on paper target `rsi_mean_reversion_v1` artifact `#2` until real artifact-tagged SELL trades exist
-3. Once real SELL trades exist, use the new deterministic evidence summary to verify whether the artifact can legitimately move from `paper_active` toward `paper_passed`
-4. Decide whether the default environment should include one generated draft so the draft-promotion guard is exercised instead of permanently skipped in the trader journey
+1. Keep `run_live.py` running on paper target `rsi_mean_reversion_v1` artifact `#2` until real artifact-tagged SELL trades exist
+2. Once real SELL trades exist, use the new deterministic evidence summary to verify whether the artifact can legitimately move from `paper_active` toward `paper_passed`
+3. Decide whether the default environment should include one generated draft so the draft-promotion guard is exercised instead of permanently skipped in the trader journey
+4. Decide whether non-maintained ready symbols should auto-refresh or remain explicitly research-only, so the product contract stays honest
 5. Keep Sprint 42 issue `#44` updated as work lands
 6. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
 7. Keep `HANDOFF.md` current; this file should stay compact and secondary
@@ -211,12 +211,12 @@ Next steps:
 ## Last Verified State
 
 - Tests: `651 passed, 4 warnings`
-- Data checks: `0 FAIL, 1 PARTIAL, 1 SKIP` on `2026-04-22`
+- Data checks: `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22`
 - Smoke UI: `64/64 PASS` on the latest headed validation run
 - Dashboard compile: `python -m py_compile dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py` passed in the latest Sprint 42 validation slice
 - Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
 - Freshness contract: maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) now passes freshness; stale exploratory symbols no longer create false freshness PARTIALs
-- Current temporary exception: the latest local candles for the maintained universe are stale again on `2026-04-22`, which is why the newest data-only run is still PARTIAL
+- Maintained-universe sync on `2026-04-22` inserted `1295` fresh `1m` candles each for `BTCUSDT`, `ETHUSDT`, and `BNBUSDT`, restoring the clean data-only baseline
 - Test isolation: full `pytest` now runs against a temp DB and no longer wipes live candles, artifacts, or app settings
 - Maintained-universe recovery: `BTCUSDT`, `ETHUSDT`, `BNBUSDT` each restored to `43201` local 1m candles
 - GitHub: Sprint 41 issue `#43` is closed history; Sprint 42 is now tracked as issue `#44` on board `#1`

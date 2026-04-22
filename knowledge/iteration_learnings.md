@@ -52,3 +52,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Added `evaluate_paper_evidence_from_trades()` and `build_paper_evidence_summary()` in `strategy/paper_evaluation.py`, surfaced paper-evidence status in `simulator/paper_trader.py`, extended `run_live.py` heartbeats, added dashboard helpers in `dashboard/workbench.py`, and rendered a persistent `Paper Evidence Progress` section in `dashboard/streamlit_app.py`. Added regression coverage in `tests/test_paper_evaluation.py`, `tests/test_paper_trader.py`, `tests/test_run_live.py`, and `tests/test_workbench_helpers.py`.
 **What to try next:** Refresh maintained-universe candles, keep `run_live.py` on paper target `#2`, and wait for real tagged SELL trades so the deterministic evidence summary can move from `waiting-for-first-close` to real gate evaluation.
 **Status:** OPEN
+
+---
+
+## 2026-04-22 Maintained-Universe Sync — Data readiness can recover fast when the refresh path stays explicit
+**What happened:** The maintained research universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) had aged out to a stale shared cutoff, which downgraded the operator data-only gate to `0 FAIL, 1 PARTIAL, 1 SKIP`. A targeted `sync_recent()` pass inserted `1295` fresh `1m` candles per symbol with no gaps, and the gate returned to `0 FAIL, 0 PARTIAL, 1 SKIP`.
+**Why it happened:** The local data path was healthy, but freshness had not been maintained automatically through the current operator session. Because all three maintained symbols stopped at the same timestamp, the issue was not symbol selection or audit logic; it was simply a stale local tail.
+**Impact:** This confirms the workbench can recover its research-grade baseline quickly without destructive rebuilds, but it also shows that long-lived production claims still depend on keeping the maintained-universe refresh path active over time rather than only repairing it after the fact.
+**What we changed:** Ran `market_data.history.sync_recent()` for each maintained symbol, verified full coverage with no missing ranges, reran `python run_ui_agent.py --data-only`, and updated the handoff/resume files so the clean operator baseline is documented.
+**What to try next:** Keep monitoring whether freshness stays green passively while the current runtime runs. If it ages out again without operator action, the next improvement should be an explicit automated freshness-maintenance path instead of more manual resyncs.
+**Status:** OPEN

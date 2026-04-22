@@ -10,10 +10,10 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-22 (Sprint 42 Phase 1 + Phase 2 implemented, verified, and ready to commit) |
+| **Last updated** | 2026-04-22 (Sprint 42 operator baseline refreshed after maintained-universe sync) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **651 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 1 PARTIAL, 1 SKIP** on 2026-04-22; headed smoke UI `64/64 PASS` on 2026-04-21; headed trader journey `27/28 PASS` with **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-21 |
+| **Tests** | `pytest tests/ -q` → **651 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 after maintained-universe sync; headed smoke UI `64/64 PASS` on 2026-04-21; headed trader journey `27/28 PASS` with **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-21 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -72,13 +72,15 @@ The Sprint 42 issue title/body have now been updated and the board card is set t
   - `python -m py_compile database/persistence.py dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py tests/test_persistence.py` → clean
   - `pytest tests/test_persistence.py tests/test_workbench_helpers.py tests/test_paper_evaluation.py tests/test_paper_trader.py tests/test_run_live.py -q` → **97 passed**
   - `pytest tests/ -q` → **651 passed, 4 warnings**
-  - `python run_ui_agent.py --data-only` → **0 FAIL, 1 PARTIAL, 1 SKIP**
-    - Remaining PARTIAL on 2026-04-22: candle freshness stale for maintained symbols (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) because the latest local candles are about `1277` minutes old.
+  - Maintained-universe sync executed successfully on 2026-04-22:
+    - `BTCUSDT` / `ETHUSDT` / `BNBUSDT` each inserted `1295` fresh `1m` candles with no missing ranges
+  - `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP**
+    - Only remaining SKIP is expected: no active live artifact configured
   - Sprint 42 issue `#44` remains the active tracking issue and already contains the phased pre-deploy plan comment:
     - [Issue #44 comment](https://github.com/karllouiehernandez/crypto-ai-trader/issues/44#issuecomment-4295460139)
 - **What remains next**
   - **Phase 2 implementation is complete in code, but the real-world evidence gate is still waiting on actual artifact-tagged SELL trades for paper target `#2`.**
-  - Refresh maintained-universe candles before claiming operator readiness again. The latest 2026-04-22 data-only check is honest but still PARTIAL due to stale local candles.
+  - Keep the maintained-universe refresh healthy over time. The data-only gate is green again now, but future readiness claims still depend on fresh local candles being maintained automatically or by operator action.
   - Use the new Persistence & Recovery panel to manually confirm the live operator environment before making stronger production-readiness claims.
   - Decide whether to create and keep one generated draft in the default environment. The only remaining trader-journey skip is still the draft-promotion guard because no generated draft is currently present in the catalog.
   - Continue adding one structured entry to [knowledge/iteration_learnings.md](knowledge/iteration_learnings.md) after each meaningful implementation or validation slice so this operator-trust history stays cumulative.
