@@ -12,13 +12,17 @@ Read order for a new agent:
 ## Current Sprint
 
 - Sprint 41 is closed.
-- Active local follow-on work: `Sprint 42 — Paper Evidence & Legacy Integrity Closure`
-- GitHub status: Sprint 42 is now issue `#44` on Projects board `#1`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
+- Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure`
+- GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `636 passed, 4 warnings`
-  - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP`
-  - `python run_ui_agent.py --headed --ui-only --url http://localhost:8785` -> `0 FAIL, 2 PARTIAL`
-  - `python run_ui_agent.py --headed --journey trader --ui-only --url http://localhost:8785` -> `0 FAIL, 7 PARTIAL, 3 SKIP`
+  - `pytest tests/ -q` -> `651 passed, 4 warnings`
+  - `python run_ui_agent.py --data-only` -> `0 FAIL, 1 PARTIAL, 1 SKIP` on `2026-04-22`
+  - `python run_ui_agent.py --ui-only --headed --url http://localhost:8785` -> `64/64 PASS`
+  - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `27/28 PASS`, `0 FAIL`, `0 PARTIAL`, `1 SKIP`
+  - The trader journey now exits deterministically and writes a report; the remaining operator gap is real paper evidence, not UI audit completion
+  - Phase 1 persistence/recovery validation is now in the repo via `database/persistence.py`, `tests/test_persistence.py`, and the Strategies-tab `Persistence & Recovery` expander
+  - Phase 2 deterministic paper-evidence progress surfaces are now in the repo via `strategy/paper_evaluation.py`, `simulator/paper_trader.py`, `run_live.py`, and the Strategies-tab `Paper Evidence Progress` section
+  - Repo-root `install_once.bat` now exists as the non-destructive one-time Windows bootstrap path and has been validated locally
   - `tools/ui_agent/data_checks.py` now grades candle freshness against the maintained MVP research universe first, instead of every symbol with any candle rows
   - `tests/conftest.py` now redirects the full pytest session to a dedicated temp SQLite DB, so the suite no longer mutates the live workbench database
   - The maintained MVP universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) was directly backfilled back to 30-day coverage after the earlier live-DB corruption was discovered
@@ -28,6 +32,15 @@ Read order for a new agent:
   - `run_live.py` has been restarted; maintained-universe freshness is live again and candle freshness is no longer the data-check blocker
   - `backtester/engine.py` no longer rebuilds indicators from the DB on every candle; backtests now precompute one indicator source per run and pass trailing historical windows into `strategy/runtime.py`
   - This also fixes a correctness issue: backtests were previously reading the latest candles instead of an as-of historical window
+  - `dashboard/workbench.py` now chooses Backtest Lab defaults from fresh/runnable symbols and latest known runnable windows instead of blindly inheriting any ready symbol
+  - `dashboard/workbench.py` now also exposes `latest_complete_backtest_day()`, and Backtest Lab uses that shared helper so intraday candles do not default the trader to an incomplete current-day backtest window
+  - `dashboard/streamlit_app.py` now carries a freshly saved backtest run directly into the Inspect tab via session state
+  - `tools/ui_agent/agent.py` smoke coverage is calibrated to the actual six-tab workbench and the usable timeframe controls; smoke is now fully green
+  - `tools/ui_agent/trader_journey.py` now uses a recent deterministic audit window plus explicit post-save / post-select waits, and the full headed trader journey now completes without FAIL/PARTIAL findings
+  - `knowledge/iteration_learnings.md` now exists as the per-iteration learning log
+  - `knowledge/kb_update.py --type iteration` can append a structured iteration learning after each meaningful development or validation slice
+  - `database/models.py` now enables WAL mode and a 30-second SQLite busy timeout so `run_live.py` is less likely to die with `database is locked` while Streamlit is active
+  - Sprint 42 now also carries a phased pre-deploy hardening track in issue comment `#4295460139`
 
 ## Why This Exists
 
@@ -159,14 +172,16 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-**Sprint 42 kickoff** — continue from the now-aligned data-health contract instead of redoing Sprint 41.
+**Sprint 42 continuation** — persistence/recovery and evidence-progress visibility are implemented. The next work is operational follow-through, not another redesign.
 
 Next steps:
-1. Establish at least one complete reviewed-strategy path that ends in a saved, promotable backtest result in the default environment; the trader journey now has zero FAILs, but it still only reaches explicit blocked states
-2. Tighten the Backtest Lab runnable-window/default-window contract so strategies are blocked less often by date-range selection drift
-3. Decide whether non-maintained ready symbols should auto-refresh or remain explicitly research-only, so the product contract stays honest
-4. Keep Sprint 42 issue `#44` updated as work lands
-5. Keep `HANDOFF.md` current; this file should stay compact and secondary
+1. Refresh maintained-universe candles so `python run_ui_agent.py --data-only` returns to `0 FAIL, 0 PARTIAL, 1 SKIP`
+2. Keep `run_live.py` running on paper target `rsi_mean_reversion_v1` artifact `#2` until real artifact-tagged SELL trades exist
+3. Once real SELL trades exist, use the new deterministic evidence summary to verify whether the artifact can legitimately move from `paper_active` toward `paper_passed`
+4. Decide whether the default environment should include one generated draft so the draft-promotion guard is exercised instead of permanently skipped in the trader journey
+5. Keep Sprint 42 issue `#44` updated as work lands
+6. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
+7. Keep `HANDOFF.md` current; this file should stay compact and secondary
 
 ## Likely Files
 
@@ -195,18 +210,19 @@ Next steps:
 
 ## Last Verified State
 
-- Tests: `636 passed, 4 warnings`
-- Data checks: `0 FAIL, 0 PARTIAL, 1 SKIP`
-- Smoke UI: `0 FAIL, 2 PARTIAL` on the current headed validation run
-- Dashboard compile: `python -m py_compile dashboard/streamlit_app.py` previously passed; not rechecked in this kickoff slice
+- Tests: `651 passed, 4 warnings`
+- Data checks: `0 FAIL, 1 PARTIAL, 1 SKIP` on `2026-04-22`
+- Smoke UI: `64/64 PASS` on the latest headed validation run
+- Dashboard compile: `python -m py_compile dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py` passed in the latest Sprint 42 validation slice
 - Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
 - Freshness contract: maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) now passes freshness; stale exploratory symbols no longer create false freshness PARTIALs
+- Current temporary exception: the latest local candles for the maintained universe are stale again on `2026-04-22`, which is why the newest data-only run is still PARTIAL
 - Test isolation: full `pytest` now runs against a temp DB and no longer wipes live candles, artifacts, or app settings
 - Maintained-universe recovery: `BTCUSDT`, `ETHUSDT`, `BNBUSDT` each restored to `43201` local 1m candles
 - GitHub: Sprint 41 issue `#43` is closed history; Sprint 42 is now tracked as issue `#44` on board `#1`
 - Live DB legacy containment: applied and consistent (`731` archived legacy trades, `83` archived legacy runs, `0` archivable rows remain)
-- Current operational blocker: no artifact-tagged paper evidence yet, and the trader journey still lacks one complete reviewed-strategy promotion path
-- Headed production validation conclusion: UI shell is strong and the trader journey now has zero FAILs, but the app is still not yet production-ready because the default environment does not yet yield a complete reviewed-strategy backtest -> inspect -> paper-promotion path
+- Current operational blocker: no artifact-tagged paper evidence yet, even though the default environment now yields a complete reviewed-strategy backtest -> Inspect -> paper-promotion audit path
+- Headed production validation conclusion: UI smoke, trader journey, and data-only checks are green enough for a supervised research/backtest/paper-readiness workbench, but the app is still not yet production-ready for live trading because forward paper evidence and live-approval proof are still missing
 
 ## Token-Saving Rule
 

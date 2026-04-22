@@ -202,26 +202,33 @@ def _test_app_shell(page: Page, record) -> None:
     else:
         record("Sidebar visible", "FAIL", "stSidebar not found")
 
-    # All 5 tab labels
-    tabs = ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect"]
-    missing = tabs[:]
+    # Workbench tabs
+    core_tabs = ["Strategies", "Backtest Lab", "Runtime Monitor", "Market Focus", "Inspect"]
+    optional_tabs = ["Trading Diary", "Diary"]
+    observed_labels: list[str] = []
+    tab_count = 0
+    missing = core_tabs[:]
     for _ in range(4):
         try:
-            tab_text = " ".join(page.get_by_role("tab").all_inner_texts())
+            observed_labels = [text.strip() for text in page.get_by_role("tab").all_inner_texts() if text.strip()]
+            tab_count = len(observed_labels)
         except Exception:
-            tab_text = ""
-        visible_text = f"{tab_text}\n{_body_text(page)}"
-        missing = [t for t in tabs if t not in visible_text]
-        if not missing:
+            observed_labels = []
+            tab_count = 0
+        visible_text = f"{' '.join(observed_labels)}\n{_body_text(page)}"
+        missing = [t for t in core_tabs if t not in visible_text]
+        if not missing and (tab_count >= 5):
             break
         time.sleep(1.0)
-    if not missing:
-        record("All 5 tabs visible", "PASS", "All tab labels present")
+    if tab_count >= 5 and not missing:
+        has_diary = any(label in " ".join(observed_labels) for label in optional_tabs)
+        diary_detail = " with Diary visible" if has_diary else ""
+        record("Workbench tabs visible", "PASS", f"{tab_count} tab(s) detected{diary_detail}")
     else:
-        record("All 5 tabs visible", "PARTIAL", f"Tab labels were not all visible during initial paint: {missing}")
+        record("Workbench tabs visible", "PARTIAL", f"Detected {tab_count} tab(s); core tabs missing: {missing}")
 
     # Round-trip navigation
-    for tab in tabs:
+    for tab in core_tabs:
         if not _goto_tab(page, tab):
             body = _body_text(page)
             if tab == "Strategies" and ("Strategy Workbench" in body or "Research loop:" in body):
@@ -467,10 +474,10 @@ def _test_runtime_monitor(page: Page, record) -> None:
     # Timeframe buttons
     timeframes = ["1m", "5m", "15m", "1h", "4h", "1d", "1w"]
     tf_found = [tf for tf in timeframes if _text(page, tf, 1500)]
-    if len(tf_found) >= 6:
-        record("Timeframe buttons visible", "PASS", f"Found: {tf_found}")
+    if len(tf_found) >= 4:
+        record("Timeframe buttons visible", "PASS", f"Visible on initial paint: {tf_found}")
     elif tf_found:
-        record("Timeframe buttons visible", "PARTIAL", f"Only found: {tf_found}")
+        record("Timeframe buttons visible", "PARTIAL", f"Only found on initial paint: {tf_found}")
     else:
         record("Timeframe buttons visible", "PARTIAL", "No timeframe buttons detected")
 

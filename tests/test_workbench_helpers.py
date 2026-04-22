@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pandas as pd
 import pytest
 
@@ -10,11 +12,17 @@ from dashboard.workbench import (
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_data_health_frame,
+    build_paper_evidence_checklist_frame,
+    build_paper_evidence_metrics,
+    build_restart_survival_frame,
+    build_restart_survival_metrics,
     build_runtime_target_summary,
     build_trader_summary,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     build_trading_chart_payload,
+    choose_backtest_default_symbol,
+    choose_backtest_default_window,
     compute_win_loss_stats,
     compute_cumulative_trade_pnl,
     compute_drawdown_curve,
@@ -28,6 +36,7 @@ from dashboard.workbench import (
     get_strategy_source_code,
     list_rollback_candidates,
     list_runtime_strategies,
+    latest_complete_backtest_day,
     normalise_preset_name,
     parse_metrics_json,
     parse_params_json,
@@ -94,6 +103,80 @@ def test_get_strategy_source_code_no_path_returns_placeholder():
     item = {"name": "builtin_test", "path": ""}
     source = get_strategy_source_code(item)
     assert "builtin_test" in source and "not available" in source
+
+
+def test_build_restart_survival_metrics_and_frame():
+    report = {
+        "ready_for_restart": False,
+        "artifact_count": 3,
+        "auditable_run_count": 11,
+        "saved_run_count": 12,
+        "latest_saved_run_id": 44,
+        "db_exists": True,
+        "db_path": "D:/repo/data/market_data.db",
+        "paper_target": {
+            "configured": True,
+            "valid": True,
+            "name": "paper_v1",
+            "error": None,
+        },
+        "live_target": {
+            "configured": False,
+            "valid": False,
+            "name": None,
+            "error": None,
+        },
+        "artifact_missing_count": 1,
+        "artifact_hash_mismatch_count": 0,
+        "mvp_symbols": [
+            {
+                "symbol": "BTCUSDT",
+                "latest_candle_ts": "2026-04-22T00:00:00+00:00",
+                "age_minutes": 2.0,
+                "is_fresh": True,
+            },
+            {
+                "symbol": "ETHUSDT",
+                "latest_candle_ts": None,
+                "age_minutes": None,
+                "is_fresh": False,
+            },
+        ],
+    }
+    metrics = build_restart_survival_metrics(report)
+    assert metrics["restart_status"] == "Issues Found"
+    assert metrics["mvp_fresh_label"] == "1/2"
+    assert metrics["artifact_count"] == 3
+    assert metrics["auditable_runs"] == 11
+
+    frame = build_restart_survival_frame(report)
+    assert "Primary DB" in set(frame["surface"])
+    assert "MVP Symbol · BTCUSDT" in set(frame["surface"])
+
+
+def test_build_paper_evidence_metrics_and_checklist_frame():
+    summary = {
+        "gate_status": "Gathering evidence",
+        "trade_count": 6,
+        "trade_target": 20,
+        "runtime_days": 1.5,
+        "runtime_target_days": 3.0,
+        "profit_factor": 1.25,
+        "sharpe": 0.9,
+        "min_sharpe": 1.5,
+        "min_profit_factor": 1.5,
+        "max_drawdown": 0.12,
+        "max_drawdown_limit": 0.20,
+    }
+    metrics = build_paper_evidence_metrics(summary)
+    assert metrics["gate_status"] == "Gathering evidence"
+    assert metrics["trade_progress"] == "6/20"
+    assert metrics["runtime_progress"] == "1.5/3.0d"
+    assert metrics["profit_factor"] == "1.25"
+
+    frame = build_paper_evidence_checklist_frame(summary)
+    assert "SELL Trades" in set(frame["check"])
+    assert "Profit Factor" in set(frame["check"])
 
 
 def test_build_data_health_frame_formats_targeted_and_runnable_states():
@@ -185,6 +268,71 @@ def test_summarise_data_health_passes_when_mvp_universe_is_ready():
     )
     assert summary["release_blocked"] is False
     assert summary["mvp_runnable_count"] == 3
+
+
+def test_choose_backtest_default_symbol_prefers_runnable_mvp_symbol():
+    symbol_name = choose_backtest_default_symbol(
+        "AAVEUSDT",
+        ("BTCUSDT", "ETHUSDT", "AAVEUSDT"),
+        [
+            {"symbol": "BTCUSDT", "is_fresh": True, "window_runnable": True},
+            {"symbol": "ETHUSDT", "is_fresh": True, "window_runnable": True},
+            {"symbol": "AAVEUSDT", "is_fresh": False, "window_runnable": False},
+        ],
+        ("BTCUSDT", "ETHUSDT", "BNBUSDT"),
+    )
+    assert symbol_name == "BTCUSDT"
+
+
+def test_choose_backtest_default_symbol_keeps_preferred_when_runnable():
+    symbol_name = choose_backtest_default_symbol(
+        "ETHUSDT",
+        ("BTCUSDT", "ETHUSDT", "BNBUSDT"),
+        [
+            {"symbol": "BTCUSDT", "is_fresh": True, "window_runnable": True},
+            {"symbol": "ETHUSDT", "is_fresh": True, "window_runnable": True},
+        ],
+        ("BTCUSDT", "ETHUSDT", "BNBUSDT"),
+    )
+    assert symbol_name == "ETHUSDT"
+
+
+def test_choose_backtest_default_window_uses_known_runnable_window():
+    start_date, end_date, is_known_runnable = choose_backtest_default_window(
+        "BTCUSDT",
+        datetime(2026, 4, 21, 8, 39),
+        [
+            {
+                "symbol": "BTCUSDT",
+                "window_runnable": True,
+                "latest_window_start": "2026-03-22",
+                "latest_window_end": "2026-04-21",
+            }
+        ],
+        min_history_days=30,
+    )
+    assert (start_date.isoformat(), end_date.isoformat(), is_known_runnable) == ("2026-03-22", "2026-04-21", True)
+
+
+def test_latest_complete_backtest_day_uses_prior_day_for_intraday_freshness():
+    day = latest_complete_backtest_day(
+        datetime(2026, 4, 21, 8, 39),
+        now_utc=datetime(2026, 4, 21, 8, 40),
+    )
+    assert day.isoformat() == "2026-04-20"
+
+
+def test_choose_backtest_default_window_falls_back_to_latest_completed_day():
+    expected_end = latest_complete_backtest_day(datetime(2026, 4, 21, 8, 39))
+    start_date, end_date, is_known_runnable = choose_backtest_default_window(
+        "BTCUSDT",
+        datetime(2026, 4, 21, 8, 39),
+        [],
+        min_history_days=30,
+    )
+    assert end_date == expected_end
+    assert start_date == expected_end - timedelta(days=30)
+    assert is_known_runnable is False
 
 
 def test_compute_drawdown_curve_tracks_peak_to_trough():

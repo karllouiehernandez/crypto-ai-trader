@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from collections import defaultdict
+from datetime import datetime, timedelta
 import json
 import math
 import os
@@ -140,6 +141,124 @@ def build_trading_chart_payload(
             "context_label": context_label,
         },
     }
+
+
+def choose_backtest_default_symbol(
+    preferred_symbol: str,
+    ready_symbol_options: list[str] | tuple[str, ...],
+    ready_symbol_health: list[dict[str, Any]] | None = None,
+    mvp_research_universe: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """Pick a trader-safe default symbol for Backtest Lab.
+
+    Preference order:
+    1. preferred symbol when it is fresh and runnable
+    2. fresh+runnable MVP symbols
+    3. any fresh+runnable ready symbol
+    4. preferred symbol when it is merely present
+    5. first MVP symbol present in ready symbols
+    6. first ready symbol
+    """
+    options: list[str] = []
+    for raw_symbol in ready_symbol_options:
+        symbol_name = str(raw_symbol or "").strip().upper()
+        if symbol_name and symbol_name not in options:
+            options.append(symbol_name)
+
+    preferred = str(preferred_symbol or "").strip().upper()
+    if not options:
+        return preferred
+
+    health_by_symbol = {
+        str(row.get("symbol") or "").strip().upper(): row
+        for row in (ready_symbol_health or [])
+        if str(row.get("symbol") or "").strip()
+    }
+    mvp_symbols = [
+        str(symbol or "").strip().upper()
+        for symbol in (mvp_research_universe or [])
+        if str(symbol or "").strip()
+    ]
+
+    def _is_fresh_and_runnable(symbol_name: str) -> bool:
+        row = health_by_symbol.get(symbol_name, {})
+        return bool(row.get("is_fresh")) and bool(row.get("window_runnable"))
+
+    if preferred in options and _is_fresh_and_runnable(preferred):
+        return preferred
+
+    for symbol_name in mvp_symbols:
+        if symbol_name in options and _is_fresh_and_runnable(symbol_name):
+            return symbol_name
+
+    for symbol_name in options:
+        if _is_fresh_and_runnable(symbol_name):
+            return symbol_name
+
+    if preferred in options:
+        return preferred
+
+    for symbol_name in mvp_symbols:
+        if symbol_name in options:
+            return symbol_name
+
+    return options[0]
+
+
+def latest_complete_backtest_day(
+    latest_candle_dt: Any,
+    now_utc: Any | None = None,
+) -> datetime.date:
+    """Return the most recent fully completed UTC trading day safe for backtests."""
+    latest_ts = pd.Timestamp(latest_candle_dt) if latest_candle_dt is not None else pd.Timestamp.utcnow()
+    if latest_ts.tzinfo is None:
+        latest_ts = latest_ts.tz_localize("UTC")
+    else:
+        latest_ts = latest_ts.tz_convert("UTC")
+
+    reference_ts = pd.Timestamp(now_utc) if now_utc is not None else pd.Timestamp.utcnow()
+    if reference_ts.tzinfo is None:
+        reference_ts = reference_ts.tz_localize("UTC")
+    else:
+        reference_ts = reference_ts.tz_convert("UTC")
+
+    latest_day = latest_ts.date()
+    current_utc_day = reference_ts.date()
+    if latest_day >= current_utc_day:
+        fallback_day = current_utc_day - timedelta(days=1)
+        return fallback_day if fallback_day <= latest_day else latest_day
+    return latest_day
+
+
+def choose_backtest_default_window(
+    symbol: str,
+    latest_candle_dt: Any,
+    ready_symbol_health: list[dict[str, Any]] | None = None,
+    min_history_days: int = 30,
+) -> tuple[datetime.date, datetime.date, bool]:
+    """Return a default Backtest Lab date window and whether it is known-runnable."""
+    symbol_name = str(symbol or "").strip().upper()
+    health_row = next(
+        (
+            row for row in (ready_symbol_health or [])
+            if str(row.get("symbol") or "").strip().upper() == symbol_name
+        ),
+        None,
+    )
+
+    if (
+        health_row
+        and health_row.get("window_runnable") is True
+        and health_row.get("latest_window_start")
+        and health_row.get("latest_window_end")
+    ):
+        start_date = pd.Timestamp(health_row["latest_window_start"]).date()
+        end_date = pd.Timestamp(health_row["latest_window_end"]).date()
+        return start_date, end_date, True
+
+    latest_date = latest_complete_backtest_day(latest_candle_dt)
+    start_date = latest_date - timedelta(days=max(1, int(min_history_days)))
+    return start_date, latest_date, False
 
 
 def _build_chart_markers(chart_times: list[int], trades: pd.DataFrame) -> list[dict[str, Any]]:
@@ -1330,6 +1449,137 @@ def build_runtime_target_summary(
         "live": live_info,
         "has_issues": bool(paper_info["error"] or live_info["error"]),
     }
+
+
+def build_restart_survival_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    """Return headline metrics for the restart-survival dashboard panel."""
+    mvp_symbols = report.get("mvp_symbols") or []
+    fresh_count = sum(1 for item in mvp_symbols if item.get("is_fresh"))
+    total_count = len(mvp_symbols)
+    return {
+        "restart_status": "Ready" if report.get("ready_for_restart") else "Issues Found",
+        "mvp_fresh_label": f"{fresh_count}/{total_count}" if total_count else "0/0",
+        "artifact_count": int(report.get("artifact_count", 0) or 0),
+        "auditable_runs": int(report.get("auditable_run_count", 0) or 0),
+    }
+
+
+def build_restart_survival_frame(report: dict[str, Any]) -> pd.DataFrame:
+    """Return a compact table for persistence and recovery status."""
+    rows: list[dict[str, Any]] = [
+        {
+            "surface": "Primary DB",
+            "status": "Present" if report.get("db_exists") else "Missing",
+            "details": str(report.get("db_path") or "Unknown DB path"),
+        },
+        {
+            "surface": "Paper Target",
+            "status": "Valid"
+            if (report.get("paper_target") or {}).get("valid")
+            else ("Configured" if (report.get("paper_target") or {}).get("configured") else "Unset"),
+            "details": (report.get("paper_target") or {}).get("error")
+            or (report.get("paper_target") or {}).get("name")
+            or "No paper target configured",
+        },
+        {
+            "surface": "Live Target",
+            "status": "Valid"
+            if (report.get("live_target") or {}).get("valid")
+            else ("Configured" if (report.get("live_target") or {}).get("configured") else "Unset"),
+            "details": (report.get("live_target") or {}).get("error")
+            or (report.get("live_target") or {}).get("name")
+            or "No live target configured",
+        },
+        {
+            "surface": "Artifacts",
+            "status": str(int(report.get("artifact_count", 0) or 0)),
+            "details": (
+                f"Missing files: {int(report.get('artifact_missing_count', 0) or 0)} | "
+                f"Hash mismatches: {int(report.get('artifact_hash_mismatch_count', 0) or 0)}"
+            ),
+        },
+        {
+            "surface": "Saved Runs",
+            "status": str(int(report.get("saved_run_count", 0) or 0)),
+            "details": (
+                f"Auditable: {int(report.get('auditable_run_count', 0) or 0)} | "
+                f"Latest run id: {report.get('latest_saved_run_id') or 'None'}"
+            ),
+        },
+    ]
+    for symbol_info in report.get("mvp_symbols") or []:
+        latest_ts = symbol_info.get("latest_candle_ts") or "No local candles"
+        age_minutes = symbol_info.get("age_minutes")
+        age_label = "n/a" if age_minutes is None else f"{float(age_minutes):.1f}m old"
+        rows.append(
+            {
+                "surface": f"MVP Symbol · {symbol_info.get('symbol')}",
+                "status": "Fresh" if symbol_info.get("is_fresh") else "Attention",
+                "details": f"{latest_ts} | {age_label}",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_paper_evidence_metrics(summary: dict[str, Any]) -> dict[str, str]:
+    """Return headline labels for paper-evidence progress surfaces."""
+    return {
+        "gate_status": str(summary.get("gate_status") or "Unknown"),
+        "trade_progress": f"{int(summary.get('trade_count', 0) or 0)}/{int(summary.get('trade_target', 0) or 0)}",
+        "runtime_progress": (
+            f"{float(summary.get('runtime_days', 0.0) or 0.0):.1f}/"
+            f"{float(summary.get('runtime_target_days', 0.0) or 0.0):.1f}d"
+        ),
+        "profit_factor": f"{float(summary.get('profit_factor', 0.0) or 0.0):.2f}",
+    }
+
+
+def build_paper_evidence_checklist_frame(summary: dict[str, Any]) -> pd.DataFrame:
+    """Return a trader-readable checklist for deterministic paper evidence thresholds."""
+    trade_count = int(summary.get("trade_count", 0) or 0)
+    trade_target = int(summary.get("trade_target", 0) or 0)
+    runtime_days = float(summary.get("runtime_days", 0.0) or 0.0)
+    runtime_target = float(summary.get("runtime_target_days", 0.0) or 0.0)
+    sharpe = float(summary.get("sharpe", 0.0) or 0.0)
+    profit_factor = float(summary.get("profit_factor", 0.0) or 0.0)
+    max_drawdown = float(summary.get("max_drawdown", 0.0) or 0.0)
+    min_sharpe = float(summary.get("min_sharpe", 0.0) or 0.0)
+    min_profit_factor = float(summary.get("min_profit_factor", 0.0) or 0.0)
+    max_drawdown_limit = float(summary.get("max_drawdown_limit", 0.0) or 0.0)
+
+    rows = [
+        {
+            "check": "SELL Trades",
+            "current": trade_count,
+            "target": f">= {trade_target}",
+            "status": "Met" if trade_count >= trade_target else "Waiting",
+        },
+        {
+            "check": "Runtime Span",
+            "current": f"{runtime_days:.1f}d",
+            "target": f">= {runtime_target:.1f}d",
+            "status": "Met" if runtime_days >= runtime_target else "Waiting",
+        },
+        {
+            "check": "Sharpe",
+            "current": f"{sharpe:.2f}",
+            "target": f">= {min_sharpe:.2f}",
+            "status": "Met" if sharpe >= min_sharpe else "Below",
+        },
+        {
+            "check": "Profit Factor",
+            "current": f"{profit_factor:.2f}",
+            "target": f">= {min_profit_factor:.2f}",
+            "status": "Met" if profit_factor >= min_profit_factor else "Below",
+        },
+        {
+            "check": "Max Drawdown",
+            "current": f"{max_drawdown:.1%}",
+            "target": f"<= {max_drawdown_limit:.1%}",
+            "status": "Met" if max_drawdown <= max_drawdown_limit else "Above",
+        },
+    ]
+    return pd.DataFrame(rows)
 
 
 def build_artifact_registry_frame(

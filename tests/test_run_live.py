@@ -19,6 +19,14 @@ def test_status_fields_formats_snapshot_values():
         "last_trade_ts": datetime(2026, 4, 18, 4, 30, tzinfo=timezone.utc),
         "trading_halted": False,
         "force_halt": False,
+        "paper_evidence": {
+            "stage": "gathering-evidence",
+            "trade_count": 4,
+            "trade_target": 20,
+            "runtime_days": 1.0,
+            "runtime_target_days": 3.0,
+            "blocker_count": 2,
+        },
     }
 
     fields = _status_fields(snapshot)
@@ -51,6 +59,14 @@ def test_log_runner_snapshot_emits_single_operator_line():
         "last_trade_ts": None,
         "trading_halted": False,
         "force_halt": False,
+        "paper_evidence": {
+            "stage": "waiting-for-first-close",
+            "trade_count": 0,
+            "trade_target": 20,
+            "runtime_days": 0.0,
+            "runtime_target_days": 3.0,
+            "blocker_count": 1,
+        },
     }
 
     with patch("run_live.log.info") as mock_info:
@@ -60,7 +76,10 @@ def test_log_runner_snapshot_emits_single_operator_line():
     fmt = mock_info.call_args.args[0]
     args = mock_info.call_args.args[1:]
     assert "mode=%s artifact=%s strategy=%s symbols=%s" in fmt
-    assert args[-1] == " | llm_enabled=true live_trade_enabled=false"
+    assert args[-1] == (
+        " | llm_enabled=true live_trade_enabled=false "
+        "paper_evidence=waiting-for-first-close paper_trades=0/20 paper_runtime=0.0/3.0d paper_blockers=1"
+    )
     assert args[0] == "Runner startup"
     assert args[1] == "paper"
     assert args[2] == "42"

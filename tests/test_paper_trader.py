@@ -8,7 +8,7 @@ run with zero I/O.
 """
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch, call
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -466,6 +466,20 @@ class TestStatusSnapshot:
         assert snapshot["last_trade_ts"] == datetime(2026, 4, 18, 4, 30, tzinfo=timezone.utc)
         assert snapshot["force_halt"] is True
         assert snapshot["trading_halted"] is True
+        assert snapshot["paper_evidence"]["stage"] == "waiting-for-first-close"
+
+    def test_status_snapshot_reports_paper_evidence_progress(self):
+        trader = PaperTrader()
+        base = datetime(2026, 4, 18, 4, 0, tzinfo=timezone.utc)
+        trader._paper_sell_pnls = [1.0] * 8
+        trader._first_paper_sell_ts = base
+        trader._last_paper_sell_ts = base + timedelta(days=1)
+
+        snapshot = trader.get_status_snapshot()
+
+        assert snapshot["paper_evidence"]["trade_count"] == 8
+        assert snapshot["paper_evidence"]["trade_target"] == 20
+        assert snapshot["paper_evidence"]["stage"] == "gathering-evidence"
 
     @pytest.mark.asyncio
     async def test_auto_buy_updates_last_trade_ts(self):
@@ -505,6 +519,49 @@ class TestRuntimeStateRestore:
         assert trader.cost_basis["BTCUSDT"] == pytest.approx(100.1)
         assert trader.cash == pytest.approx(STARTING_BALANCE_USD - 100.1)
         assert trader._last_trade_ts == trade_ts
+
+    def test_restore_runtime_state_restores_sell_evidence_progress(self):
+        buy_ts = datetime(2026, 4, 18, 4, 30, tzinfo=timezone.utc)
+        sell_ts = datetime(2026, 4, 20, 4, 30, tzinfo=timezone.utc)
+        persisted_trades = [
+            SimpleNamespace(
+                ts=buy_ts,
+                id=1,
+                symbol="BTCUSDT",
+                side="BUY",
+                qty=1.0,
+                price=100.0,
+                fee=0.1,
+                pnl=0.0,
+                artifact_id=None,
+                strategy_name="regime_router_v1",
+                run_mode="paper",
+            ),
+            SimpleNamespace(
+                ts=sell_ts,
+                id=2,
+                symbol="BTCUSDT",
+                side="SELL",
+                qty=1.0,
+                price=110.0,
+                fee=0.1,
+                pnl=9.8,
+                artifact_id=None,
+                strategy_name="regime_router_v1",
+                run_mode="paper",
+            ),
+        ]
+        session = _session_with_trades(persisted_trades)
+
+        with patch("simulator.paper_trader.SessionLocal", return_value=session):
+            trader = PaperTrader(
+                strategy_descriptor={"strategy_name": "regime_router_v1"},
+                restore_runtime_state=True,
+            )
+
+        assert trader._paper_sell_pnls == [9.8]
+        assert trader._first_paper_sell_ts == sell_ts
+        assert trader._last_paper_sell_ts == sell_ts
 
     @pytest.mark.asyncio
     async def test_auto_buy_skips_when_persisted_history_already_ends_with_buy(self):

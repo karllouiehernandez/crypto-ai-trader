@@ -58,11 +58,17 @@ from dashboard.workbench import (
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_diary_entries_frame,
+    build_paper_evidence_checklist_frame,
+    build_paper_evidence_metrics,
+    build_restart_survival_frame,
+    build_restart_survival_metrics,
     build_diary_summary_metrics,
     build_focus_candidate_frame,
     build_runtime_target_summary,
     build_trader_summary,
     build_trading_chart_payload,
+    choose_backtest_default_symbol,
+    choose_backtest_default_window,
     build_strategy_comparison_frame,
     build_strategy_catalog_frame,
     compute_win_loss_stats,
@@ -78,6 +84,7 @@ from dashboard.workbench import (
     get_strategy_source_code,
     list_rollback_candidates,
     list_runtime_strategies,
+    latest_complete_backtest_day,
     normalise_params,
     normalise_preset_name,
     runtime_mode_table,
@@ -85,6 +92,7 @@ from dashboard.workbench import (
     summarise_data_health,
     runtime_summary,
 )
+from strategy.paper_evaluation import build_paper_evidence_summary, evaluate_paper_evidence
 from trading_diary.service import (
     get_trading_summary,
     list_diary_entries,
@@ -93,6 +101,7 @@ from trading_diary.service import (
 )
 from trading_diary.export import export_diary_to_knowledge
 from database.promotion_queries import query_promotions
+from database.persistence import create_state_backup, evaluate_restart_survival
 from database.models import init_db
 from database.integrity import integrity_label
 from llm.client import get_generation_readiness
@@ -442,7 +451,7 @@ def load_ready_symbol_health(
             age_minutes = max(0, int((now_utc - latest_ts).total_seconds() // 60))
 
             if symbol_name in mvp_set:
-                latest_day = latest_ts.date()
+                latest_day = latest_complete_backtest_day(latest_ts, now_utc=now_utc)
                 window_end = datetime.combine(latest_day, datetime.min.time())
                 window_start = window_end - timedelta(days=MVP_MIN_HISTORY_DAYS)
                 audit_result = load_symbol_audit(symbol_name, window_start.isoformat(), window_end.isoformat())
@@ -488,20 +497,6 @@ def load_ready_symbols_cached() -> list[str]:
     in_catalog = {row["symbol"] for row in catalog}
     ranked.extend(sorted(s for s in ready if s not in in_catalog))
     return ranked
-
-
-@st.cache_data(ttl=30)
-def choose_backtest_default_symbol(preferred_symbol: str, ready_symbol_options: tuple[str, ...]) -> str:
-    """Choose a stable default symbol without blocking the Backtest Lab on audit scans."""
-    ordered_symbols: list[str] = []
-    for candidate in [preferred_symbol, *ready_symbol_options]:
-        symbol_name = str(candidate or "").strip()
-        if symbol_name and symbol_name not in ordered_symbols:
-            ordered_symbols.append(symbol_name)
-
-    if preferred_symbol in ordered_symbols:
-        return preferred_symbol
-    return ordered_symbols[0] if ordered_symbols else preferred_symbol
 
 
 @st.cache_data(ttl=5)
@@ -1361,6 +1356,51 @@ with strategy_tab:
             )
             st.rerun()
 
+    with st.expander("Persistence & Recovery", expanded=False):
+        st.caption(
+            "Phase 1 continuity audit for restart survival. This checks the primary DB, "
+            "runtime targets, registered artifacts, saved runs, and MVP-symbol freshness. "
+            "State backups exclude `.env` secrets by default."
+        )
+        try:
+            _restart_report = evaluate_restart_survival()
+            _restart_metrics = build_restart_survival_metrics(_restart_report)
+            _restart_cols = st.columns(4)
+            _restart_cols[0].metric("Restart Status", _restart_metrics["restart_status"])
+            _restart_cols[1].metric("Fresh MVP Symbols", _restart_metrics["mvp_fresh_label"])
+            _restart_cols[2].metric("Artifacts", _restart_metrics["artifact_count"])
+            _restart_cols[3].metric("Auditable Runs", _restart_metrics["auditable_runs"])
+
+            if _restart_report["ready_for_restart"]:
+                st.success(
+                    "Current local state is restart-ready for the audited surfaces."
+                )
+            else:
+                st.warning(
+                    "Restart survival has operator-visible gaps. Review the issues below "
+                    "before treating this environment as deployment-ready."
+                )
+                for _issue in _restart_report.get("issues") or []:
+                    st.markdown(f"- {_issue}")
+
+            _restart_frame = build_restart_survival_frame(_restart_report)
+            if not _restart_frame.empty:
+                st.dataframe(_restart_frame, width="stretch", hide_index=True)
+
+            if st.button(
+                "Create State Backup",
+                key="create_state_backup_btn",
+                help="Copy the current DB and registered strategy files into a timestamped local backup folder.",
+            ):
+                _backup = create_state_backup()
+                st.success(
+                    f"State backup created at `{_backup['backup_dir']}` with "
+                    f"{len(_backup['copied_strategy_files'])} strategy file(s)."
+                )
+                st.caption(f"Manifest: `{_backup['manifest_path']}`")
+        except Exception as _exc:
+            st.warning(f"Persistence audit unavailable: {_exc}")
+
     with st.expander("Manual Agent Workflow", expanded=False):
         st.markdown(
             "1. Start from `strategies/_strategy_template.py` or revise a generated draft.\n"
@@ -1595,6 +1635,12 @@ with strategy_tab:
             and str(selected_meta.get("artifact_status") or "").lower() in {"paper_active", "paper_passed", "live_approved", "live_active"}
         )
         eval_cols = st.columns([1, 3])
+        evidence_result = None
+        evidence_summary = None
+        if selected_meta.get("provenance") == "plugin" and selected_meta.get("artifact_id"):
+            evidence_result = evaluate_paper_evidence(int(selected_meta["artifact_id"]))
+            evidence_summary = build_paper_evidence_summary(evidence_result)
+
         if eval_cols[0].button(
             "Evaluate for Paper Pass",
             width="stretch",
@@ -1603,9 +1649,8 @@ with strategy_tab:
                  "(min trades, runtime span, Sharpe, profit factor, max drawdown). "
                  "Promotes to `paper_passed` only if every check passes.",
         ):
-            from strategy.paper_evaluation import evaluate_paper_evidence
             from strategy.artifacts import mark_artifact_paper_passed as _mark_paper_passed
-            evidence = evaluate_paper_evidence(int(selected_meta["artifact_id"]))
+            evidence = evidence_result or evaluate_paper_evidence(int(selected_meta["artifact_id"]))
             if not evidence.passed:
                 eval_cols[1].error(
                     "Paper evidence gate failed:\n- " + "\n- ".join(evidence.reasons)
@@ -1629,6 +1674,53 @@ with strategy_tab:
                         f"{evidence.runtime_days:.1f}d). Approve for Live is now unlocked."
                     )
                     st.rerun()
+
+        if evidence_summary is not None:
+            st.markdown("##### Paper Evidence Progress")
+            st.caption(
+                "Deterministic gate over real paper SELL trades tagged with this artifact. "
+                "Promotion to `paper_passed` remains blocked until all checks are met."
+            )
+            evidence_metrics = build_paper_evidence_metrics(evidence_summary)
+            evidence_metric_cols = st.columns(4)
+            evidence_metric_cols[0].metric("Gate Status", evidence_metrics["gate_status"])
+            evidence_metric_cols[1].metric("SELL Trades", evidence_metrics["trade_progress"])
+            evidence_metric_cols[2].metric("Runtime Span", evidence_metrics["runtime_progress"])
+            evidence_metric_cols[3].metric("Profit Factor", evidence_metrics["profit_factor"])
+
+            if evidence_result and evidence_result.passed:
+                st.success(
+                    "Real paper evidence now satisfies the deterministic gate for this artifact."
+                )
+            elif bool(selected_meta.get("active_paper_artifact")) and evidence_summary["stage"] == "waiting-for-first-close":
+                st.info(
+                    "This is the active paper target, but it has not closed a tagged paper SELL trade yet. "
+                    "The gate is waiting for the first realised paper result."
+                )
+            elif bool(selected_meta.get("active_paper_artifact")):
+                st.warning(
+                    "This artifact is the active paper target, but the evidence gate still has remaining blockers."
+                )
+            else:
+                st.caption(
+                    "Paper evidence matters only after the artifact is promoted to paper. "
+                    "Until then, this panel is a dry-read of the same gate the paper target will use."
+                )
+
+            if evidence_summary.get("reasons"):
+                st.markdown("**Current blockers**")
+                for _reason in evidence_summary["reasons"]:
+                    st.markdown(f"- {_reason}")
+
+            evidence_frame = build_paper_evidence_checklist_frame(evidence_summary)
+            if not evidence_frame.empty:
+                st.dataframe(evidence_frame, width="stretch", hide_index=True)
+
+            if evidence_summary.get("first_trade_ts") or evidence_summary.get("last_trade_ts"):
+                st.caption(
+                    f"First paper SELL: `{evidence_summary.get('first_trade_ts') or '—'}` · "
+                    f"Last paper SELL: `{evidence_summary.get('last_trade_ts') or '—'}`"
+                )
 
         _artifact_status = str(selected_meta.get("artifact_status") or "").lower()
         _is_paper_target = bool(selected_meta.get("active_paper_artifact"))
@@ -1669,7 +1761,16 @@ with backtest_tab:
     st.markdown("### Backtest Lab")
     selector_cols = st.columns(2)
     _prefill_sym = st.session_state.pop("focus_prefill_symbol", None)
-    _bt_sym_default = _prefill_sym if _prefill_sym else choose_backtest_default_symbol(symbol, tuple(ready_symbols))
+    _bt_sym_default = (
+        str(_prefill_sym).strip().upper()
+        if _prefill_sym
+        else choose_backtest_default_symbol(
+            symbol,
+            tuple(ready_symbols),
+            ready_symbol_health,
+            tuple(mvp_research_universe),
+        )
+    )
     _bt_sym_options = ready_symbols if _bt_sym_default in ready_symbols else [_bt_sym_default] + list(ready_symbols)
     bt_symbol = selector_cols[0].selectbox(
         "Backtest Symbol",
@@ -1779,19 +1880,34 @@ with backtest_tab:
             st.info(f"No named presets saved yet for `{bt_strategy}`.")
 
     _latest_candle_dt = get_latest_candle_time(bt_symbol)
-    _latest_candle_date = _latest_candle_dt.date() if _latest_candle_dt else datetime.utcnow().date()
-    _bt_end_default = _latest_candle_date
-    _bt_start_default = _latest_candle_date - timedelta(days=30)
     _selected_symbol_health = next((item for item in ready_symbol_health if item.get("symbol") == bt_symbol), None)
     _selected_age_minutes = _selected_symbol_health.get("age_minutes") if _selected_symbol_health else None
     _selected_fresh = bool(_selected_symbol_health and _selected_symbol_health.get("is_fresh"))
+    _latest_complete_day = latest_complete_backtest_day(_latest_candle_dt) if _latest_candle_dt is not None else None
+    _bt_start_default, _bt_end_default, _bt_window_known_runnable = choose_backtest_default_window(
+        bt_symbol,
+        _latest_candle_dt,
+        ready_symbol_health,
+        min_history_days=MVP_MIN_HISTORY_DAYS,
+    )
+    _window_status_text = (
+        f"Latest complete runnable window for **{bt_symbol}**: "
+        f"`{_bt_start_default.isoformat()}` -> `{_bt_end_default.isoformat()}`."
+        if _bt_window_known_runnable
+        else (
+            f"Latest known candle day for **{bt_symbol}**: `{_bt_end_default.isoformat()}`. "
+            "A guaranteed runnable window has not been confirmed yet."
+        )
+    )
     if _latest_candle_dt:
         st.caption(
-            f"Latest complete candle for **{bt_symbol}**: `{_latest_candle_date}` — "
-            "end date defaults to this day. Adjust if you want a different window."
+            f"Latest local candle for **{bt_symbol}**: `{_latest_candle_dt.isoformat()}` · "
+            f"latest complete backtest day: `{_latest_complete_day.isoformat()}` — "
+            "Backtest Lab defaults to the latest known runnable window when one is available."
         )
     else:
-        st.caption(f"No candle data found for **{bt_symbol}** — defaulting to today.")
+        st.caption(f"No candle data found for **{bt_symbol}** — defaulting to the latest completed UTC day.")
+    st.info(_window_status_text)
     date_cols = st.columns(2)
     bt_start = date_cols[0].date_input("Backtest Start", value=_bt_start_default)
     bt_end = date_cols[1].date_input("Backtest End", value=_bt_end_default)
@@ -1924,6 +2040,7 @@ with backtest_tab:
                     }
                     st.session_state["backtest_attempt_state"] = backtest_attempt_state
                     st.session_state["selected_backtest_run_id"] = result["run_id"]
+                    st.session_state["inspect_run_label"] = int(result["run_id"])
                     load_backtest_runs.clear()
                     load_symbol_audit.clear()
                     load_backtest_run.clear()
@@ -2349,15 +2466,17 @@ with inspect_tab:
             run_id = int(row["id"])
             run_labels[run_id] = f"#{run_id} · {row['strategy_name']} — {row['symbol']} ({row['status']})"
 
-        preferred_run_id = next(
-            (
-                int(row["id"])
-                for _, row in all_runs.iterrows()
-                if float(row.get("n_trades") or 0) > 0
-                and str(row.get("integrity_status") or "valid").lower() == "valid"
-            ),
-            int(all_runs.iloc[0]["id"]),
-        )
+        preferred_run_id = st.session_state.get("selected_backtest_run_id")
+        if preferred_run_id not in run_labels:
+            preferred_run_id = next(
+                (
+                    int(row["id"])
+                    for _, row in all_runs.iterrows()
+                    if float(row.get("n_trades") or 0) > 0
+                    and str(row.get("integrity_status") or "valid").lower() == "valid"
+                ),
+                int(all_runs.iloc[0]["id"]),
+            )
         if st.session_state.get("inspect_run_label") not in run_labels:
             st.session_state["inspect_run_label"] = preferred_run_id
 

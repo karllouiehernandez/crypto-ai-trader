@@ -27,6 +27,28 @@ sudo systemctl start crypto-trader
 journalctl -fu crypto-trader
 ```
 
+## Windows One-Time Bootstrap
+
+For a Windows dev machine, run the repo-root batch installer once:
+
+```bat
+install_once.bat
+```
+
+What it does:
+- creates `.venv` if missing
+- installs `requirements.txt` and `requirements-dev.txt`
+- copies `.env.example` to `.env` only if `.env` does not already exist
+- initializes database tables without resetting existing data
+- installs the Playwright Chromium browser used by the UI agent
+
+What it does not do:
+- overwrite `.env`
+- clear the database
+- change active paper/live artifact settings
+
+After it finishes, use `run_all.ps1` or launch the dashboard/runtime manually from `.venv`.
+
 ## Daily Operations
 
 ```bash

@@ -16,6 +16,11 @@ from database.models import (
 from strategy.runtime import compute_strategy_decision, get_active_strategy_config
 from strategy.signals import Signal
 from strategy.risk import atr_position_size, DailyLossTracker, DrawdownCircuitBreaker
+from strategy.paper_evaluation import (
+    PaperEvidenceThresholds,
+    build_paper_evidence_summary,
+    evaluate_paper_evidence_from_trades,
+)
 from utils.telegram_utils import CALLBACK_QUEUE, send_telegram_alert, _token, _chat_id
 from config import (
     SYMBOLS,
@@ -41,6 +46,9 @@ class PaperTrader:
         self.realised: float = 0.0
         self._latest_prices: Dict[str, float] = {}
         self._last_trade_ts: Optional[datetime] = None
+        self._paper_sell_pnls: list[float] = []
+        self._first_paper_sell_ts: Optional[datetime] = None
+        self._last_paper_sell_ts: Optional[datetime] = None
 
         equity = STARTING_BALANCE_USD
         self._daily_tracker = DailyLossTracker(start_equity=equity)
@@ -117,6 +125,9 @@ class PaperTrader:
         positions: Dict[str, float] = {}
         cost_basis: Dict[str, float] = {}
         realised = 0.0
+        self._paper_sell_pnls = []
+        self._first_paper_sell_ts = None
+        self._last_paper_sell_ts = None
 
         for row in matching_rows:
             symbol = str(row.symbol or "")
@@ -137,6 +148,10 @@ class PaperTrader:
                     positions.pop(symbol, None)
                     cost_basis.pop(symbol, None)
                 realised += pnl
+                self._paper_sell_pnls.append(pnl)
+                if self._first_paper_sell_ts is None:
+                    self._first_paper_sell_ts = row.ts
+                self._last_paper_sell_ts = row.ts
 
         self.cash = cash
         self.positions = positions
@@ -472,6 +487,12 @@ class PaperTrader:
         latest_prices = dict(self._latest_prices)
         last_candle_ts = max(self._last_processed_candle.values()) if self._last_processed_candle else None
         halted = self._daily_tracker.is_halted or self._drawdown_cb.is_halted or self._force_halt
+        evidence_result = evaluate_paper_evidence_from_trades(
+            list(self._paper_sell_pnls),
+            first_trade_ts=self._first_paper_sell_ts,
+            last_trade_ts=self._last_paper_sell_ts,
+            thresholds=PaperEvidenceThresholds(starting_equity=float(STARTING_BALANCE_USD)),
+        )
         return {
             "run_mode": "live" if LIVE_TRADE_ENABLED else "paper",
             "strategy_name": self._strategy_name,
@@ -490,6 +511,7 @@ class PaperTrader:
             "trading_halted": halted,
             "daily_loss_halted": self._daily_tracker.is_halted,
             "drawdown_halted": self._drawdown_cb.is_halted,
+            "paper_evidence": build_paper_evidence_summary(evidence_result),
         }
 
     def _record_trade(
@@ -532,6 +554,11 @@ class PaperTrader:
             pass  # diary write must never break paper trading
 
         self._last_trade_ts = trade_ts
+        if str(side or "").upper() == "SELL":
+            self._paper_sell_pnls.append(float(pnl or 0.0))
+            if self._first_paper_sell_ts is None:
+                self._first_paper_sell_ts = trade_ts
+            self._last_paper_sell_ts = trade_ts
 
 
 # ── Module-level fire-and-forget critique ─────────────────────────────────────

@@ -14,7 +14,9 @@ from strategy.artifacts import (
 )
 from strategy.paper_evaluation import (
     PaperEvidenceThresholds,
+    build_paper_evidence_summary,
     evaluate_paper_evidence,
+    evaluate_paper_evidence_from_trades,
 )
 from tests._db_test_utils import install_temp_app_db
 
@@ -118,6 +120,28 @@ def test_evidence_passes_with_consistent_winners(tmp_path):
     assert result.passed is True, result.reasons
     assert result.metrics["n_trades"] == 25.0
     assert result.metrics["max_drawdown"] == 0.0
+
+
+def test_build_paper_evidence_summary_waiting_for_first_close():
+    result = evaluate_paper_evidence_from_trades([], thresholds=PaperEvidenceThresholds())
+    summary = build_paper_evidence_summary(result)
+    assert summary["stage"] == "waiting-for-first-close"
+    assert summary["trade_count"] == 0
+    assert summary["trade_target"] == 20
+
+
+def test_build_paper_evidence_summary_reports_remaining_blockers():
+    base = datetime.now(tz=timezone.utc) - timedelta(days=1)
+    result = evaluate_paper_evidence_from_trades(
+        [1.0] * 10,
+        first_trade_ts=base,
+        last_trade_ts=base + timedelta(days=1),
+    )
+    summary = build_paper_evidence_summary(result)
+    assert summary["stage"] == "gathering-evidence"
+    assert summary["trade_remaining"] == 10
+    assert summary["runtime_days_remaining"] == pytest.approx(2.0)
+    assert summary["blocker_count"] >= 2
 
 
 def test_mark_artifact_paper_passed_blocks_without_evidence(tmp_path):

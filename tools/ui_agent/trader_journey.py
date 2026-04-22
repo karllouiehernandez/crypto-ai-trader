@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import sqlite3
 import re
+import sqlite3
 import time
 from datetime import datetime, timedelta
 
 from playwright.sync_api import Locator, Page
 
 from backtester.service import list_backtest_runs
-from config import DB_PATH
+from config import DB_PATH, MVP_RESEARCH_UNIVERSE
+from dashboard.workbench import latest_complete_backtest_day
+from market_data.history import get_latest_candle_time
 from strategy.runtime import get_active_runtime_artifact, list_available_strategies
 
 
@@ -18,6 +20,8 @@ _RERENDER = 1.5
 _SHORT = 3_000
 _LONG = 10_000
 _BACKTEST_TIMEOUT = 90_000
+_JOURNEY_BACKTEST_DAYS = 7
+_JOURNEY_TERMINAL_TIMEOUT_SECONDS = 60
 _OPTION_LIST = "[data-testid='stSelectboxVirtualDropdown'] [role='option'], [data-testid='stSelectboxVirtualDropdown'] li"
 
 
@@ -166,7 +170,9 @@ def _selectbox_value(
     try:
         widget = _find_selectbox(scope, page, label)
         try:
-            if option_text.lower() in widget.inner_text(timeout=1_000).lower():
+            current_text = widget.inner_text(timeout=1_000)
+            current_lines = [line.strip().lower() for line in current_text.splitlines() if line.strip()]
+            if option_text.strip().lower() in current_lines:
                 return True
         except Exception:
             pass
@@ -189,13 +195,59 @@ def _selectbox_value(
                 option = dropdown.get_by_text(fuzzy_match, exact=True).first
         option.click(timeout=_SHORT)
         time.sleep(_RERENDER)
-        return True
+        refreshed_widget = _find_selectbox(scope, page, label)
+        refreshed_text = refreshed_widget.inner_text(timeout=1_000)
+        refreshed_lines = [line.strip().lower() for line in refreshed_text.splitlines() if line.strip()]
+        return option_text.strip().lower() in refreshed_lines
     except Exception:
         try:
             page.keyboard.press("Escape")
         except Exception:
             pass
         return False
+
+
+def _wait_for_saved_run_id(strategy_name: str, before_max_run_id: int, timeout_seconds: int = 15) -> int | None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with sqlite3.connect(DB_PATH) as con:
+                row = con.execute(
+                    """
+                    SELECT id
+                    FROM backtest_runs
+                    WHERE id > ? AND strategy_name = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (int(before_max_run_id), str(strategy_name)),
+                ).fetchone()
+            if row:
+                return int(row[0])
+        except Exception:
+            pass
+        time.sleep(1.0)
+    return None
+
+
+def _latest_new_backtest_run(before_max_run_id: int) -> tuple[int, str] | None:
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            row = con.execute(
+                """
+                SELECT id, strategy_name
+                FROM backtest_runs
+                WHERE id > ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (int(before_max_run_id),),
+            ).fetchone()
+        if row:
+            return int(row[0]), str(row[1] or "")
+    except Exception:
+        return None
+    return None
 
 
 def _button_state(scope: Locator | Page, label: str) -> str:
@@ -269,6 +321,50 @@ def _wait_for_backtest_response(page: Page) -> bool:
         return True
 
 
+def _wait_for_backtest_terminal_state(
+    page: Page,
+    strategy_name: str,
+    before_max_run_id: int,
+    timeout_seconds: int = 120,
+) -> dict[str, object]:
+    deadline = time.time() + timeout_seconds
+    spinner_seen = False
+    normalized_strategy = str(strategy_name or "").strip().lower()
+
+    while time.time() < deadline:
+        if not _no_exception(page):
+            return {"state": "exception"}
+
+        saved_run_id = _wait_for_saved_run_id(strategy_name, before_max_run_id, timeout_seconds=1)
+        if saved_run_id is not None:
+            return {"state": "saved", "run_id": saved_run_id}
+
+        latest_new_run = _latest_new_backtest_run(before_max_run_id)
+        if latest_new_run and str(latest_new_run[1]).strip().lower() != normalized_strategy:
+            return {
+                "state": "strategy-mismatch",
+                "run_id": int(latest_new_run[0]),
+                "actual_strategy": str(latest_new_run[1]),
+            }
+
+        body = _body_text(page)
+        lowered_body = body.lower()
+        if "last backtest attempt" in lowered_body and normalized_strategy in lowered_body:
+            if "blocked by history:" in lowered_body:
+                return {"state": "blocked-history"}
+            if "blocked by validation:" in lowered_body:
+                return {"state": "blocked-validation"}
+            if "run failed:" in lowered_body:
+                return {"state": "run-failed"}
+
+        spinner_visible = _visible(page, "[data-testid='stSpinner']")
+        running_visible = _visible(page, "[data-testid='stStatusWidgetRunningIcon']")
+        spinner_seen = spinner_seen or spinner_visible or running_visible
+        time.sleep(1.0 if spinner_seen else 1.5)
+
+    return {"state": "running-slow" if spinner_seen else "timeout"}
+
+
 def _wait_for_backtest_form_ready(page: Page, timeout_seconds: int = 20) -> str:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -291,24 +387,41 @@ def _wait_for_backtest_form_ready(page: Page, timeout_seconds: int = 20) -> str:
     return "missing"
 
 
-def _recommended_backtest_window() -> tuple[str, str] | None:
-    try:
-        con = sqlite3.connect(DB_PATH)
-        latest = con.execute("SELECT MAX(open_time) FROM candles").fetchone()[0]
-        con.close()
-    except Exception:
+def _recommended_backtest_window(symbol: str) -> tuple[str, str] | None:
+    latest = get_latest_candle_time(symbol)
+    if latest is None:
         return None
-    if not latest:
-        return None
-    end_dt = datetime.fromisoformat(str(latest)).date()
-    start_dt = end_dt - timedelta(days=29)
+    end_dt = latest_complete_backtest_day(latest)
+    # Keep the trader journey on a recent canonical audit window so the full
+    # strategy catalog can be exercised within one operator-style validation run.
+    start_dt = end_dt - timedelta(days=max(1, _JOURNEY_BACKTEST_DAYS - 1))
     return start_dt.strftime("%Y/%m/%d"), end_dt.strftime("%Y/%m/%d")
 
 
-def _set_backtest_window(page: Page, record) -> bool:
-    window = _recommended_backtest_window()
+def _preferred_backtest_symbol(options: list[str]) -> str:
+    ordered = [str(option or "").strip().upper() for option in options if str(option or "").strip()]
+    if not ordered:
+        return ""
+
+    preferred_symbols = [
+        str(symbol or "").strip().upper()
+        for symbol in (MVP_RESEARCH_UNIVERSE or [])
+        if str(symbol or "").strip()
+    ]
+    for symbol_name in preferred_symbols:
+        if symbol_name in ordered:
+            return symbol_name
+    return ordered[0]
+
+
+def _set_backtest_window(page: Page, symbol: str, record) -> bool:
+    window = _recommended_backtest_window(symbol)
     if not window:
-        record("Trader journey backtest window", "SKIP", "Could not derive a complete local candle window from the database.")
+        record(
+            "Trader journey backtest window",
+            "SKIP",
+            f"Could not derive a complete local candle window from local data for `{symbol}`.",
+        )
         return False
 
     start_value, end_value = window
@@ -346,7 +459,7 @@ def _set_backtest_window(page: Page, record) -> bool:
         body = _body_text(page)
         audit_complete = "History Audit" in body and ("complete" in body.lower() or "covered" in body.lower())
         status = "PASS" if audit_complete or _no_exception(page) else "PARTIAL"
-        record("Trader journey backtest window", status, f"Configured Start={start_value} End={end_value}")
+        record("Trader journey backtest window", status, f"Configured symbol={symbol} Start={start_value} End={end_value}")
         return True
     except Exception as exc:
         record("Trader journey backtest window", "FAIL", f"Could not set backtest dates: {exc}")
@@ -378,6 +491,53 @@ def _has_missing_data_warning(text: str) -> bool:
     return any(keyword in lowered for keyword in keywords)
 
 
+def _inspect_surface_state(page: Page) -> dict[str, object]:
+    body = _body_text(page)
+    lowered_body = body.lower()
+    has_metrics = _visible(page, "[data-testid='stMetric']")
+    has_gate = (
+        _visible(page, "[data-testid='stInfo']") or
+        _visible(page, "[data-testid='stSuccess']") or
+        _visible(page, "[data-testid='stWarning']") or
+        "gate passed." in lowered_body or
+        "gate failed." in lowered_body or
+        "gate outcome unavailable" in lowered_body
+    )
+    has_equity_region = (
+        page.locator("[data-testid='stPlotlyChart']").count() > 0 or
+        "equity curve cannot be reconstructed" in lowered_body or
+        "no trade records are available for this saved run" in lowered_body or
+        "equity curve unavailable" in lowered_body or
+        "no persisted trade rows" in lowered_body or
+        "no trades executed" in lowered_body or
+        "re-run the backtest" in lowered_body or
+        "0 trades" in lowered_body
+    )
+    has_code_region = (
+        _visible(page, "[data-testid='stCode']") or
+        "strategy source unavailable" in lowered_body or
+        "built-in strategy source is not stored on disk" in lowered_body or
+        "source code not available for built-in strategies" in lowered_body
+    )
+    has_artifact_identity = "Artifact #" in body or "hash `" in body
+    gate_outcome = "unknown"
+    if "gate passed." in lowered_body:
+        gate_outcome = "passed"
+    elif "gate failed." in lowered_body:
+        gate_outcome = "failed"
+    elif "gate outcome unavailable" in lowered_body:
+        gate_outcome = "unavailable"
+    return {
+        "body": body,
+        "has_metrics": has_metrics,
+        "has_gate": has_gate,
+        "has_equity_region": has_equity_region,
+        "has_code_region": has_code_region,
+        "has_artifact_identity": has_artifact_identity,
+        "gate_outcome": gate_outcome,
+    }
+
+
 def _inspect_run(page: Page, run_id: int, strategy_name: str, record) -> dict:
     result = {
         "run_id": run_id,
@@ -391,59 +551,63 @@ def _inspect_run(page: Page, run_id: int, strategy_name: str, record) -> dict:
         return result
 
     panel = _active_panel(page)
-    options = _selectbox_options(panel, page, "Saved run")
-    selected_option = next((option for option in options if f"#{run_id}" in option), "")
-    if not selected_option:
+    selected_option = ""
+    deadline = time.time() + 12
+    while time.time() < deadline:
+        body = _body_text(page)
+        if f"Run **#{run_id}**" in body or f"Run #{run_id}" in body:
+            break
+        options = _selectbox_options(panel, page, "Saved run")
+        selected_option = next((option for option in options if f"#{run_id}" in option), "")
+        if selected_option:
+            break
+        time.sleep(1.0)
+        panel = _active_panel(page)
+    else:
         record(f"Inspect run - {strategy_name}", "FAIL", f"Saved run #{run_id} not listed in Inspect")
         return result
-    if not _selectbox_value(panel, page, "Saved run", selected_option):
+
+    if selected_option and not _selectbox_value(panel, page, "Saved run", selected_option):
         record(f"Inspect run - {strategy_name}", "FAIL", f"Could not select saved run #{run_id} in Inspect")
         return result
-    if not _no_exception(page):
+    if selected_option and not _no_exception(page):
         record(f"Inspect run - {strategy_name}", "FAIL", "Exception after selecting saved run")
         return result
 
-    body = _body_text(page)
-    has_metrics = _visible(page, "[data-testid='stMetric']")
-    has_gate = (
-        _visible(page, "[data-testid='stInfo']") or
-        _visible(page, "[data-testid='stSuccess']") or
-        _visible(page, "[data-testid='stWarning']") or
-        "Gate passed." in body or
-        "Gate failed." in body or
-        "Gate outcome unavailable" in body
-    )
-    has_equity_region = (
-        _visible(page, "[data-testid='stPlotlyChart']") or
-        "equity curve cannot be reconstructed" in body.lower() or
-        "no trade records are available for this saved run" in body.lower() or
-        "equity curve unavailable" in body.lower() or
-        "no persisted trade rows" in body.lower() or
-        "no trades executed" in body.lower() or
-        "re-run the backtest" in body.lower() or
-        "0 trades" in body.lower()
-    )
-    has_code_region = (
-        _visible(page, "[data-testid='stCode']") or
-        "strategy source unavailable" in body.lower() or
-        "built-in strategy source is not stored on disk" in body.lower()
-    )
-    has_artifact_identity = "Artifact #" in body or "hash `" in body
+    surface = _inspect_surface_state(page)
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if not _no_exception(page):
+            record(f"Inspect run - {strategy_name}", "FAIL", "Exception while Inspect was rendering the selected run")
+            return result
+        if all([
+            surface["has_metrics"],
+            surface["has_gate"],
+            surface["has_equity_region"],
+            surface["has_code_region"],
+            surface["has_artifact_identity"],
+        ]):
+            break
+        if _visible(page, "[data-testid='stSpinner']") or _visible(page, "[data-testid='stStatusWidgetRunningIcon']"):
+            time.sleep(1.0)
+        else:
+            time.sleep(0.75)
+        surface = _inspect_surface_state(page)
 
-    if "Gate passed." in body:
-        result["gate_outcome"] = "passed"
-    elif "Gate failed." in body:
-        result["gate_outcome"] = "failed"
-    elif "Gate outcome unavailable" in body:
-        result["gate_outcome"] = "unavailable"
-
-    result["inspect_complete"] = all([has_metrics, has_gate, has_equity_region, has_code_region, has_artifact_identity])
+    result["gate_outcome"] = str(surface["gate_outcome"])
+    result["inspect_complete"] = all([
+        surface["has_metrics"],
+        surface["has_gate"],
+        surface["has_equity_region"],
+        surface["has_code_region"],
+        surface["has_artifact_identity"],
+    ])
     result["inspect_state"] = "complete" if result["inspect_complete"] else "incomplete"
 
     status = "PASS" if result["inspect_complete"] else "FAIL"
     detail = (
-        f"gate={result['gate_outcome']} metrics={has_metrics} gate_banner={has_gate} "
-        f"equity={has_equity_region} code={has_code_region} artifact={has_artifact_identity}"
+        f"gate={result['gate_outcome']} metrics={surface['has_metrics']} gate_banner={surface['has_gate']} "
+        f"equity={surface['has_equity_region']} code={surface['has_code_region']} artifact={surface['has_artifact_identity']}"
     )
     record(f"Inspect run - {strategy_name}", status, detail)
     return result
@@ -528,6 +692,12 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         return result
 
     panel = _active_panel(page)
+    symbol_options = _selectbox_options(panel, page, ["Backtest Symbol", "Symbol"])
+    preferred_symbol = _preferred_backtest_symbol(symbol_options)
+    if preferred_symbol and not _selectbox_value(panel, page, ["Backtest Symbol", "Symbol"], preferred_symbol):
+        record(f"Backtest run - {strategy_name}", "FAIL", f"Could not select runnable symbol `{preferred_symbol}` in Backtest Lab")
+        result["backtest_status"] = "selection-failure"
+        return result
     if not _selectbox_value(panel, page, ["Backtest Strategy", "Strategy"], strategy_name):
         record(f"Backtest run - {strategy_name}", "FAIL", "Could not select strategy in Backtest Lab")
         result["backtest_status"] = "selection-failure"
@@ -546,6 +716,22 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         )
         result["backtest_status"] = "form-loading"
         return result
+    if not _set_backtest_window(page, preferred_symbol or "BTCUSDT", lambda *_args: None):
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest form rerendered but the trader journey could not re-apply the audited date window.",
+        )
+        result["backtest_status"] = "window-apply-failure"
+        return result
+    if _wait_for_backtest_form_ready(page) == "loading":
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest form was still recalculating after the date window update; operator feedback remained visible.",
+        )
+        result["backtest_status"] = "form-loading"
+        return result
 
     before_runs_df = list_backtest_runs()
     before_max_run_id = int(before_runs_df["id"].max()) if not before_runs_df.empty and "id" in before_runs_df.columns else 0
@@ -556,18 +742,69 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         result["backtest_status"] = "button-failure"
         return result
 
-    if not _wait_for_backtest_response(page):
-        record(f"Backtest run - {strategy_name}", "FAIL", "No terminal backtest response within 60s")
-        result["backtest_status"] = "timeout"
-        return result
-
-    if not _no_exception(page):
+    terminal_state = _wait_for_backtest_terminal_state(
+        page,
+        strategy_name,
+        before_max_run_id,
+        timeout_seconds=_JOURNEY_TERMINAL_TIMEOUT_SECONDS,
+    )
+    terminal_kind = str(terminal_state.get("state") or "")
+    if terminal_kind == "exception":
         record(f"Backtest run - {strategy_name}", "FAIL", "Streamlit exception after backtest")
         result["backtest_status"] = "exception"
         return result
+    if terminal_kind == "strategy-mismatch":
+        actual_strategy = str(terminal_state.get("actual_strategy") or "unknown")
+        record(
+            f"Backtest run - {strategy_name}",
+            "FAIL",
+            f"Backtest saved a run for `{actual_strategy}` instead of the selected `{strategy_name}`.",
+        )
+        result["backtest_status"] = "strategy-mismatch"
+        return result
+    if terminal_kind == "blocked-history":
+        result["backtest_status"] = "blocked-missing-data"
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest blocked: dashboard showed an explicit history-incomplete error with clear next action.",
+        )
+        return result
+    if terminal_kind == "blocked-validation":
+        result["backtest_status"] = "blocked-validation"
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest blocked: dashboard showed a persistent validation failure state.",
+        )
+        return result
+    if terminal_kind == "run-failed":
+        result["backtest_status"] = "blocked-explicit"
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest did not save a run, but the dashboard showed a persistent run-failed state.",
+        )
+        return result
+    if terminal_kind == "running-slow":
+        result["backtest_status"] = "running-slow"
+        record(
+            f"Backtest run - {strategy_name}",
+            "PARTIAL",
+            "Backtest is still visibly running with a spinner; operator feedback is present but the run did not finish within the journey timeout.",
+        )
+        return result
+    if terminal_kind == "timeout":
+        result["backtest_status"] = "timeout"
+        record(
+            f"Backtest run - {strategy_name}",
+            "FAIL",
+            f"No terminal backtest response within {_JOURNEY_TERMINAL_TIMEOUT_SECONDS}s",
+        )
+        return result
 
     after_text = _body_text(page)
-    run_id = None
+    run_id = int(terminal_state["run_id"]) if terminal_kind == "saved" and terminal_state.get("run_id") is not None else None
     success_run_id = _extract_run_id(after_text)
     if success_run_id is not None and (
         success_run_id > before_max_run_id
@@ -582,6 +819,8 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         ]
         if not new_rows.empty:
             run_id = int(new_rows.iloc[0]["id"])
+    if run_id is None:
+        run_id = _wait_for_saved_run_id(strategy_name, before_max_run_id, timeout_seconds=15)
     after_run_options = _selectbox_options(panel, page, "Inspect saved run")
     if run_id is None and after_run_options:
         fresh_option = next(
@@ -600,9 +839,16 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
     if run_id is not None:
         result["backtest_status"] = "saved"
         result["run_id"] = run_id
+        deadline = time.time() + 12
         has_summary = "Run Summary" in after_text
         has_leaderboard = "Saved Run Leaderboard" in after_text
         has_metrics = _visible(page, "[data-testid='stMetric']")
+        while time.time() < deadline and not all([has_summary, has_leaderboard, has_metrics]):
+            time.sleep(0.75)
+            after_text = _body_text(page)
+            has_summary = "Run Summary" in after_text
+            has_leaderboard = "Saved Run Leaderboard" in after_text
+            has_metrics = _visible(page, "[data-testid='stMetric']")
         status = "PASS" if all([has_summary, has_leaderboard, has_metrics]) else "PARTIAL"
         record(
             f"Backtest run - {strategy_name}",
@@ -612,72 +858,6 @@ def _run_backtest_for_strategy(page: Page, strategy_name: str, record) -> dict:
         inspect_result = _inspect_run(page, run_id, strategy_name, record)
         result["inspect_complete"] = bool(inspect_result["inspect_complete"])
         result["gate_outcome"] = str(inspect_result["gate_outcome"])
-        return result
-
-    lowered_after_text = after_text.lower()
-    if "last backtest attempt" in lowered_after_text:
-        if "blocked by history:" in lowered_after_text:
-            result["backtest_status"] = "blocked-missing-data"
-            record(
-                f"Backtest run - {strategy_name}",
-                "PARTIAL",
-                "Backtest blocked: dashboard showed an explicit history-incomplete error with clear next action.",
-            )
-            return result
-        if "blocked by validation:" in lowered_after_text:
-            result["backtest_status"] = "blocked-validation"
-            record(
-                f"Backtest run - {strategy_name}",
-                "PARTIAL",
-                "Backtest blocked: dashboard showed a persistent validation failure state.",
-            )
-            return result
-        if "run failed:" in lowered_after_text:
-            result["backtest_status"] = "blocked-explicit"
-            record(
-                f"Backtest run - {strategy_name}",
-                "PARTIAL",
-                "Backtest did not save a run, but the dashboard showed a persistent run-failed state.",
-            )
-            return result
-
-    _blocked_keywords = ["backtest blocked", "blocked — incomplete history", "backfill the missing range"]
-    if after_text != before_text and (
-        _has_missing_data_warning(after_text) or any(kw in after_text.lower() for kw in _blocked_keywords)
-    ):
-        result["backtest_status"] = "blocked-missing-data"
-        record(
-            f"Backtest run - {strategy_name}",
-            "PARTIAL",
-            "Backtest blocked: dashboard showed an explicit history-incomplete error with clear next action.",
-        )
-        return result
-
-    if (
-        after_text != before_text
-        and (
-            _visible(page, "[data-testid='stWarning']")
-            or _visible(page, "[data-testid='stError']")
-            or _visible(page, "[data-testid='stInfo']")
-            or "warning" in after_text.lower()
-            or "error" in after_text.lower()
-        )
-    ):
-        result["backtest_status"] = "blocked-explicit"
-        record(
-            f"Backtest run - {strategy_name}",
-            "PARTIAL",
-            "Backtest did not save a run, but the dashboard showed an explicit warning or error state.",
-        )
-        return result
-
-    if _visible(page, "[data-testid='stSpinner']", timeout=1_000) or "running backtest and persisting result" in lowered_after_text:
-        result["backtest_status"] = "running-slow"
-        record(
-            f"Backtest run - {strategy_name}",
-            "PARTIAL",
-            "Backtest is still visibly running with a spinner; operator feedback is present but the run did not finish within the journey timeout.",
-        )
         return result
 
     result["backtest_status"] = "silent-noop"
@@ -899,7 +1079,9 @@ def run_trader_journey(page: Page, *, verbose: bool = True) -> tuple[list[dict],
         return findings, build_trader_journey_summary([])
 
     record("Trader journey discovery", "PASS", f"Discovered {len(strategy_options)} strategy option(s) in Backtest Lab")
-    _set_backtest_window(page, record)
+    panel = _active_panel(page)
+    backtest_symbol = _preferred_backtest_symbol(_selectbox_options(panel, page, ["Backtest Symbol", "Symbol"]))
+    _set_backtest_window(page, backtest_symbol or "BTCUSDT", record)
 
     strategy_meta_map = {str(item.get("name")): item for item in list_available_strategies()}
     strategy_results: list[dict] = []

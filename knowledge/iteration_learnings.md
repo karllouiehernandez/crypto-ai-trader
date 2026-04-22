@@ -1,0 +1,54 @@
+# Iteration Learnings
+
+What each implementation or validation iteration taught us.
+Update this file after every meaningful development slice, especially when a test run, trader journey, or runtime check changes what we believe about product readiness.
+
+---
+
+## 2026-04-21 Trader Journey Stabilization — Smoke is green but the trader journey is still the real blocker
+**What happened:** Backtest Lab now defaults to the latest complete backtest day instead of the current intraday candle date. Smoke UI and DB checks are green, and backtest rows continue to persist during trader-journey runs.
+**Why it happened:** The workbench and the trader harness were previously treating the latest fresh candle date as backtest-safe, which pushed operators into incomplete current-day windows. After fixing that, the remaining trust problem is the journey harness itself: it can still hang or lose track of terminal states while Streamlit rerenders.
+**Impact:** Product confidence improved because normal smoke and data checks are stable, but the release contract is still incomplete. We still cannot claim a trustworthy trader-journey pass until the runner can finish consistently and report saved-run versus blocked-run outcomes honestly.
+**What we changed:** Added a shared latest-complete-day helper in `dashboard/workbench.py`, wired Backtest Lab and ready-symbol health to use it, and started tightening `tools/ui_agent/trader_journey.py` toward exact selectbox matching and DB-backed saved-run detection.
+**What to try next:** Finish stabilizing `tools/ui_agent/trader_journey.py` around terminal-state detection and Inspect follow-through, then rerun the full trader journey headed and record the next outcome here.
+**Status:** OPEN
+
+---
+
+## 2026-04-21 Trader Journey Stabilization — The audit now completes; the next blocker is real paper evidence
+**What happened:** The full headed trader journey now completes end-to-end on the live dashboard and writes a report instead of hanging. It backtested all 7 visible strategies on a recent BTCUSDT window, opened each saved run in Inspect, and verified paper-promotion readiness with `0 FAIL`, `0 PARTIAL`, and `1 SKIP` (no generated draft in the catalog). Smoke UI also reran headed at `64/64 PASS`, and the maintained-universe freshness gate returned to `0 FAIL / 0 PARTIAL / 1 SKIP` after a recent data sync.
+**Why it happened:** The prior journey window was too large for an exhaustive operator audit and the harness was grading saved-run and Inspect surfaces before Streamlit finished rerendering. Moving the journey to a canonical recent 7-day window and adding explicit post-save / post-select waits aligned the automation with real UI timing.
+**Impact:** The operator-trust contract is materially stronger. The workbench now has a credible automated proof for the research -> backtest -> Inspect -> paper-readiness flow. The remaining product gap is no longer UI audit completeness; it is the lack of real artifact-tagged paper evidence and, by extension, the lack of trustworthy live-readiness evidence.
+**What we changed:** Updated `tools/ui_agent/trader_journey.py` to use a recent deterministic audit window, shorter per-run terminal timeouts, and stronger surface-state waits for saved-run summaries and Inspect equity/code rendering. Restarted Streamlit for headed validation and refreshed maintained-symbol recent history with `market_data.history.sync_recent()` so data-only checks reflected current local state.
+**What to try next:** Keep `run_live.py` running under artifact `#2` until it produces real tagged SELL trades, then exercise the deterministic paper-evidence gate and the manual live-approval path. After that, decide whether the default environment should also include one generated draft so the draft-promotion guard stops being a permanent journey skip.
+**Status:** RESOLVED
+
+---
+
+## 2026-04-21 Windows Bootstrap Installer — One-time setup should be repeatable without touching runtime state
+**What happened:** A repo-root Windows batch installer was added and validated successfully against the current workspace. It created `.venv`, installed runtime and dev dependencies, left `.env` unchanged, initialized DB tables idempotently, and installed the Playwright Chromium browser.
+**Why it happened:** The repo already had a Jetson/Linux `deployment/install.sh`, but no equivalent one-time bootstrap for Windows operators or future agents working on the same branch. Setup depended on ad hoc manual steps, which is exactly how stateful environments drift over time.
+**Impact:** New Windows environments can now be bootstrapped consistently without overwriting credentials, resetting the DB, or disturbing active paper/live targets. That improves continuity and reduces the chance that future work starts from an inconsistent local setup.
+**What we changed:** Added `install_once.bat` at the repo root and documented it in `deployment/README.md`. The script is explicitly non-destructive and points operators toward `run_all.ps1` after setup.
+**What to try next:** If Jetson continuity remains the next focus, add a matching documented backup/recovery checklist and a restart-survival validation script so environment bootstrap and environment recovery are both first-class.
+**Status:** RESOLVED
+
+---
+
+## 2026-04-22 Pre-deploy hardening plan — Packaging should follow recovery and evidence, not precede them
+**What happened:** The remaining pre-deploy improvement work was turned into a phased Sprint 42 action slice instead of staying as an informal priority list.
+**Why it happened:** The product is now strong enough on smoke, trader journey, and basic operator trust that the next gains come from software discipline: persistence, recovery, real paper evidence, data auto-repair, and Jetson-safe operating profiles.
+**Impact:** Future work can now be sequenced without rediscovering priorities. The main remaining gap is no longer “what should we improve?” but “which pre-deploy hardening phase are we executing next?”
+**What we changed:** Added a phased pre-deploy software hardening plan to Sprint 42 covering persistence/recovery, real paper evidence validation, data freshness auto-repair, generation/review quality, and Jetson deployment readiness.
+**What to try next:** Start with Phase 1 persistence and restart-survival validation, then move directly into Phase 2 real paper-evidence capture on artifact `#2`.
+**Status:** OPEN
+
+---
+
+## 2026-04-22 Paper Evidence Progress Surface — The gate is now visible before it is passable
+**What happened:** Sprint 42 Phase 2 landed as a deterministic, operator-facing paper-evidence progress surface. The dashboard now shows trade-count progress, runtime-span progress, blocker reasons, and checklist rows for the selected reviewed paper artifact, while `run_live.py` heartbeats also include the same evidence stage in stdout.
+**Why it happened:** The paper-evidence gate already existed logically, but traders and future agents still had to infer too much from raw trade rows or one-off evaluation actions. The missing piece was a shared summary that the paper trader, the dashboard, and the runner heartbeat could all expose consistently.
+**Impact:** Trader trust improved because the paper-readiness gate is now inspectable even before there are enough real trades to pass it. The remaining blocker is operational rather than UI-related: artifact `#2` still needs real tagged SELL trades, and the latest 2026-04-22 data-only run is still honest about stale maintained-universe candles.
+**What we changed:** Added `evaluate_paper_evidence_from_trades()` and `build_paper_evidence_summary()` in `strategy/paper_evaluation.py`, surfaced paper-evidence status in `simulator/paper_trader.py`, extended `run_live.py` heartbeats, added dashboard helpers in `dashboard/workbench.py`, and rendered a persistent `Paper Evidence Progress` section in `dashboard/streamlit_app.py`. Added regression coverage in `tests/test_paper_evaluation.py`, `tests/test_paper_trader.py`, `tests/test_run_live.py`, and `tests/test_workbench_helpers.py`.
+**What to try next:** Refresh maintained-universe candles, keep `run_live.py` on paper target `#2`, and wait for real tagged SELL trades so the deterministic evidence summary can move from `waiting-for-first-close` to real gate evaluation.
+**Status:** OPEN

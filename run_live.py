@@ -63,6 +63,18 @@ def log_runner_snapshot(message: str, snapshot: dict, *, llm_enabled: bool | Non
         suffix_parts.append(f"llm_enabled={str(bool(llm_enabled)).lower()}")
     if live_trade_enabled is not None:
         suffix_parts.append(f"live_trade_enabled={str(bool(live_trade_enabled)).lower()}")
+    paper_evidence = snapshot.get("paper_evidence") or {}
+    if paper_evidence:
+        suffix_parts.append(f"paper_evidence={paper_evidence.get('stage') or 'unknown'}")
+        suffix_parts.append(
+            f"paper_trades={int(paper_evidence.get('trade_count', 0) or 0)}/"
+            f"{int(paper_evidence.get('trade_target', 0) or 0)}"
+        )
+        suffix_parts.append(
+            f"paper_runtime={float(paper_evidence.get('runtime_days', 0.0) or 0.0):.1f}/"
+            f"{float(paper_evidence.get('runtime_target_days', 0.0) or 0.0):.1f}d"
+        )
+        suffix_parts.append(f"paper_blockers={int(paper_evidence.get('blocker_count', 0) or 0)}")
     suffix = f" | {' '.join(suffix_parts)}" if suffix_parts else ""
     log.info(
         "%s | mode=%s artifact=%s strategy=%s symbols=%s cash=%s equity=%s realized=%s open_positions=%s last_candle=%s last_trade=%s halted=%s force_halt=%s%s",

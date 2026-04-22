@@ -9,6 +9,7 @@ Usage:
     python knowledge/kb_update.py
     python knowledge/kb_update.py --type bug
     python knowledge/kb_update.py --type strategy
+    python knowledge/kb_update.py --type iteration
     python knowledge/kb_update.py --type experiment
     python knowledge/kb_update.py --type parameter
     python knowledge/kb_update.py --type regime
@@ -25,6 +26,7 @@ KB_DIR = Path(__file__).parent
 ENTRY_TYPES = {
     "bug":        ("bugs_and_fixes.md",       "Bug found or fixed"),
     "strategy":   ("strategy_learnings.md",   "Strategy insight from backtest or paper trading"),
+    "iteration":  ("iteration_learnings.md",  "Implementation or validation learning from the latest iteration"),
     "experiment": ("experiment_log.md",        "New experiment hypothesis or result update"),
     "parameter":  ("parameter_history.md",    "Config or strategy parameter change"),
     "regime":     ("market_regime_notes.md",  "Market regime observation"),
@@ -33,6 +35,7 @@ ENTRY_TYPES = {
 STATUS_OPTIONS = {
     "bug":       ["OPEN", "FIXED", "MONITORING"],
     "strategy":  ["OPEN", "RESOLVED", "MONITORING"],
+    "iteration": ["OPEN", "RESOLVED", "MONITORING"],
     "regime":    ["OPEN", "RESOLVED", "MONITORING"],
     "experiment":["HYPOTHESIS", "IN PROGRESS", "COMPLETED", "ABANDONED"],
     # parameter entries use a historical changelog format and don't have a Status field
@@ -142,6 +145,28 @@ def build_strategy() -> str:
     changed  = prompt_multiline("What we changed (code/config diff or 'pending')")
     next_try = prompt_multiline("What to try next")
     status   = choose("Status", STATUS_OPTIONS["strategy"])
+
+    return (
+        f"\n## {today()} {topic} — {summary}\n"
+        f"**What happened:** {happened}\n"
+        f"**Why it happened:** {why}\n"
+        f"**Impact:** {impact}\n"
+        f"**What we changed:** {changed}\n"
+        f"**What to try next:** {next_try}\n"
+        f"**Status:** {status}\n"
+    )
+
+
+def build_iteration() -> str:
+    print("\n── Iteration Learning entry ─────────────────────────────────")
+    topic = prompt("Topic / area (e.g. 'Trader journey terminal-state detection')")
+    summary = prompt("One-line summary")
+    happened = prompt_multiline("What happened this iteration")
+    why = prompt_multiline("Why it happened / what we learned")
+    impact = prompt_multiline("Impact on trader trust, operability, or delivery")
+    changed = prompt_multiline("What we changed this iteration (or 'pending')")
+    next_try = prompt_multiline("What to try next in the next iteration")
+    status = choose("Status", STATUS_OPTIONS["iteration"])
 
     return (
         f"\n## {today()} {topic} — {summary}\n"
@@ -273,6 +298,7 @@ def main() -> None:
     builders = {
         "bug":        build_bug,
         "strategy":   build_strategy,
+        "iteration":  build_iteration,
         "experiment": lambda: build_experiment(file_path),
         "parameter":  build_parameter,
         "regime":     build_regime,

@@ -1,6 +1,6 @@
 # crypto_ai_trader/database/models.py
 from sqlalchemy import (
-    Column, Integer, Float, String, DateTime, Index, create_engine
+    Column, Integer, Float, String, DateTime, Index, create_engine, event
 )
 import sqlalchemy as sa
 from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
@@ -224,7 +224,26 @@ class TradingDiaryEntry(Base):
 # ────────────────────────── helpers ──────────────────────────────────────────
 def get_engine(echo: bool = False):
     Path(DB_PATH).parent.mkdir(exist_ok=True)
-    return create_engine(f"sqlite:///{DB_PATH}", echo=echo, future=True)
+    engine = create_engine(
+        f"sqlite:///{DB_PATH}",
+        echo=echo,
+        future=True,
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 30,
+        },
+    )
+
+    @event.listens_for(engine, "connect")
+    def _configure_sqlite_connection(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
+    return engine
 
 Engine       = get_engine()
 SessionLocal = sessionmaker(bind=Engine, expire_on_commit=False)
