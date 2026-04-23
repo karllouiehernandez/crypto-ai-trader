@@ -10,7 +10,7 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 45 Strategy Authoring Polish implemented and verified) |
+| **Last updated** | 2026-04-23 (Sprint 42 paper-runtime follow-through refreshed after Sprint 45 close) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure (operational paper-evidence follow-through remains) |
 | **Latest completed sprint** | Sprint 45 — `#47` — Strategy Authoring Polish |
 | **Sprint 40** | `#42` — Done on board |
@@ -106,6 +106,32 @@ Verification:
 - `python -m py_compile strategy/plugin_sdk.py dashboard/streamlit_app.py` → clean
 - `pytest tests/ -q` → **688 passed, 4 warnings**
 - `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS**
+
+### Latest Operational Slice — Sprint 42 Follow-Through (2026-04-23)
+
+- **What changed**
+  - Verified the active paper target remains reviewed artifact `#8` (`rsi_mean_reversion_v1@1.0.0`).
+  - Confirmed the previous paper runtime had stopped: last paper snapshot before intervention was `2026-04-23 10:27:00 UTC`, and artifact `#8` still had `0` tagged BUY trades and `0` tagged SELL trades.
+  - Re-synced maintained-universe freshness with `maintain_symbol_freshness()` so `BTCUSDT`, `ETHUSDT`, and `BNBUSDT` returned to current-minute coverage.
+  - Restarted `run_live.py` safely in the background and verified paper snapshots resumed for artifact `#8`.
+  - Detected an operational hazard: `python run_live.py --help` is **not** a harmless help path and booted a second runtime worker because `run_live.py` currently ignores CLI args.
+  - Confirmed the accidental `--help` worker by duplicate paper snapshot writes at `2026-04-23 10:28:00 UTC`, then terminated only that mistaken duplicate and left the correct plain `run_live.py` worker alive.
+- **What was verified**
+  - `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** after freshness repair.
+  - Active paper worker now writes fresh snapshots again:
+    - resumed at `2026-04-23 10:27:05 UTC`
+    - single-writer cadence restored by `2026-04-23 10:29:00 UTC`
+  - Artifact `#8` still has no tagged trades:
+    - `0` BUY
+    - `0` SELL
+  - Current watched-symbol state supports the "entry scarcity" explanation:
+    - `BTCUSDT`: RSI ~`50`, ADX ~`27.5`, no Bollinger-band breach, no MACD cross, no volume confirmation
+    - `ETHUSDT`: RSI ~`53.8`, ADX ~`16.6`, no Bollinger-band breach, no MACD cross, no volume confirmation
+    - `BNBUSDT`: RSI ~`42.8`, ADX ~`33.5`, no Bollinger-band breach, no MACD cross, no volume confirmation
+- **What remains next**
+  - Keep the restarted plain `run_live.py` paper worker alive long enough to capture the first real artifact-tagged BUY and then SELL trades for artifact `#8`.
+  - If artifact `#8` still shows zero tagged BUY trades after a meaningful additional observation window, open the next corrective sprint around entry scarcity / market-fit rather than paper-evidence scoring.
+  - Fix the `run_live.py --help` safety bug in code so an operator cannot accidentally launch a duplicate runtime while expecting CLI help.
 
 ### Latest Slice (2026-04-23 — Sprint 43)
 

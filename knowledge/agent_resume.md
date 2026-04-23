@@ -67,6 +67,11 @@ Read order for a new agent:
     - editing an existing draft saves a new generated revision instead of overwriting the original file
     - invalid or duplicate drafts surface a suggested next strategy name
     - `strategy/plugin_sdk.py` now exposes safe generated-draft listing and source-reading helpers
+  - Sprint 42 operational follow-through was refreshed again on `2026-04-23`:
+    - active paper target remains reviewed artifact `#8` (`rsi_mean_reversion_v1`)
+    - `run_live.py` had stopped and was relaunched; paper snapshots resumed at current-minute cadence
+    - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades, so paper-evidence remains blocked by no entries, not by failing metrics
+    - accidental `python run_live.py --help` launches are currently unsafe because the script ignores CLI args and can boot a duplicate runtime
 
 ## Why This Exists
 

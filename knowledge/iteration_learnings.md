@@ -142,3 +142,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Added draft listing/reading/name-suggestion helpers in `strategy/plugin_sdk.py`, extended the dashboard `Create / Import Strategy Draft` expander with `Edit Existing Draft`, and added SDK tests plus focused headed validation.
 **What to try next:** Add full strategy-pack import/export only after the single-file draft editor has been used in real strategy-authoring sessions.
 **Status:** RESOLVED
+
+---
+
+## 2026-04-23 Paper Runtime Refresh — Evidence collection depends on distinguishing dead runtime from scarce signals
+**What happened:** The active paper target (`rsi_mean_reversion_v1`, artifact `#8`) had stopped producing fresh snapshots, so the paper-evidence follow-through was refreshed. Maintained-universe candles were re-synced, `run_live.py` was relaunched, fresh paper snapshots resumed, and artifact `#8` still showed `0` tagged BUY trades and `0` tagged SELL trades.
+**Why it happened:** The remaining blocker after Sprint 45 was no longer product UX or test coverage. It was operational proof: the paper runner must stay alive long enough to produce real tagged trades. During verification, an accidental `python run_live.py --help` invocation exposed a separate operator-safety hazard because the script currently ignores CLI args and booted a second runtime worker.
+**Impact:** The current blocker is now much clearer. The paper-evidence gate is blocked by no entries yet, not by bad paper-performance metrics. We also now know `run_live.py` needs a real CLI parser because `--help` can currently create a duplicate live worker.
+**What we changed:** Queried the live DB for active artifact state and snapshot cadence, re-synced maintained symbol freshness, restarted the plain `run_live.py` worker, detected the accidental duplicate by same-minute duplicate `portfolio_snapshots` rows, terminated only the mistaken `--help` worker, and checked the latest BTC/ETH/BNB indicator state to confirm no Bollinger breach, no fresh MACD cross, and no volume confirmation were present.
+**What to try next:** Keep the single correct paper worker alive for a longer observation window. If artifact `#8` still produces zero tagged BUY trades, open the next corrective sprint around entry scarcity / market fit. Separately, fix `run_live.py --help` so it exits safely instead of starting the trader.
+**Status:** OPEN
