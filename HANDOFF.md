@@ -10,7 +10,7 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 42 paper-runtime follow-through refreshed and run_live help path fixed) |
+| **Last updated** | 2026-04-23 (Sprint 42 evidence follow-through quantified as entry scarcity / market fit) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure (operational paper-evidence follow-through remains) |
 | **Latest completed sprint** | Sprint 45 — `#47` — Strategy Authoring Polish |
 | **Sprint 40** | `#42` — Done on board |
@@ -118,6 +118,9 @@ Verification:
   - Confirmed the accidental `--help` worker by duplicate paper snapshot writes at `2026-04-23 10:28:00 UTC`, then terminated only that mistaken duplicate and left the correct plain `run_live.py` worker alive.
   - Fixed the help-path bug in code by adding a real `argparse` entrypoint to [run_live.py](run_live.py), so CLI help exits before env validation or runtime boot.
   - Added regression coverage in [tests/test_run_live.py](tests/test_run_live.py) to prove `main(["--help"])` exits with code `0` and never calls `validate_env()` or `asyncio.run(...)`.
+  - Quantified artifact `#8` opportunity scarcity across recent history instead of only waiting on live paper mode:
+    - scanned the last `30d` of `1m` candles for `BTCUSDT`, `ETHUSDT`, `BNBUSDT`, plus other ready symbols `AAVEUSDT` and `LINKUSDT`
+    - measured each `rsi_mean_reversion_v1` entry component and full 5-of-5 entry alignment
 - **What was verified**
   - `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** after freshness repair.
   - `pytest tests/test_run_live.py -q` → **7 passed**
@@ -130,14 +133,28 @@ Verification:
   - Artifact `#8` still has no tagged trades:
     - `0` BUY
     - `0` SELL
+  - Current paper worker remains healthy and advancing:
+    - latest paper snapshot observed at `2026-04-23 10:51:00 UTC`
   - Current watched-symbol state supports the "entry scarcity" explanation:
     - `BTCUSDT`: RSI ~`50`, ADX ~`27.5`, no Bollinger-band breach, no MACD cross, no volume confirmation
     - `ETHUSDT`: RSI ~`53.8`, ADX ~`16.6`, no Bollinger-band breach, no MACD cross, no volume confirmation
     - `BNBUSDT`: RSI ~`42.8`, ADX ~`33.5`, no Bollinger-band breach, no MACD cross, no volume confirmation
+  - Historical opportunity scan confirms this is not just a short observation-window problem:
+    - across the last `30d` on all five ready symbols (`AAVEUSDT`, `BNBUSDT`, `BTCUSDT`, `ETHUSDT`, `LINKUSDT`), artifact `#8` produced:
+      - `0` long candles with all 5 entry conditions aligned
+      - `0` short candles with all 5 entry conditions aligned
+    - repeated near-miss pattern: many candles met all long or short filters **except** the fresh MACD-cross requirement
+      - `ETHUSDT`: `90` long near-misses / `18` short near-misses
+      - `BNBUSDT`: `81` long / `13` short
+      - `BTCUSDT`: `74` long / `7` short
+      - `AAVEUSDT`: `57` long / `23` short
+      - `LINKUSDT`: `30` long / `4` short
 - **What remains next**
   - Keep the restarted plain `run_live.py` paper worker alive long enough to capture the first real artifact-tagged BUY and then SELL trades for artifact `#8`.
-  - If artifact `#8` still shows zero tagged BUY trades after a meaningful additional observation window, open the next corrective sprint around entry scarcity / market-fit rather than paper-evidence scoring.
-  - The next corrective code sprint should target entry scarcity / market fit, not runner CLI safety, because the `run_live.py --help` duplicate-launch bug is now fixed.
+  - The next corrective code sprint should now target entry scarcity / market fit, not runner CLI safety or paper-evidence scoring:
+    - re-examine the MACD-cross requirement inside the current RSI/Bollinger/volume setup
+    - test whether the watchlist should include symbols with better range-reversion behavior
+    - compare signal frequency before and after any threshold change so paper mode is not left waiting indefinitely for a first BUY
 
 ### Latest Slice (2026-04-23 — Sprint 43)
 

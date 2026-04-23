@@ -72,6 +72,7 @@ Read order for a new agent:
     - `run_live.py` had stopped and was relaunched; paper snapshots resumed at current-minute cadence
     - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades, so paper-evidence remains blocked by no entries, not by failing metrics
     - accidental `python run_live.py --help` launches are now fixed in code: `argparse` owns the help path and exits before any boot logic runs
+    - opportunity scan across the last `30d` of all 5 ready symbols found `0` full entry setups for artifact `#8`; the dominant near-miss is "all filters align except fresh MACD cross", so the next corrective sprint should target entry scarcity / market fit
 
 ## Why This Exists
 
