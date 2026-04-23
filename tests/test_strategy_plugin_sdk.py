@@ -2,11 +2,13 @@ import textwrap
 from pathlib import Path
 
 from strategy.plugin_sdk import (
+    STRATEGY_SDK_VERSION,
     create_strategy_draft,
     list_generated_draft_files,
     read_strategy_source_file,
     suggest_next_strategy_name,
     strategy_template_source,
+    strategy_sdk_support,
     validate_strategy_source,
 )
 
@@ -116,6 +118,50 @@ def test_strategy_template_source_is_valid():
     result = validate_strategy_source(strategy_template_source("sample_strategy_v1"), file_name="template.py")
     assert result.valid is True
     assert result.strategy_names == ["sample_strategy_v1"]
+
+
+def test_strategy_template_source_includes_sdk_version():
+    source = strategy_template_source("sample_strategy_v1")
+    assert f'sdk_version = "{STRATEGY_SDK_VERSION}"' in source
+
+
+def test_strategy_sdk_support_exposes_current_contract():
+    support = strategy_sdk_support()
+    assert support["current_sdk_version"] == STRATEGY_SDK_VERSION
+    assert STRATEGY_SDK_VERSION in support["supported_sdk_versions"]
+    assert support["signal_contract"] == "should_long+should_short or decide"
+
+
+def test_validate_strategy_source_rejects_unsupported_sdk_version():
+    source = textwrap.dedent("""
+        import pandas as pd
+        from strategy.base import StrategyBase
+        from strategy.regime import Regime
+
+        class UnsupportedSdkDraft(StrategyBase):
+            name = "unsupported_sdk_v1"
+            description = "A draft with an unsupported SDK version."
+            version = "1.0.0"
+            sdk_version = "999"
+            regimes = [Regime.RANGING]
+
+            def default_params(self):
+                return {"threshold": 35.0}
+
+            def param_schema(self):
+                return [{"name": "threshold", "type": "number", "default": 35.0}]
+
+            def should_long(self, df: pd.DataFrame) -> bool:
+                last = df.iloc[-1]
+                return bool(last["rsi_14"] < self.params["threshold"])
+
+            def should_short(self, df: pd.DataFrame) -> bool:
+                last = df.iloc[-1]
+                return bool(last["rsi_14"] > 70)
+    """)
+    result = validate_strategy_source(source, file_name="bad_sdk.py")
+    assert result.valid is False
+    assert any(issue.code == "unsupported_sdk_version" for issue in result.errors)
 
 
 def test_create_strategy_draft_writes_generated_file(tmp_path):

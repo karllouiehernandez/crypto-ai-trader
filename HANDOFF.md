@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 42 evidence follow-through quantified as entry scarcity / market fit) |
-| **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure (operational paper-evidence follow-through remains) |
+| **Last updated** | 2026-04-23 (Sprint 46 deployment lock phase 1 implemented) |
+| **Active sprint** | Sprint 46 — `#48` — Deployment Lock & Strategy SDK Compatibility |
 | **Latest completed sprint** | Sprint 45 — `#47` — Strategy Authoring Polish |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **688 passed, 4 warnings** on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-23; focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
+| **Tests** | `pytest tests/ -q` → **693 passed, 4 warnings** on 2026-04-23; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-23; focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,10 +22,46 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42
+## Resume Here — Sprint 46
 
-Sprint 41 is closed. Sprint 42 is now tracked as GitHub issue `#44` and has been added to Projects board `#1`.
-The Sprint 42 issue title/body have now been updated and the board card is set to `In Progress`.
+Sprint 46 is tracked as GitHub issue `#48` and has been added to Projects board `#1`.
+
+Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
+
+### Latest Slice — Sprint 46 Phase 1 (2026-04-23)
+
+- **What changed**
+  - Added explicit strategy SDK compatibility metadata to [strategy/base.py](strategy/base.py):
+    - `sdk_version = "1"` default on `StrategyBase`
+    - `meta()` now includes `sdk_version`
+  - Extended [strategy/plugin_sdk.py](strategy/plugin_sdk.py):
+    - `STRATEGY_SDK_VERSION = "1"`
+    - `SUPPORTED_STRATEGY_SDK_VERSIONS`
+    - `strategy_sdk_support()`
+    - validation now rejects unsupported `sdk_version` values with `unsupported_sdk_version`
+    - generated template drafts now include explicit `sdk_version`
+  - Updated [strategies/_strategy_template.py](strategies/_strategy_template.py) to carry `sdk_version = "1"` for manual file-based authoring.
+  - Extended [dashboard/streamlit_app.py](dashboard/streamlit_app.py) `Create / Import Strategy Draft` with a visible deployment SDK lock banner showing:
+    - current supported SDK version
+    - supported versions list
+    - signal contract
+  - Added regression coverage in [tests/test_strategy_plugin_sdk.py](tests/test_strategy_plugin_sdk.py) for:
+    - template SDK marker
+    - SDK support helper
+    - unsupported SDK version rejection
+- **What was verified**
+  - `pytest tests/test_strategy_plugin_sdk.py tests/test_strategy_base.py tests/test_strategy_loader.py -q` → **56 passed**
+  - `python -m py_compile strategy/base.py strategy/plugin_sdk.py dashboard/streamlit_app.py strategies/_strategy_template.py tests/test_strategy_plugin_sdk.py` → clean
+  - `pytest tests/ -q` → **693 passed, 4 warnings**
+  - `python run_live.py --help` → safe CLI help exit
+- **What remains next**
+  - Phase 2 should extend the same deployment-lock concept into reviewed-plugin acceptance and dashboard status surfaces:
+    - show SDK compatibility in the strategy catalog / lifecycle area
+    - block review/save-to-plugin actions when a draft targets an unsupported SDK version
+    - document the deployment strategy SDK contract clearly in `strategies/README.md`
+  - Sprint 42 remains operationally relevant in the background:
+    - paper target artifact `#8` is still healthy but has `0` tagged BUY trades and `0` tagged SELL trades
+    - quantified scan confirmed the next corrective strategy-focused sprint should target entry scarcity / market fit
 
 ### Latest Completed — Sprint 43
 

@@ -1488,3 +1488,45 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 ### Outcome
 - Strategy authoring is now iterative inside the dashboard: create, import, edit generated drafts, validate, and save revisions without restarting the app.
 - Draft lifecycle safety is preserved: drafts remain backtest-only until reviewed into pinned plugins.
+
+---
+
+## Sprint 46 — Deployment Lock & Strategy SDK Compatibility
+**Date created:** 2026-04-23
+**Status:** IN PROGRESS
+**Goal:** Lock the deployed base application so post-deploy work can focus on creating compatible strategies rather than patching core app code.
+
+### GitHub Tracking
+- Created GitHub issue `#48` — `Sprint 46 — Deployment Lock & Strategy SDK Compatibility`
+- Added issue `#48` to GitHub Projects board `#1`
+
+### Phase 1 — Strategy SDK Contract Lock
+- [x] Extended `strategy/base.py`
+  - default `sdk_version = "1"` on `StrategyBase`
+  - `meta()` now includes `sdk_version`
+- [x] Extended `strategy/plugin_sdk.py`
+  - `STRATEGY_SDK_VERSION = "1"`
+  - `SUPPORTED_STRATEGY_SDK_VERSIONS`
+  - `strategy_sdk_support()`
+  - validation rejects unsupported `sdk_version` values with `unsupported_sdk_version`
+  - generated template drafts now include explicit `sdk_version`
+- [x] Updated `strategies/_strategy_template.py`
+  - manual strategy template now carries `sdk_version = "1"`
+- [x] Extended `dashboard/streamlit_app.py`
+  - `Create / Import Strategy Draft` now shows the deployment strategy SDK lock
+  - visible: current SDK version, supported versions, and signal contract
+- [x] Added regression coverage in `tests/test_strategy_plugin_sdk.py`
+  - template SDK marker
+  - SDK support helper
+  - unsupported SDK version rejection
+
+### Verification
+- `pytest tests/test_strategy_plugin_sdk.py tests/test_strategy_base.py tests/test_strategy_loader.py -q` → **56 passed**
+- `python -m py_compile strategy/base.py strategy/plugin_sdk.py dashboard/streamlit_app.py strategies/_strategy_template.py tests/test_strategy_plugin_sdk.py` → clean
+- `pytest tests/ -q` → **693 passed, 4 warnings**
+- `python run_live.py --help` → safe CLI help exit
+
+### Outcome So Far
+- The deployed app now declares an explicit strategy SDK contract instead of relying on implied compatibility.
+- Draft strategy authors can see the supported SDK version directly in the dashboard before saving or reviewing a plugin.
+- The next sprint phase should extend the same contract lock into reviewed-plugin acceptance and documentation so post-deploy strategy iteration stays inside the supported rails.

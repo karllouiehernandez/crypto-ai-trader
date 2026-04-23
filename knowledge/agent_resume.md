@@ -12,16 +12,16 @@ Read order for a new agent:
 ## Current Sprint
 
 - Sprint 41 is closed.
-- Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure` remains operationally active for real paper-evidence collection.
-- GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
+- Active local sprint: `Sprint 46 — Deployment Lock & Strategy SDK Compatibility`
+- GitHub status: Sprint 46 is issue `#48` on Projects board `#1`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - Latest completed sprint: `Sprint 45 — Strategy Authoring Polish`
   - GitHub issue: `#47`
   - Projects board `#1` status: `Done`
   - Delivered: dashboard editing for existing generated drafts, safe draft source loading, generated-draft listing, next-name suggestions for duplicate drafts, and SDK regression coverage.
   - Sprint 44 remains complete: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
   - Sprint 43 remains complete: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
-- Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `688 passed, 4 warnings` on `2026-04-23`
+- Baseline after the current Sprint 46 Phase 1 work:
+  - `pytest tests/ -q` -> `693 passed, 4 warnings` on `2026-04-23`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-23`
   - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-23`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
@@ -73,6 +73,11 @@ Read order for a new agent:
     - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades, so paper-evidence remains blocked by no entries, not by failing metrics
     - accidental `python run_live.py --help` launches are now fixed in code: `argparse` owns the help path and exits before any boot logic runs
     - opportunity scan across the last `30d` of all 5 ready symbols found `0` full entry setups for artifact `#8`; the dominant near-miss is "all filters align except fresh MACD cross", so the next corrective sprint should target entry scarcity / market fit
+  - Sprint 46 Phase 1 now locks the deployed app's strategy SDK contract:
+    - `StrategyBase.meta()` now exposes `sdk_version`
+    - `strategy/plugin_sdk.py` defines `STRATEGY_SDK_VERSION = "1"` and rejects unsupported strategy SDK versions during validation
+    - dashboard draft authoring now shows the deployment strategy SDK lock in the `Create / Import Strategy Draft` expander
+    - generated drafts and the manual `_strategy_template.py` now carry explicit `sdk_version = "1"`
 
 ## Why This Exists
 

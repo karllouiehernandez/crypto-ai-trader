@@ -15,6 +15,7 @@ class TemplateStrategy(StrategyBase):
     display_name = "Template Strategy"
     description = "Replace this with the strategy edge, trigger logic, and intended market behavior."
     version = "1.0.0"
+    sdk_version = "1"
     regimes = [Regime.RANGING]
 
     def default_params(self) -> dict:

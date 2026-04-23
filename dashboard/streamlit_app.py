@@ -35,6 +35,7 @@ from strategy.plugin_sdk import (
     list_generated_draft_files,
     read_strategy_source_file,
     strategy_template_source,
+    strategy_sdk_support,
     suggest_next_strategy_name,
     validate_strategy_source,
 )
@@ -1461,9 +1462,16 @@ with strategy_tab:
         )
 
     with st.expander("Create / Import Strategy Draft", expanded=bool(st.session_state.get("last_strategy_draft_result"))):
+        sdk_support = strategy_sdk_support()
         st.caption(
             "Create a local draft without changing application code. Drafts are saved as generated strategy files, "
             "can be backtested immediately, and stay blocked from paper/live until reviewed as pinned plugins."
+        )
+        st.info(
+            "Deployment strategy SDK lock: "
+            f"current `{sdk_support['current_sdk_version']}` | supported "
+            f"`{', '.join(sdk_support['supported_sdk_versions'])}` | signal contract "
+            f"`{sdk_support['signal_contract']}`"
         )
         draft_files = list_generated_draft_files()
         draft_cols = st.columns([2, 1])

@@ -13,6 +13,9 @@ from typing import Any
 from strategy.base import StrategyBase
 
 
+STRATEGY_SDK_VERSION = "1"
+SUPPORTED_STRATEGY_SDK_VERSIONS = (STRATEGY_SDK_VERSION,)
+
 KNOWN_STRATEGY_COLUMNS = {
     "open_time",
     "timestamp",
@@ -116,6 +119,7 @@ class {class_name}(StrategyBase):
     display_name = "{safe_name.replace("_", " ").title()}"
     description = "Describe the market hypothesis, entry logic, and risk assumptions."
     version = "1.0.0"
+    sdk_version = "{STRATEGY_SDK_VERSION}"
     regimes = [Regime.RANGING]
 
     def default_params(self) -> dict:
@@ -206,6 +210,17 @@ def suggest_next_strategy_name(strategy_name: str, existing_catalog: list[dict[s
         if candidate_match:
             max_num = max(max_num, int(candidate_match.group("num")))
     return f"{prefix}_v{max_num + 1}"
+
+
+def strategy_sdk_support() -> dict[str, Any]:
+    """Return the current app-side strategy SDK compatibility contract."""
+    return {
+        "current_sdk_version": STRATEGY_SDK_VERSION,
+        "supported_sdk_versions": list(SUPPORTED_STRATEGY_SDK_VERSIONS),
+        "required_metadata": sorted(REQUIRED_METADATA),
+        "required_methods": sorted(REQUIRED_METHODS),
+        "signal_contract": "should_long+should_short or decide",
+    }
 
 
 def validate_strategy_file(
@@ -404,6 +419,7 @@ def _instantiate_strategy_classes(
 def _validate_runtime_metadata(meta: dict[str, Any], class_name: str, issues: list[StrategyValidationIssue]) -> None:
     name = str(meta.get("name") or "")
     version = str(meta.get("version") or "")
+    sdk_version = str(meta.get("sdk_version") or STRATEGY_SDK_VERSION)
     if not name or name == "unnamed":
         issues.append(StrategyValidationIssue("error", "invalid_name", f"{class_name} must set a unique name."))
     elif not STRATEGY_NAME_RE.match(name):
@@ -416,6 +432,15 @@ def _validate_runtime_metadata(meta: dict[str, Any], class_name: str, issues: li
         )
     if not version:
         issues.append(StrategyValidationIssue("error", "invalid_version", f"{class_name} must set a version."))
+    if sdk_version not in SUPPORTED_STRATEGY_SDK_VERSIONS:
+        issues.append(
+            StrategyValidationIssue(
+                "error",
+                "unsupported_sdk_version",
+                f"{class_name} sdk_version `{sdk_version}` is not supported by this app. "
+                f"Supported: {', '.join(SUPPORTED_STRATEGY_SDK_VERSIONS)}.",
+            )
+        )
     if not meta.get("description"):
         issues.append(StrategyValidationIssue("error", "missing_description", f"{class_name} must describe its hypothesis."))
 

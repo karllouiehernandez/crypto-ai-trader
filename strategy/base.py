@@ -38,6 +38,7 @@ class StrategyBase:
     display_name: str = "Unnamed Strategy"
     description: str = "No strategy description provided."
     version: str = "0.1.0"
+    sdk_version: str = "1"
     regimes: list = []  # empty = active in all regimes
 
     def __init__(self, params: dict | None = None):
@@ -110,6 +111,7 @@ class StrategyBase:
             "display_name": self.display_name,
             "description": self.description,
             "version": self.version,
+            "sdk_version": str(getattr(self, "sdk_version", "1") or "1"),
             "regimes": [r.value for r in self.regimes],
             "class": self.__class__.__name__,
             "default_params": self.default_params(),

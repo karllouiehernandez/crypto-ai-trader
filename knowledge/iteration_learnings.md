@@ -162,3 +162,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Computed 30-day per-symbol counts for each entry component (`RSI`, `Bollinger`, `MACD cross`, trend filter, volume filter) plus full 5-of-5 alignment and 4-of-5 near misses. The result was consistent across all ready symbols: many 4-of-5 bars existed, but only when MACD cross was the missing filter.
 **What to try next:** Open the next corrective sprint around market fit. Compare signal frequency and backtest behavior after changing the MACD-cross requirement, relaxing confirmation timing, or selecting a watchlist with stronger range-reversion behavior. Keep the current paper worker running, but do not expect paper evidence to advance until first-entry opportunity rate improves.
 **Status:** OPEN
+
+---
+
+## 2026-04-23 Deployment Lock Phase 1 — A deployed strategy workbench needs an explicit compatibility contract
+**What happened:** Sprint 46 started with a deployment-focused base-app lock. The app now declares an explicit strategy SDK version, uses that contract during draft validation, and shows the supported SDK version directly in the dashboard strategy-authoring flow.
+**Why it happened:** The product direction is to deploy the base application once and then spend time creating or refining strategies. That only works if the deployed app says clearly which strategy contract it supports; otherwise every new strategy experiment risks turning into another core-app compatibility patch.
+**Impact:** Post-deploy strategy work is now more bounded. New drafts can target the current supported SDK explicitly, unsupported SDK versions are rejected before discovery, and the workbench shows the author exactly what the deployed base supports.
+**What we changed:** Added `sdk_version` to `StrategyBase.meta()`, defined `STRATEGY_SDK_VERSION = "1"` and `SUPPORTED_STRATEGY_SDK_VERSIONS` in `strategy/plugin_sdk.py`, added `strategy_sdk_support()`, rejected unsupported SDK versions during validation, updated both generated and manual templates to include `sdk_version = "1"`, and surfaced the deployment SDK lock in the dashboard `Create / Import Strategy Draft` expander.
+**What to try next:** Extend the same compatibility lock into reviewed-plugin acceptance, strategy catalog visibility, and docs so the deployment contract is visible not only while drafting but across the full strategy lifecycle.
+**Status:** OPEN
