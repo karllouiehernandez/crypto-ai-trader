@@ -40,6 +40,12 @@ class RSIMeanReversionStrategy(StrategyBase):
     version = "1.0.0"
     regimes = [Regime.RANGING]
 
+    def default_params(self) -> dict:
+        return {}
+
+    def param_schema(self) -> list[dict]:
+        return []
+
     def should_long(self, df: pd.DataFrame) -> bool:
         last = df.iloc[-1]
         prev = df.iloc[-2]

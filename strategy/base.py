@@ -1,8 +1,9 @@
-"""strategy/base.py — Abstract base class for all plugin strategies.
+"""strategy/base.py — Base class for all plugin strategies.
 
 Drop a .py file in strategies/ that subclasses StrategyBase and implements
-should_long() + should_short(). The strategies/loader.py hot-loader picks it up
-automatically via watchdog and registers it in the in-memory strategy registry.
+should_long() + should_short(), or overrides decide(). The strategies/loader.py
+hot-loader picks it up automatically via watchdog and registers it in the
+in-memory strategy registry after validating the plugin contract.
 
 Design rules:
 - evaluate() is NOT overridable — enforces regime gate + length check always apply
@@ -10,25 +11,23 @@ Design rules:
 - regimes = [] means active in all regimes (no gate applied)
 """
 
-from abc import ABC, abstractmethod
-
 import pandas as pd
 
 from strategy.regime import Regime
 from strategy.signals import Signal
 
 
-class StrategyBase(ABC):
-    """Abstract base for all hot-loadable strategy plugins.
+class StrategyBase:
+    """Base for all hot-loadable strategy plugins.
 
     Subclasses must set:
         name    (str)         — unique key used in registry + CLI --strategy flag
         version (str)         — semver string for logging + KB tracking
         regimes (list[Regime])— which regimes activate this strategy; [] = all
 
-    Subclasses must implement:
-        should_long(df)  -> bool
-        should_short(df) -> bool
+    Subclasses must implement either:
+        should_long(df) + should_short(df) -> bool
+        decide(df, regime=None)            -> Signal
 
     Subclasses may optionally implement:
         should_exit_long(df)  -> bool  (default False)
@@ -45,15 +44,13 @@ class StrategyBase(ABC):
         self.params: dict = {}
         self.apply_params(params)
 
-    @abstractmethod
     def should_long(self, df: pd.DataFrame) -> bool:
         """Return True to emit a BUY signal on the current candle."""
-        ...
+        return False
 
-    @abstractmethod
     def should_short(self, df: pd.DataFrame) -> bool:
         """Return True to emit a SELL signal on the current candle."""
-        ...
+        return False
 
     def should_exit_long(self, df: pd.DataFrame) -> bool:
         """Override to define a custom long exit condition. Default: False (hold)."""

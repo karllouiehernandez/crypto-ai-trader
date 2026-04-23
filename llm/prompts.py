@@ -27,25 +27,26 @@ Always use df.iloc[-1] for the current candle and df.iloc[-2] for the previous.
 
 # ── Strategy ABC definition (verbatim, for the generator) ─────────────────
 _STRATEGY_ABC = """
-from abc import ABC, abstractmethod
 import pandas as pd
 from strategy.base import StrategyBase
 from strategy.regime import Regime
 from strategy.signals import Signal
 
-class StrategyBase(ABC):
+class StrategyBase:
     name: str          # unique registry key, e.g. "rsi_breakout_v1"
+    description: str   # hypothesis and intended market behavior
     version: str       # semver, e.g. "1.0.0"
     regimes: list      # [Regime.RANGING] or [] for all regimes
 
-    @abstractmethod
-    def should_long(self, df: pd.DataFrame) -> bool: ...
+    def default_params(self) -> dict: ...
+    def param_schema(self) -> list[dict]: ...
 
-    @abstractmethod
+    def should_long(self, df: pd.DataFrame) -> bool: ...
     def should_short(self, df: pd.DataFrame) -> bool: ...
+    def decide(self, df: pd.DataFrame, regime: Regime | None = None) -> Signal: ...
 
     # evaluate() is NOT overridable — it applies regime gate + length check
-    # automatically before calling should_long/should_short.
+    # automatically before calling decide().
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,11 +65,12 @@ that integrates with the crypto_ai_trader system.
 ## Rules (non-negotiable)
 1. Import ONLY from: pandas, numpy, strategy.base, strategy.regime, config
 2. No DB access, no I/O, no external calls — pure DataFrame logic only
-3. should_long() and should_short() must return a plain bool
-4. Use only the indicator columns listed above — do not reference others
-5. Never hardcode price levels — use relative/percentage comparisons
-6. Set regimes to a non-empty list to gate activation by market regime
-7. Strategy name must be snake_case and end with _v1 (or increment version)
+3. Define description, default_params(), and param_schema()
+4. Implement should_long()+should_short() returning plain bools, or override decide()
+5. Use only the indicator columns listed above — do not reference others
+6. Never hardcode price levels — use relative/percentage comparisons
+7. Set regimes to a non-empty list to gate activation by market regime
+8. Strategy name must be snake_case and end with _v1 (or increment version)
 
 ## Output format
 Return ONLY the Python source code — no explanations, no markdown fences (no ```python).

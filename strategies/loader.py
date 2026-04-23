@@ -29,6 +29,7 @@ from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileSystemEvent
 from watchdog.observers import Observer
 
 from strategy.base import StrategyBase
+from strategy.plugin_sdk import validate_strategy_file
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,32 @@ def _file_meta(path: Path, source: str = "plugin") -> dict:
     }
 
 
+def _registry_catalog_snapshot() -> list[dict]:
+    """Return minimal registry metadata for duplicate validation."""
+    with _lock:
+        return [
+            {
+                "name": strategy.name,
+                "version": strategy.version,
+                "path": getattr(strategy, "_source_path", ""),
+            }
+            for strategy in _registry.values()
+        ]
+
+
+def _unregister_path(path: Path) -> None:
+    """Remove registry entries loaded from a file that is now invalid."""
+    resolved = str(path)
+    with _lock:
+        stale = [
+            name
+            for name, strategy in _registry.items()
+            if getattr(strategy, "_source_path", "") == resolved
+        ]
+        for name in stale:
+            _registry.pop(name, None)
+
+
 # ── File system event handler ──────────────────────────────────────────────
 
 class _StrategyFileHandler(FileSystemEventHandler):
@@ -99,6 +126,26 @@ def _load_file(path: Path) -> None:
         return
 
     try:
+        validation = validate_strategy_file(path, existing_catalog=_registry_catalog_snapshot())
+        if not validation.valid:
+            _unregister_path(path)
+            issues = validation.as_dict()["issues"]
+            with _lock:
+                _errors[path.name] = {
+                    **_file_meta(path),
+                    "error": "; ".join(issue["message"] for issue in issues if issue["severity"] == "error")
+                    or "Strategy validation failed.",
+                    "error_type": "StrategyValidationError",
+                    "load_status": "error",
+                    "validation_status": "invalid",
+                    "issues": issues,
+                }
+            log.error(
+                "strategy validation failed",
+                extra={"file": path.name, "issues": issues},
+            )
+            return
+
         # Read source text directly and compile/exec it to bypass __pycache__.
         # This guarantees hot-reload picks up the latest file content on Windows
         # where pyc caches can outlive the source modification.
@@ -136,11 +183,12 @@ def _load_file(path: Path) -> None:
         else:
             with _lock:
                 _errors[path.name] = {
-                    **_file_meta(path),
-                    "error": "No StrategyBase subclass found in plugin file.",
-                    "error_type": "StrategyValidationError",
-                    "load_status": "error",
-                }
+                **_file_meta(path),
+                "error": "No StrategyBase subclass found in plugin file.",
+                "error_type": "StrategyValidationError",
+                "load_status": "error",
+                "validation_status": "invalid",
+            }
             log.error(
                 "strategy load failed",
                 extra={"file": path.name, "error": "No StrategyBase subclass found in plugin file."},
@@ -152,6 +200,7 @@ def _load_file(path: Path) -> None:
                 "error": str(exc),
                 "error_type": type(exc).__name__,
                 "load_status": "error",
+                "validation_status": "invalid",
             }
         log.error(
             "strategy load failed",

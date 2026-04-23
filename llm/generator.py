@@ -124,8 +124,9 @@ def _generate_strategy_code(
 
         Remember:
         - Subclass StrategyBase from strategy.base
-        - Set name (snake_case, ends with _v1+), version, regimes
-        - Implement should_long(df) and should_short(df) returning bool
+        - Set name (snake_case, ends with _v1+), description, version, regimes
+        - Implement default_params() and param_schema() for dashboard controls
+        - Implement should_long(df) and should_short(df) returning bool, or override decide(df, regime=None)
         - Use only the indicator columns documented in the system prompt
         - Output Python source code ONLY — no markdown, no explanations
     """).strip()

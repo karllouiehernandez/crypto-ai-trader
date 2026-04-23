@@ -16,8 +16,15 @@ from strategy.regime import Regime
 
 class GeneratedRSI(StrategyBase):
     name = "generated_rsi_v1"
+    description = "Generated RSI strategy."
     version = "1.0.0"
     regimes = [Regime.RANGING]
+
+    def default_params(self) -> dict:
+        return {}
+
+    def param_schema(self) -> list[dict]:
+        return []
 
     def should_long(self, df: pd.DataFrame) -> bool:
         return df.iloc[-1]["rsi_14"] < 30

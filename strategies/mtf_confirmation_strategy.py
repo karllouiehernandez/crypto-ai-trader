@@ -56,6 +56,12 @@ class MTFConfirmationStrategy(StrategyBase):
 
     _MIN_ROWS = 300  # ~5 h of 1m bars; enough for 15m RSI to warm up
 
+    def default_params(self) -> dict:
+        return {}
+
+    def param_schema(self) -> list[dict]:
+        return []
+
     # ── resampling helper ──────────────────────────────────────────────────────
 
     def _resample_indicators(self, df: pd.DataFrame, rule: str) -> pd.DataFrame:

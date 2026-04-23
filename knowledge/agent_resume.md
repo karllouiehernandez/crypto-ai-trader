@@ -12,15 +12,15 @@ Read order for a new agent:
 ## Current Sprint
 
 - Sprint 41 is closed.
-- Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure`
+- Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure` remains operationally active for real paper-evidence collection.
 - GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
-- Queued next sprint: `Sprint 43 — Strategy Plugin SDK & Draft Import Workflow`
+- Latest completed sprint: `Sprint 43 — Strategy Plugin SDK & Draft Import Workflow`
   - GitHub issue: `#45`
-  - Projects board `#1` status: `Todo`
-  - Goal: let traders create/import/validate/backtest/review strategy drafts after deployment without changing application code.
-  - Core requirements: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, reviewed artifact pinning, and later strategy-pack support.
+  - Projects board `#1` status: `Done`
+  - Delivered: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
+  - Later scope: strategy-pack `.zip` import/export and editable invalid-draft recovery.
 - Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `660 passed, 4 warnings`
+  - `pytest tests/ -q` -> `673 passed, 4 warnings` on `2026-04-23`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22` with `run_live.py` active
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
   - `python run_ui_agent.py --ui-only --url http://localhost:8785` -> `64/64 PASS`
@@ -49,6 +49,11 @@ Read order for a new agent:
   - `knowledge/kb_update.py --type iteration` can append a structured iteration learning after each meaningful development or validation slice
   - `database/models.py` now enables WAL mode and a 30-second SQLite busy timeout so `run_live.py` is less likely to die with `database is locked` while Streamlit is active
   - Sprint 42 now also carries a phased pre-deploy hardening track in issue comment `#4295460139`
+  - Sprint 43 now lets traders create/import strategy drafts inside the dashboard:
+    - `strategy/plugin_sdk.py` validates syntax, required metadata, behavior methods, params schema/default compatibility, duplicate `name + version`, and known indicator-column references
+    - `strategies/loader.py` validates before discovery and unregisters stale strategy entries when a plugin becomes invalid
+    - `dashboard/streamlit_app.py` exposes `Create / Import Strategy Draft` with template, paste, upload, validate, save, and `Refresh Strategy Registry`
+    - generated/imported drafts remain backtest-only until reviewed into pinned plugin artifacts
 
 ## Why This Exists
 
@@ -180,20 +185,20 @@ Read order for a new agent:
 
 ## Immediate Goal
 
-**Sprint 42 continuation** — persistence/recovery and evidence-progress visibility are implemented. The next work is operational follow-through, not another redesign.
+**Sprint 42 continuation** — persistence/recovery, evidence-progress visibility, and Sprint 43 strategy-authoring flexibility are implemented. The next work is operational follow-through, not another redesign.
 
 Next steps:
 1. Keep the active paper-mode `run_live.py` process on paper target `rsi_mean_reversion_v1` artifact `#2` until the first real tagged BUY and SELL trades exist
 2. Once real SELL trades exist, use the deterministic evidence summary to decide whether `paper_passed` is justified or which metric gate is failing
-3. Investigate the current trader-journey partials: `generated_range_probe_v1`, `ema200_filtered_momentum`, `mtf_confirmation`, and `rsi_mean_reversion_v1` all show persistent `run-failed` backtest states rather than saved runs in the current environment
 3. Trader-journey false partials are now resolved:
    - the harness scopes terminal-state detection to the actual `Last Backtest Attempt` block
    - dashboard backtests refresh plugin strategies from disk before execution
    - all 8 visible strategies now save runs and open complete Inspect surfaces in the headed journey
-4. Keep Sprint 42 issue `#44` updated as work lands
-5. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
-6. Avoid parallel pytest invocations; the current session-level temp DB bootstrap is not safe for concurrent pytest commands
-7. Keep `HANDOFF.md` current; this file should stay compact and secondary
+4. Manually exercise the new Sprint 43 dashboard draft workflow in a headed Streamlit session before claiming it as operator-polished
+5. Keep Sprint 42 issue `#44` updated as operational evidence lands
+6. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
+7. Avoid parallel pytest invocations; the current session-level temp DB bootstrap is not safe for concurrent pytest commands
+8. Keep `HANDOFF.md` current; this file should stay compact and secondary
 
 ## Likely Files
 
@@ -206,6 +211,9 @@ Next steps:
 - `dashboard/workbench.py`
 - `run_live.py`
 - `strategy/artifacts.py`
+- `strategy/plugin_sdk.py`
+- `strategies/loader.py`
+- `strategies/_strategy_template.py`
 - `tests/test_workbench_helpers.py`
 
 ## Constraints

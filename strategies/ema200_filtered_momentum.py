@@ -49,7 +49,13 @@ class EMA200FilteredMomentumStrategy(StrategyBase):
     version = "1.0.0"
     regimes = [Regime.TRENDING, Regime.SQUEEZE]
 
-    # Abstract method stubs — regime-aware logic is handled in decide()
+    def default_params(self) -> dict:
+        return {}
+
+    def param_schema(self) -> list[dict]:
+        return []
+
+    # Method stubs — regime-aware logic is handled in decide()
     def should_long(self, df: pd.DataFrame) -> bool:
         return False
 

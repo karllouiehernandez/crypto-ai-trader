@@ -1352,47 +1352,43 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 
 ## Sprint 43 — Strategy Plugin SDK & Draft Import Workflow
 **Date created:** 2026-04-23
-**Date closed:** Queued
+**Date closed:** 2026-04-23
 **Goal:** Make the deployed application flexible enough that new strategies can be created, imported, validated, backtested, reviewed, and promoted as versioned artifacts without changing application code.
-**Status:** QUEUED
+**Status:** CLOSED ✓
 
 ### GitHub Tracking
 - Created GitHub issue `#45` — `Sprint 43 — Strategy Plugin SDK & Draft Import Workflow`
 - Added issue `#45` to GitHub Projects board `#1`
-- Project status set to `Todo`
+- Project status set to `Done`
 
-### Sprint Direction
-- Add a formal Strategy Plugin SDK / strategy template contract.
-- Require every plugin strategy to define:
-  - `name`
-  - `version`
-  - `description`
-  - `regimes`
-  - `param_schema`
-  - `default_params`
-  - either `should_long` / `should_short` or `decide`
-- Add dashboard create/import draft workflow:
-  - create from template
-  - paste code
-  - upload `.py`
-  - save into `strategies/` as a draft artifact
-- Validate before discovery:
-  - syntax
-  - required metadata
-  - behavior methods
-  - params schema/default compatibility
-  - duplicate `name + version`
-  - indicator-column references where practical
-- Add explicit hot reload for the strategy registry without restarting Streamlit.
-- Preserve backtest-only draft rules:
-  - generated/imported drafts can backtest
-  - drafts cannot be promoted to paper/live
-  - review/save creates a separate reviewed plugin artifact
-- Preserve reviewed artifact pinning:
-  - paper/live resolves by artifact ID
-  - paper/live verifies path/version/code hash before runtime
-  - hash mismatch fails closed
-- Design for later `.zip` strategy packs containing strategy code, manifest, params/presets, notes, and test results.
+### Changes Made
+- [x] Added `strategy/plugin_sdk.py`
+  - validates syntax, required metadata, behavior method contract, default/schema compatibility, duplicate `name + version`, and known indicator-column references
+  - generates valid starter templates
+  - writes valid imported/pasted code as `strategies/generated_YYYYMMDD_HHMMSS.py` drafts
+- [x] Updated `strategy/base.py`
+  - supports either `should_long`/`should_short` or a `decide()` override
+- [x] Updated `strategies/loader.py`
+  - validates before discovery
+  - records structured validation errors
+  - unregisters stale strategy entries when a previously valid file becomes invalid
+- [x] Updated `dashboard/streamlit_app.py`
+  - added `Create / Import Strategy Draft`
+  - supports template, paste code, upload `.py`, validate, save draft, and refresh registry actions
+- [x] Updated strategy templates, existing plugin files, LLM generation prompt, and strategy README to match the new contract.
+- [x] Added/updated tests:
+  - `tests/test_strategy_plugin_sdk.py`
+  - `tests/test_strategy_base.py`
+  - `tests/test_strategy_loader.py`
+  - `tests/test_strategy_artifacts.py`
+  - `tests/test_llm_generator.py`
 
-### Acceptance Target
-- A trader can create or import a strategy after deployment, get actionable validation feedback, backtest valid drafts, review/save accepted drafts into pinned reviewed artifacts, and keep paper/live protected by the existing artifact lifecycle.
+### Verification
+- `pytest tests/test_strategy_base.py tests/test_strategy_loader.py tests/test_strategy_plugin_sdk.py tests/test_strategy_artifacts.py tests/test_llm_generator.py -q` → **73 passed**
+- `python -m py_compile strategy/plugin_sdk.py strategy/base.py strategies/loader.py dashboard/streamlit_app.py llm/generator.py llm/prompts.py strategies/_strategy_template.py strategies/ema200_filtered_momentum.py strategies/example_rsi_mean_reversion.py strategies/generated_20260422_120800.py strategies/mtf_confirmation_strategy.py` → clean
+- `pytest tests/ -q` → **673 passed, 4 warnings**
+
+### Outcome
+- A trader can now create/import a strategy after deployment, get actionable validation feedback, save valid drafts into `strategies/`, backtest drafts, and keep paper/live protected by the reviewed artifact lifecycle.
+- Generated/imported drafts remain backtest-only until reviewed into pinned plugin artifacts.
+- Future strategy-pack `.zip` import/export remains deliberately out of scope.

@@ -39,8 +39,15 @@ from strategy.regime import Regime
 
 class DraftMomentum(StrategyBase):
     name = "generated_momentum_v1"
+    description = "Generated momentum draft."
     version = "1.0.0"
     regimes = [Regime.TRENDING]
+
+    def default_params(self) -> dict:
+        return {}
+
+    def param_schema(self) -> list[dict]:
+        return []
 
     def should_long(self, df: pd.DataFrame) -> bool:
         return True
@@ -71,7 +78,7 @@ def clean_strategy_registry():
 
 def _write_strategy(tmp_path: Path, stem: str, source: str = GENERATED_DRAFT) -> Path:
     path = tmp_path / f"{stem}.py"
-    path.write_text(source, encoding="utf-8")
+    path.write_text(source.replace("generated_momentum_v1", stem), encoding="utf-8")
     return path
 
 
@@ -237,8 +244,7 @@ def test_list_all_strategy_artifacts_returns_registered(tmp_path, monkeypatch):
 
     artifacts = list_all_strategy_artifacts()
     names = {a["name"] for a in artifacts}
-    assert "generated_momentum_v1" in names  # both files share the same class name in GENERATED_DRAFT
-    assert len(artifacts) >= 1
+    assert {"list_test_a", "list_test_b"}.issubset(names)
 
 
 def test_list_all_strategy_artifacts_empty_returns_list():

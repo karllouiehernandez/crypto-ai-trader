@@ -112,3 +112,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Scoped trader-journey terminal-state detection to the actual `Last Backtest Attempt` block, refreshed the strategy catalog from disk before persisted backtests, updated dashboard strategy catalog/error loaders to use the refreshed registry, kept the generated draft on the corrected `bb_lo`/`bb_hi` and `macd`/`macd_s` logic, and restarted only the Streamlit dashboard so the updated modules were loaded cleanly.
 **What to try next:** Keep `run_live.py` running for real artifact-`#2` trades, and once real tagged BUY/SELL rows exist, use the deterministic evidence gate to decide whether the next corrective sprint is about entry scarcity or paper-performance quality.
 **Status:** RESOLVED
+
+---
+
+## 2026-04-23 Strategy Plugin SDK — Flexibility needs a contract before hot reload
+**What happened:** Sprint 43 added a strategy plugin SDK so traders can create, paste, upload, validate, save, and hot-reload strategy drafts from the dashboard without changing application code.
+**Why it happened:** The app needed post-deploy strategy flexibility, but unrestricted Python files entering the registry would make backtests and paper/live promotion unsafe. The missing discipline was a strict draft contract that catches bad metadata, duplicate `name + version`, unknown indicator columns, and missing behavior methods before discovery.
+**Impact:** Strategy iteration can now happen inside the deployed workbench while keeping lifecycle safety intact: drafts are backtest-only, reviewed plugins remain hash-pinned artifacts, and paper/live still fail closed on invalid or mismatched reviewed code.
+**What we changed:** Added `strategy/plugin_sdk.py`, relaxed `StrategyBase` to support either `should_long`/`should_short` or `decide`, enforced validation in `strategies/loader.py`, added a dashboard `Create / Import Strategy Draft` workflow with `Refresh Strategy Registry`, updated plugin templates/prompts, and added regression tests for the SDK and loader validation.
+**What to try next:** Extend this into strategy pack import/export once the single-file workflow has been exercised by real strategy authors, and consider adding a dashboard editor for revising existing invalid drafts instead of only validating pasted/uploaded code.
+**Status:** RESOLVED

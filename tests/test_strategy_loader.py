@@ -39,8 +39,11 @@ VALID_STRATEGY = textwrap.dedent("""
 
     class TestMomentum(StrategyBase):
         name = "test_momentum_v1"
+        description = "Test momentum strategy."
         version = "1.0.0"
         regimes = [Regime.TRENDING]
+        def default_params(self): return {}
+        def param_schema(self): return []
 
         def should_long(self, df: pd.DataFrame) -> bool:
             return True
@@ -54,12 +57,16 @@ MULTI_STRATEGY = textwrap.dedent("""
     from strategy.base import StrategyBase
 
     class StratA(StrategyBase):
-        name = "multi_a"; version = "0.1"; regimes = []
+        name = "multi_a"; description = "A"; version = "0.1"; regimes = []
+        def default_params(self): return {}
+        def param_schema(self): return []
         def should_long(self, df): return True
         def should_short(self, df): return False
 
     class StratB(StrategyBase):
-        name = "multi_b"; version = "0.1"; regimes = []
+        name = "multi_b"; description = "B"; version = "0.1"; regimes = []
+        def default_params(self): return {}
+        def param_schema(self): return []
         def should_long(self, df): return False
         def should_short(self, df): return True
 """)
@@ -83,7 +90,9 @@ IMPORT_ERROR_FILE = textwrap.dedent("""
     import pandas as pd
 
     class BrokenImport(StrategyBase):
-        name = "broken"; version = "0.1"; regimes = []
+        name = "broken"; description = "Broken"; version = "0.1"; regimes = []
+        def default_params(self): return {}
+        def param_schema(self): return []
         def should_long(self, df): return True
         def should_short(self, df): return False
 """)
@@ -205,7 +214,9 @@ def test_reload_replaces_existing_strategy(tmp_path):
         import pandas as pd
         from strategy.base import StrategyBase
         class Reloadable(StrategyBase):
-            name = "reloadable"; version = "1.0.0"; regimes = []
+            name = "reloadable"; description = "Reloadable"; version = "1.0.0"; regimes = []
+            def default_params(self): return {}
+            def param_schema(self): return []
             def should_long(self, df): return True
             def should_short(self, df): return False
     """)
@@ -213,7 +224,9 @@ def test_reload_replaces_existing_strategy(tmp_path):
         import pandas as pd
         from strategy.base import StrategyBase
         class Reloadable(StrategyBase):
-            name = "reloadable"; version = "2.0.0"; regimes = []
+            name = "reloadable"; description = "Reloadable"; version = "2.0.0"; regimes = []
+            def default_params(self): return {}
+            def param_schema(self): return []
             def should_long(self, df): return False
             def should_short(self, df): return True
     """)
@@ -234,6 +247,36 @@ def test_list_strategy_errors_reports_missing_strategy_subclass(tmp_path):
     assert errors[0]["is_generated"] is True
     assert errors[0]["file_name"] == "generated_20260417_010203.py"
     assert errors[0]["error_type"] == "StrategyValidationError"
+
+
+def test_validation_error_blocks_discovery(tmp_path):
+    invalid = textwrap.dedent("""
+        import pandas as pd
+        from strategy.base import StrategyBase
+
+        class InvalidContract(StrategyBase):
+            name = "invalid_contract_v1"
+            version = "1.0.0"
+            regimes = []
+            def should_long(self, df): return True
+            def should_short(self, df): return False
+    """)
+    path = _write_strategy(tmp_path, "invalid_contract_v1", invalid)
+    _load_file(path)
+    assert get_strategy("invalid_contract_v1") is None
+    errors = list_strategy_errors()
+    assert errors[0]["validation_status"] == "invalid"
+    assert "description" in errors[0]["error"]
+
+
+def test_reload_invalid_file_unregisters_previous_strategy(tmp_path):
+    path = _write_strategy(tmp_path, "test_momentum_v1", VALID_STRATEGY)
+    _load_file(path)
+    assert get_strategy("test_momentum_v1") is not None
+
+    path.write_text("not python !!!", encoding="utf-8")
+    _load_file(path)
+    assert get_strategy("test_momentum_v1") is None
 
 
 def test_load_strategy_path_loads_single_plugin_file(tmp_path):

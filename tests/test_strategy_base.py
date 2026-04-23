@@ -1,7 +1,6 @@
 """tests/test_strategy_base.py — Unit tests for strategy/base.py StrategyBase ABC."""
 
 import pandas as pd
-import pytest
 
 from strategy.base import StrategyBase
 from strategy.regime import Regime
@@ -69,30 +68,38 @@ class _NeverSignals(StrategyBase):
         return False
 
 
-# ── ABC enforcement ────────────────────────────────────────────────────────
+# ── Flexible signal contract ───────────────────────────────────────────────
 
-def test_cannot_instantiate_without_should_long():
+def test_default_should_long_returns_false():
     class _Missing(StrategyBase):
         name = "missing"
         version = "0.1.0"
         regimes = []
         def should_short(self, df): return False
-        # missing should_long
 
-    with pytest.raises(TypeError):
-        _Missing()
+    assert _Missing().should_long(_make_df()) is False
 
 
-def test_cannot_instantiate_without_should_short():
+def test_default_should_short_returns_false():
     class _Missing(StrategyBase):
         name = "missing2"
         version = "0.1.0"
         regimes = []
         def should_long(self, df): return True
-        # missing should_short
 
-    with pytest.raises(TypeError):
-        _Missing()
+    assert _Missing().should_short(_make_df()) is False
+
+
+def test_decide_only_strategy_can_signal():
+    class _DecideOnly(StrategyBase):
+        name = "decide_only"
+        version = "0.1.0"
+        regimes = []
+
+        def decide(self, df, regime=None):
+            return Signal.BUY
+
+    assert _DecideOnly().evaluate(_make_df()) == Signal.BUY
 
 
 def test_can_instantiate_with_both_methods():

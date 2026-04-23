@@ -30,6 +30,7 @@ from strategy.runtime import (
     list_available_strategy_errors,
     set_active_strategy_config,
 )
+from strategy.plugin_sdk import create_strategy_draft, strategy_template_source, validate_strategy_source
 from strategy.artifacts import (
     approve_artifact_for_live,
     compute_strategy_code_hash,
@@ -1412,6 +1413,91 @@ with strategy_tab:
             "Reference files: `strategies/README.md`, `strategies/_strategy_template.py`, "
             "`strategies/example_rsi_mean_reversion.py`"
         )
+
+    with st.expander("Create / Import Strategy Draft", expanded=bool(st.session_state.get("last_strategy_draft_result"))):
+        st.caption(
+            "Create a local draft without changing application code. Drafts are saved as generated strategy files, "
+            "can be backtested immediately, and stay blocked from paper/live until reviewed as pinned plugins."
+        )
+        draft_cols = st.columns([2, 1])
+        draft_label = draft_cols[0].text_input(
+            "Draft strategy name",
+            value=st.session_state.get("draft_strategy_name", "custom_strategy_v1"),
+            key="draft_strategy_name",
+            help="Use lowercase letters, numbers, and underscores. Example: breakout_pullback_v1.",
+        )
+        draft_mode = draft_cols[1].selectbox(
+            "Draft source",
+            ["Template", "Paste Code", "Upload .py"],
+            key="draft_source_mode",
+        )
+        uploaded_strategy = None
+        if draft_mode == "Upload .py":
+            uploaded_strategy = st.file_uploader(
+                "Upload strategy Python file",
+                type=["py"],
+                key="strategy_draft_upload",
+            )
+
+        if uploaded_strategy is not None:
+            draft_source = uploaded_strategy.getvalue().decode("utf-8", errors="replace")
+        elif draft_mode == "Paste Code":
+            draft_source = st.text_area(
+                "Strategy source",
+                value=st.session_state.get("strategy_paste_source", strategy_template_source(draft_label)),
+                height=420,
+                key="strategy_paste_source",
+            )
+        else:
+            draft_source = st.text_area(
+                "Strategy source",
+                value=strategy_template_source(draft_label),
+                height=420,
+                key="strategy_template_source",
+            )
+
+        draft_action_cols = st.columns(3)
+        if draft_action_cols[0].button("Validate Draft", key="validate_strategy_draft_btn", width="stretch"):
+            st.session_state["last_strategy_draft_validation"] = validate_strategy_source(
+                draft_source,
+                file_name=f"{draft_label or 'draft'}.py",
+                existing_catalog=strategy_catalog,
+            ).as_dict()
+        if draft_action_cols[1].button("Save Draft to strategies/", key="save_strategy_draft_btn", width="stretch"):
+            draft_result = create_strategy_draft(
+                draft_source,
+                label=draft_label,
+                existing_catalog=strategy_catalog,
+            )
+            st.session_state["last_strategy_draft_result"] = draft_result
+            st.session_state["last_strategy_draft_validation"] = draft_result["validation"]
+            if draft_result["saved"]:
+                load_strategy_catalog.clear()
+                load_strategy_errors.clear()
+                st.cache_data.clear()
+                strategy_names_saved = draft_result["validation"].get("strategy_names") or []
+                if strategy_names_saved:
+                    st.session_state["strategy_focus_pending"] = strategy_names_saved[0]
+                st.success(f"Draft saved as `{draft_result['file_name']}`. It is backtest-only until reviewed.")
+                st.rerun()
+        if draft_action_cols[2].button("Refresh Strategy Registry", key="refresh_strategy_registry_btn", width="stretch"):
+            load_strategy_catalog.clear()
+            load_strategy_errors.clear()
+            st.cache_data.clear()
+            st.success("Strategy registry refresh queued.")
+            st.rerun()
+
+        draft_validation = st.session_state.get("last_strategy_draft_validation")
+        if draft_validation:
+            if draft_validation.get("valid"):
+                names = ", ".join(draft_validation.get("strategy_names") or [])
+                st.success(f"Draft contract is valid for: {names or 'strategy plugin'}.")
+            else:
+                st.error("Draft is not runnable yet. Fix the contract issues before saving.")
+            issues = draft_validation.get("issues") or []
+            if issues:
+                st.dataframe(pd.DataFrame(issues), width="stretch", hide_index=True)
+
     with st.expander("Generate Strategy Draft", expanded=bool(st.session_state.get("last_generation_result"))):
         generation_ready = get_generation_readiness()
         status_cols = st.columns(3)

@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-22 (Sprint 42 trader-journey false partials resolved; headed journey now clean) |
-| **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure |
-| **Queued sprint** | Sprint 43 — `#45` — Strategy Plugin SDK & Draft Import Workflow |
+| **Last updated** | 2026-04-23 (Sprint 43 Strategy Plugin SDK implemented and verified) |
+| **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure (operational paper-evidence follow-through remains) |
+| **Latest completed sprint** | Sprint 43 — `#45` — Strategy Plugin SDK & Draft Import Workflow |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **660 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; latest headed trader journey `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` → **0 FAIL, 0 PARTIAL, 2 SKIP** on 2026-04-22; latest smoke UI `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-22 |
+| **Tests** | `pytest tests/ -q` → **673 passed, 4 warnings** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; latest headed trader journey `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` → **0 FAIL, 0 PARTIAL, 2 SKIP** on 2026-04-22; latest smoke UI `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-22 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -27,37 +27,54 @@ Both Codex and Claude Code must read this file first and update it last, and the
 Sprint 41 is closed. Sprint 42 is now tracked as GitHub issue `#44` and has been added to Projects board `#1`.
 The Sprint 42 issue title/body have now been updated and the board card is set to `In Progress`.
 
-### Queued Next — Sprint 43
+### Latest Completed — Sprint 43
 
-Sprint 43 is now tracked as GitHub issue `#45` and has been added to Projects board `#1` with status `Todo`.
+Sprint 43 is tracked as GitHub issue `#45` and was implemented on 2026-04-23.
 
 Goal: make the deployed application flexible enough that new strategies can be created, imported, validated, backtested, reviewed, and promoted as versioned artifacts without changing application code.
 
-Required direction:
-- Create a formal Strategy Plugin SDK / strategy template contract.
-- Every plugin strategy must define `name`, `version`, `description`, `regimes`, `param_schema`, `default_params`, and either `should_long`/`should_short` or `decide`.
-- Add dashboard strategy create/import workflow:
+Implemented:
+- Added formal Strategy Plugin SDK helpers in [strategy/plugin_sdk.py](strategy/plugin_sdk.py):
+  - template generation
+  - syntax/contract validation
+  - duplicate `name + version` detection
+  - parameter schema/default compatibility checks
+  - indicator-column validation
+  - generated draft file creation
+- Relaxed [strategy/base.py](strategy/base.py) so strategies may implement either `should_long`/`should_short` or override `decide`.
+- Enforced validation before discovery in [strategies/loader.py](strategies/loader.py), including unregistering stale registry entries when a previously valid file becomes invalid.
+- Added dashboard `Create / Import Strategy Draft` workflow in [dashboard/streamlit_app.py](dashboard/streamlit_app.py):
   - create from template
   - paste code
   - upload `.py`
-  - save into `strategies/` as a draft artifact
-- Validate before discovery:
-  - syntax
-  - required metadata
-  - behavior methods
-  - params schema/default compatibility
-  - duplicate `name + version`
-  - indicator-column references where practical
-- Add explicit hot reload so the dashboard/backtester can refresh strategy registry from disk without restarting Streamlit.
-- Preserve backtest-only draft rules:
-  - generated/imported drafts can backtest
-  - drafts cannot be promoted to paper/live
-  - review/save creates a separate reviewed plugin artifact
-- Preserve reviewed artifact pinning:
-  - paper/live resolves by artifact ID
-  - paper/live verifies path/version/code hash before runtime
-  - hash mismatch fails closed
-- Strategy pack `.zip` support is later scope unless low-risk scaffolding fits Sprint 43.
+  - validate draft
+  - save valid draft under `strategies/generated_YYYYMMDD_HHMMSS.py`
+  - explicit `Refresh Strategy Registry`
+- Updated current plugin strategies, template docs, and LLM generation prompts to the new contract.
+- Preserved lifecycle safety:
+  - generated/imported drafts remain backtest-only
+  - reviewed plugin artifacts remain hash-pinned for paper/live
+  - strategy pack `.zip` support remains future scope.
+
+### Latest Slice (2026-04-23 — Sprint 43)
+
+- **What changed**
+  - Implemented the Strategy Plugin SDK and draft import workflow.
+  - Added [strategy/plugin_sdk.py](strategy/plugin_sdk.py) for strategy contract validation, template generation, and generated draft creation.
+  - Updated [strategy/base.py](strategy/base.py) so strategy authors may either implement `should_long`/`should_short` or override `decide`.
+  - Updated [strategies/loader.py](strategies/loader.py) to validate plugin files before discovery and unregister stale strategies when a file becomes invalid.
+  - Added a dashboard `Create / Import Strategy Draft` expander in [dashboard/streamlit_app.py](dashboard/streamlit_app.py) with template, paste, upload, validate, save, and registry refresh actions.
+  - Updated existing plugin strategy files, [strategies/_strategy_template.py](strategies/_strategy_template.py), [strategies/README.md](strategies/README.md), [llm/generator.py](llm/generator.py), and [llm/prompts.py](llm/prompts.py) to the new contract.
+  - Added validation coverage in [tests/test_strategy_plugin_sdk.py](tests/test_strategy_plugin_sdk.py) plus loader/base/artifact/generator fixture updates.
+  - Added a structured learning entry to [knowledge/iteration_learnings.md](knowledge/iteration_learnings.md).
+- **What was verified**
+  - `pytest tests/test_strategy_base.py tests/test_strategy_loader.py tests/test_strategy_plugin_sdk.py tests/test_strategy_artifacts.py tests/test_llm_generator.py -q` → **73 passed**
+  - `python -m py_compile strategy/plugin_sdk.py strategy/base.py strategies/loader.py dashboard/streamlit_app.py llm/generator.py llm/prompts.py strategies/_strategy_template.py strategies/ema200_filtered_momentum.py strategies/example_rsi_mean_reversion.py strategies/generated_20260422_120800.py strategies/mtf_confirmation_strategy.py` → clean
+  - `pytest tests/ -q` → **673 passed, 4 warnings**
+- **What remains next**
+  - Keep Sprint 42 operational follow-through active until artifact `#2` produces real tagged BUY/SELL evidence.
+  - Exercise the new dashboard draft workflow manually in a headed Streamlit session before claiming it as operator-polished.
+  - Future Sprint 44 candidate: strategy pack `.zip` import/export plus editable invalid-draft recovery.
 
 ### Latest Slice (2026-04-22)
 
