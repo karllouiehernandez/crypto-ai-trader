@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 44 Jetson Deployment Readiness implemented and verified) |
+| **Last updated** | 2026-04-23 (Sprint 45 Strategy Authoring Polish implemented and verified) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure (operational paper-evidence follow-through remains) |
-| **Latest completed sprint** | Sprint 44 — `#46` — Jetson Deployment Readiness |
+| **Latest completed sprint** | Sprint 45 — `#47` — Strategy Authoring Polish |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **683 passed, 4 warnings** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23; latest headed trader journey `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` → **0 FAIL, 0 PARTIAL, 2 SKIP** on 2026-04-22; latest smoke UI `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-22 |
+| **Tests** | `pytest tests/ -q` → **688 passed, 4 warnings** on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-23; focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -80,6 +80,32 @@ Operational repair:
 - Sprint 43 changed reviewed plugin files to add contract methods, which invalidated old artifact hashes.
 - Ran `python -m deployment.jetson_ops repin-artifact 2 --apply`.
 - The command created a pre-repin backup and moved active paper target from stale artifact `#2` to matching artifact `#8`, still `rsi_mean_reversion_v1`.
+
+### Latest Completed — Sprint 45
+
+Sprint 45 is tracked as GitHub issue `#47` and was implemented on 2026-04-23.
+
+Goal: polish strategy authoring so traders can revise existing generated drafts inside the dashboard, validate them, and save valid revisions without restarting Streamlit.
+
+Implemented:
+- Added draft editing helpers in [strategy/plugin_sdk.py](strategy/plugin_sdk.py):
+  - `list_generated_draft_files()`
+  - `read_strategy_source_file()`
+  - `suggest_next_strategy_name()`
+- Extended `Create / Import Strategy Draft` in [dashboard/streamlit_app.py](dashboard/streamlit_app.py):
+  - new `Edit Existing Draft` source mode
+  - existing `generated_*.py` selection
+  - validation feedback remains visible beside the editor
+  - duplicate/invalid drafts show a suggested next strategy name
+  - saving valid revisions creates a new generated draft and refreshes the registry
+- Added regression coverage in [tests/test_strategy_plugin_sdk.py](tests/test_strategy_plugin_sdk.py).
+
+Verification:
+- Focused headed check passed for `Create / Import Strategy Draft` → `Edit Existing Draft`.
+- `pytest tests/test_strategy_plugin_sdk.py tests/test_strategy_loader.py tests/test_strategy_base.py -q` → **53 passed**
+- `python -m py_compile strategy/plugin_sdk.py dashboard/streamlit_app.py` → clean
+- `pytest tests/ -q` → **688 passed, 4 warnings**
+- `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS**
 
 ### Latest Slice (2026-04-23 — Sprint 43)
 

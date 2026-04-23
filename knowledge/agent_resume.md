@@ -14,13 +14,14 @@ Read order for a new agent:
 - Sprint 41 is closed.
 - Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure` remains operationally active for real paper-evidence collection.
 - GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
-- Latest completed sprint: `Sprint 44 — Jetson Deployment Readiness`
-  - GitHub issue: `#46`
+- Latest completed sprint: `Sprint 45 — Strategy Authoring Polish`
+  - GitHub issue: `#47`
   - Projects board `#1` status: `Done`
-  - Delivered: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
+  - Delivered: dashboard editing for existing generated drafts, safe draft source loading, generated-draft listing, next-name suggestions for duplicate drafts, and SDK regression coverage.
+  - Sprint 44 remains complete: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
   - Sprint 43 remains complete: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
 - Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `683 passed, 4 warnings` on `2026-04-23`
+  - `pytest tests/ -q` -> `688 passed, 4 warnings` on `2026-04-23`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-23`
   - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-23`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
@@ -61,6 +62,11 @@ Read order for a new agent:
     - `python -m deployment.jetson_ops restore <manifest>` with dry-run default
     - `python -m deployment.jetson_ops repin-artifact <id> --apply` for explicit reviewed hash acknowledgment
     - active paper target was moved from stale artifact `#2` to current matching artifact `#8` for the same `rsi_mean_reversion_v1` reviewed plugin
+  - Sprint 45 added Strategy Authoring Polish:
+    - generated drafts can be selected and edited from the dashboard without restarting Streamlit
+    - editing an existing draft saves a new generated revision instead of overwriting the original file
+    - invalid or duplicate drafts surface a suggested next strategy name
+    - `strategy/plugin_sdk.py` now exposes safe generated-draft listing and source-reading helpers
 
 ## Why This Exists
 

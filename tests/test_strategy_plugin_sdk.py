@@ -3,6 +3,9 @@ from pathlib import Path
 
 from strategy.plugin_sdk import (
     create_strategy_draft,
+    list_generated_draft_files,
+    read_strategy_source_file,
+    suggest_next_strategy_name,
     strategy_template_source,
     validate_strategy_source,
 )
@@ -128,3 +131,47 @@ def test_create_strategy_draft_does_not_save_invalid_source(tmp_path):
     result = create_strategy_draft("not python !!!", label="broken", strategies_dir=tmp_path)
     assert result["saved"] is False
     assert list(tmp_path.iterdir()) == []
+
+
+def test_list_generated_draft_files_returns_editable_drafts(tmp_path):
+    draft = tmp_path / "generated_20260423_010203.py"
+    draft.write_text(VALID_SOURCE, encoding="utf-8")
+    (tmp_path / "reviewed.py").write_text(VALID_SOURCE, encoding="utf-8")
+
+    rows = list_generated_draft_files(tmp_path)
+
+    assert [row["file_name"] for row in rows] == ["generated_20260423_010203.py"]
+    assert rows[0]["editable"] is True
+
+
+def test_read_strategy_source_file_blocks_outside_strategies_dir(tmp_path):
+    outside = tmp_path.parent / "outside_strategy.py"
+    outside.write_text("x = 1", encoding="utf-8")
+    try:
+        read_strategy_source_file(outside, strategies_dir=tmp_path)
+    except ValueError as exc:
+        assert "inside" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
+def test_read_strategy_source_file_reads_safe_draft(tmp_path):
+    draft = tmp_path / "generated_20260423_010203.py"
+    draft.write_text(VALID_SOURCE, encoding="utf-8")
+    assert "ValidDraft" in read_strategy_source_file(draft, strategies_dir=tmp_path)
+
+
+def test_suggest_next_strategy_name_increments_catalog_versions():
+    suggestion = suggest_next_strategy_name(
+        "alpha_pullback_v1",
+        [
+            {"name": "alpha_pullback_v1"},
+            {"name": "alpha_pullback_v2"},
+            {"name": "other_v9"},
+        ],
+    )
+    assert suggestion == "alpha_pullback_v3"
+
+
+def test_suggest_next_strategy_name_appends_version_when_missing():
+    assert suggest_next_strategy_name("alpha pullback", []) == "alpha_pullback_v1"

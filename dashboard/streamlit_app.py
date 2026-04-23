@@ -30,7 +30,14 @@ from strategy.runtime import (
     list_available_strategy_errors,
     set_active_strategy_config,
 )
-from strategy.plugin_sdk import create_strategy_draft, strategy_template_source, validate_strategy_source
+from strategy.plugin_sdk import (
+    create_strategy_draft,
+    list_generated_draft_files,
+    read_strategy_source_file,
+    strategy_template_source,
+    suggest_next_strategy_name,
+    validate_strategy_source,
+)
 from strategy.artifacts import (
     approve_artifact_for_live,
     compute_strategy_code_hash,
@@ -1458,6 +1465,7 @@ with strategy_tab:
             "Create a local draft without changing application code. Drafts are saved as generated strategy files, "
             "can be backtested immediately, and stay blocked from paper/live until reviewed as pinned plugins."
         )
+        draft_files = list_generated_draft_files()
         draft_cols = st.columns([2, 1])
         draft_label = draft_cols[0].text_input(
             "Draft strategy name",
@@ -1465,21 +1473,48 @@ with strategy_tab:
             key="draft_strategy_name",
             help="Use lowercase letters, numbers, and underscores. Example: breakout_pullback_v1.",
         )
+        draft_modes = ["Template", "Paste Code", "Upload .py"]
+        if draft_files:
+            draft_modes.append("Edit Existing Draft")
         draft_mode = draft_cols[1].selectbox(
             "Draft source",
-            ["Template", "Paste Code", "Upload .py"],
+            draft_modes,
             key="draft_source_mode",
         )
         uploaded_strategy = None
+        selected_draft_file = None
         if draft_mode == "Upload .py":
             uploaded_strategy = st.file_uploader(
                 "Upload strategy Python file",
                 type=["py"],
                 key="strategy_draft_upload",
             )
+        elif draft_mode == "Edit Existing Draft":
+            selected_draft_file = st.selectbox(
+                "Existing generated draft",
+                draft_files,
+                format_func=lambda item: f"{item['file_name']} — {item.get('modified_at') or 'unknown modified time'}",
+                key="strategy_existing_draft_file",
+            )
 
         if uploaded_strategy is not None:
             draft_source = uploaded_strategy.getvalue().decode("utf-8", errors="replace")
+        elif selected_draft_file is not None:
+            try:
+                existing_source = read_strategy_source_file(selected_draft_file["path"])
+            except Exception as _exc:
+                st.warning(f"Could not read selected draft: {_exc}")
+                existing_source = strategy_template_source(draft_label)
+            st.caption(
+                "Editing an existing draft saves a new generated revision. Change the strategy `name` "
+                "or `version` before saving if the catalog already contains this draft."
+            )
+            draft_source = st.text_area(
+                "Strategy source",
+                value=existing_source,
+                height=420,
+                key=f"strategy_existing_source_{selected_draft_file['file_name']}",
+            )
         elif draft_mode == "Paste Code":
             draft_source = st.text_area(
                 "Strategy source",
@@ -1533,6 +1568,12 @@ with strategy_tab:
                 st.success(f"Draft contract is valid for: {names or 'strategy plugin'}.")
             else:
                 st.error("Draft is not runnable yet. Fix the contract issues before saving.")
+                strategy_names_for_suggestion = draft_validation.get("strategy_names") or []
+                if strategy_names_for_suggestion:
+                    st.info(
+                        "Suggested next draft name: "
+                        f"`{suggest_next_strategy_name(strategy_names_for_suggestion[0], strategy_catalog)}`"
+                    )
             issues = draft_validation.get("issues") or []
             if issues:
                 st.dataframe(pd.DataFrame(issues), width="stretch", hide_index=True)

@@ -52,6 +52,7 @@ SIGNAL_METHODS = {
 }
 DATAFRAME_ALIASES = {"df", "frame", "last", "prev", "prior", "row", "candle"}
 STRATEGY_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+GENERATED_DRAFT_RE = re.compile(r"^generated_\d{8}_\d{6}\.py$")
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,51 @@ def sanitize_strategy_name(value: str) -> str:
     return cleaned
 
 
+def list_generated_draft_files(strategies_dir: str | Path | None = None) -> list[dict[str, Any]]:
+    """Return generated draft files available for dashboard editing."""
+    target_dir = _strategies_dir(strategies_dir)
+    if not target_dir.exists():
+        return []
+    rows = []
+    for path in sorted(target_dir.glob("generated_*.py"), reverse=True):
+        try:
+            modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+        except OSError:
+            modified_at = ""
+        rows.append(
+            {
+                "file_name": path.name,
+                "path": str(path),
+                "modified_at": modified_at,
+                "editable": GENERATED_DRAFT_RE.match(path.name) is not None,
+            }
+        )
+    return rows
+
+
+def read_strategy_source_file(path: str | Path, *, strategies_dir: str | Path | None = None) -> str:
+    """Read one strategy file after confirming it lives under strategies/."""
+    file_path = _safe_strategy_path(path, strategies_dir=strategies_dir)
+    return file_path.read_text(encoding="utf-8")
+
+
+def suggest_next_strategy_name(strategy_name: str, existing_catalog: list[dict[str, Any]] | None = None) -> str:
+    """Suggest a non-conflicting `_vN` strategy name."""
+    clean_name = sanitize_strategy_name(strategy_name)
+    if not clean_name:
+        return "custom_strategy_v1"
+    match = re.match(r"^(?P<prefix>.+)_v(?P<num>\d+)$", clean_name)
+    prefix = match.group("prefix") if match else clean_name
+    current_num = int(match.group("num")) if match else 0
+    max_num = current_num
+    for item in existing_catalog or []:
+        candidate = sanitize_strategy_name(str(item.get("name") or ""))
+        candidate_match = re.match(rf"^{re.escape(prefix)}_v(?P<num>\d+)$", candidate)
+        if candidate_match:
+            max_num = max(max_num, int(candidate_match.group("num")))
+    return f"{prefix}_v{max_num + 1}"
+
+
 def validate_strategy_file(
     path: str | Path,
     *,
@@ -249,6 +295,22 @@ def create_strategy_draft(
     validation.issues.append(issue)
     validation.valid = False
     return {"saved": False, "path": "", "file_name": "", "validation": validation.as_dict()}
+
+
+def _strategies_dir(strategies_dir: str | Path | None = None) -> Path:
+    return Path(strategies_dir) if strategies_dir else Path(__file__).resolve().parents[1] / "strategies"
+
+
+def _safe_strategy_path(path: str | Path, *, strategies_dir: str | Path | None = None) -> Path:
+    base_dir = _strategies_dir(strategies_dir).resolve()
+    file_path = Path(path).resolve()
+    if base_dir != file_path.parent and base_dir not in file_path.parents:
+        raise ValueError(f"Strategy file must be inside {base_dir}")
+    if file_path.suffix != ".py":
+        raise ValueError("Strategy file must be a .py file")
+    if not file_path.exists():
+        raise FileNotFoundError(str(file_path))
+    return file_path
 
 
 def _is_strategy_subclass(node: ast.ClassDef) -> bool:

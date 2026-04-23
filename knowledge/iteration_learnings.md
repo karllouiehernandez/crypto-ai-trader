@@ -132,3 +132,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Added `deployment/jetson_ops.py`, `deployment/crypto-trader.logrotate`, restore planning/apply support in `database/persistence.py`, reviewed-artifact repin support in `strategy/artifacts.py`, dashboard Jetson readiness UI, deployment docs, and regression tests.
 **What to try next:** On the physical Jetson, run `bash deployment/install.sh`, then `python -m deployment.jetson_ops health --strict`, keep `run_live.py` active through systemd, and let paper target `#8` collect real BUY/SELL evidence over weeks.
 **Status:** RESOLVED
+
+---
+
+## 2026-04-23 Strategy Draft Editing — Draft creation is not enough without revision recovery
+**What happened:** Sprint 45 added an existing-draft editor path to the dashboard strategy authoring workflow. Traders can now select an existing `generated_*.py` draft, revise the source, validate it inline, and save a valid revision as a new generated draft.
+**Why it happened:** Sprint 43 made strategy creation possible, but iteration still required leaving the workbench when a generated/imported draft needed revision. Real strategy work is rarely one-shot; invalid or duplicate drafts need a visible recovery path.
+**Impact:** Strategy authoring is more practical for deployed operation. Invalid drafts remain blocked from discovery/paper/live, but the trader now gets validation feedback plus a next-name suggestion instead of a dead end.
+**What we changed:** Added draft listing/reading/name-suggestion helpers in `strategy/plugin_sdk.py`, extended the dashboard `Create / Import Strategy Draft` expander with `Edit Existing Draft`, and added SDK tests plus focused headed validation.
+**What to try next:** Add full strategy-pack import/export only after the single-file draft editor has been used in real strategy-authoring sessions.
+**Status:** RESOLVED

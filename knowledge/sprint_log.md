@@ -1450,3 +1450,41 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 - Jetson deployment now has a first-class operator path: install, service, health, logs, backup, restore, and dashboard readiness.
 - Paper target remains the same strategy (`rsi_mean_reversion_v1`) but is now pinned to current reviewed artifact `#8`.
 - Live target remains unconfigured by design.
+
+---
+
+## Sprint 45 — Strategy Authoring Polish
+**Date created:** 2026-04-23
+**Date closed:** 2026-04-23
+**Goal:** Polish the strategy-authoring workflow so traders can revise existing generated drafts inside the dashboard, validate them, and save valid revisions without restarting Streamlit.
+**Status:** CLOSED ✓
+
+### GitHub Tracking
+- Created GitHub issue `#47` — `Sprint 45 — Strategy Authoring Polish`
+- Added issue `#47` to GitHub Projects board `#1`
+- Project status set to `Done`
+
+### Changes Made
+- [x] Extended `strategy/plugin_sdk.py`
+  - `list_generated_draft_files()`
+  - `read_strategy_source_file()`
+  - `suggest_next_strategy_name()`
+  - safe strategy-file path validation
+- [x] Extended `dashboard/streamlit_app.py`
+  - `Create / Import Strategy Draft` now supports `Edit Existing Draft`
+  - existing `generated_*.py` files can be loaded into the editor
+  - validation feedback remains visible beside the editor
+  - duplicate/invalid drafts show a suggested next strategy name
+  - saving valid revisions creates a new generated draft and refreshes the registry
+- [x] Added regression coverage in `tests/test_strategy_plugin_sdk.py`.
+
+### Verification
+- Focused headed check: `Create / Import Strategy Draft` → `Edit Existing Draft` showed existing draft selector and save action
+- `pytest tests/test_strategy_plugin_sdk.py tests/test_strategy_loader.py tests/test_strategy_base.py -q` → **53 passed**
+- `python -m py_compile strategy/plugin_sdk.py dashboard/streamlit_app.py` → clean
+- `pytest tests/ -q` → **688 passed, 4 warnings**
+- `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS**
+
+### Outcome
+- Strategy authoring is now iterative inside the dashboard: create, import, edit generated drafts, validate, and save revisions without restarting the app.
+- Draft lifecycle safety is preserved: drafts remain backtest-only until reviewed into pinned plugins.
