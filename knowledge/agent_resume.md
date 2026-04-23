@@ -13,9 +13,21 @@ Read order for a new agent:
 
 - Sprint 41 is closed.
 - Active local sprint: `Sprint 42 — Operational paper-evidence follow-through (background observation thread)`
-- GitHub status: Sprint 46 is issue `#48` on Projects board `#1`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
+- GitHub status: Sprint 46 is issue `#48` on Projects board `#1`; Sprint 47 issue creation/update is currently blocked by GitHub integration write permissions; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - GitHub write caveat: close-out comment/state sync for issue `#48` is currently blocked by `403 Resource not accessible by integration`, so repo-local handoff marks Sprint 46 complete even if GitHub issue state still needs a manual close.
-- Latest completed sprint: `Sprint 46 — Deployment Lock & Strategy SDK Compatibility`
+- Latest completed sprint: `Sprint 47 — Strategy Pack Import / Export`
+  - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
+  - Projects board `#1` status: not synced programmatically for the same reason
+  - Delivered:
+    - portable strategy-pack export as `.zip` with `manifest.json`, strategy source, and optional `notes.md`
+    - pack import preview and draft import in the dashboard `Create / Import Strategy Draft` workflow
+    - imported packs still pass through the same SDK validator and remain backtest-only generated drafts until reviewed
+    - strategy-pack workflow documented in `strategies/README.md`
+  - Verified:
+    - `pytest tests/test_strategy_plugin_sdk.py -q` -> `22 passed` on `2026-04-23`
+    - `pytest tests/ -q` -> `700 passed, 4 warnings` on `2026-04-23`
+    - `python run_ui_agent.py --ui-only --url http://localhost:8791` -> `64/64 PASS` on `2026-04-23` against a temporary headless verification server
+- Previously completed sprint: `Sprint 46 — Deployment Lock & Strategy SDK Compatibility`
   - GitHub issue: `#48`
   - Projects board `#1` status: `In Progress` until close-out is confirmed; `HANDOFF.md` is the current source of truth
   - Delivered:
@@ -33,12 +45,12 @@ Read order for a new agent:
   - Delivered: dashboard editing for existing generated drafts, safe draft source loading, generated-draft listing, next-name suggestions for duplicate drafts, and SDK regression coverage.
   - Sprint 44 remains complete: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
   - Sprint 43 remains complete: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
-- Baseline after Sprint 46 completion:
-  - `pytest tests/ -q` -> `696 passed, 4 warnings` on `2026-04-23`
+- Baseline after Sprint 47 completion:
+  - `pytest tests/ -q` -> `700 passed, 4 warnings` on `2026-04-23`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-23`
   - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-23`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
-  - `python run_ui_agent.py --ui-only --url http://localhost:8790` -> `64/64 PASS`
+  - `python run_ui_agent.py --ui-only --url http://localhost:8791` -> `64/64 PASS`
   - The trader journey now exits deterministically, writes a report, and no longer produces false plugin `run-failed` partials; the remaining operator gap is real paper evidence, not UI audit completion
   - Phase 1 persistence/recovery validation is now in the repo via `database/persistence.py`, `tests/test_persistence.py`, and the Strategies-tab `Persistence & Recovery` expander
   - Phase 2 deterministic paper-evidence progress surfaces are now in the repo via `strategy/paper_evaluation.py`, `simulator/paper_trader.py`, `run_live.py`, and the Strategies-tab `Paper Evidence Progress` section
@@ -94,6 +106,10 @@ Read order for a new agent:
     - `dashboard/workbench.py` and `dashboard/streamlit_app.py` now surface SDK compatibility in the strategy lifecycle area and block unsupported review/promotion actions with explicit operator-facing reasons
     - `strategy/artifacts.py::review_generated_strategy()` now validates rewritten reviewed plugins before saving them into `strategies/`
     - `strategies/README.md` documents the deployment SDK contract for post-deploy strategy authoring
+  - Sprint 47 adds deploy-friendly strategy portability:
+    - `strategy/plugin_sdk.py` now exports/imports strategy packs with a manifest + source + optional notes bundle
+    - `dashboard/streamlit_app.py` now exposes `Strategy Packs` inside `Create / Import Strategy Draft`
+    - imported packs remain generated drafts, so paper/live safety rules are unchanged
 
 ## Why This Exists
 

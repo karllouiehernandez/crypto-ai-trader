@@ -1,9 +1,15 @@
 import textwrap
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 from strategy.plugin_sdk import (
+    STRATEGY_PACK_FORMAT_VERSION,
     STRATEGY_SDK_VERSION,
     create_strategy_draft,
+    export_strategy_pack,
+    import_strategy_pack,
+    inspect_strategy_pack,
     list_generated_draft_files,
     read_strategy_source_file,
     suggest_next_strategy_name,
@@ -221,3 +227,80 @@ def test_suggest_next_strategy_name_increments_catalog_versions():
 
 def test_suggest_next_strategy_name_appends_version_when_missing():
     assert suggest_next_strategy_name("alpha pullback", []) == "alpha_pullback_v1"
+
+
+def test_export_strategy_pack_includes_manifest_source_and_notes(tmp_path):
+    draft = tmp_path / "generated_20260423_010203.py"
+    draft.write_text(VALID_SOURCE, encoding="utf-8")
+
+    result = export_strategy_pack(
+        {
+            "name": "valid_draft_v1",
+            "display_name": "Valid Draft",
+            "description": "A valid strategy contract.",
+            "version": "1.0.0",
+            "sdk_version": STRATEGY_SDK_VERSION,
+            "regimes": ["RANGING"],
+            "provenance": "generated",
+            "default_params": {"threshold": 35.0},
+            "param_schema": [{"name": "threshold", "type": "number", "default": 35.0}],
+            "path": str(draft),
+        },
+        notes="Test notes",
+        strategies_dir=tmp_path,
+    )
+
+    assert result["file_name"] == "valid_draft_v1__1.0.0.zip"
+    assert result["manifest"]["pack_format_version"] == STRATEGY_PACK_FORMAT_VERSION
+    with zipfile.ZipFile(BytesIO(result["bytes"])) as archive:
+        assert set(archive.namelist()) == {"manifest.json", "generated_20260423_010203.py", "notes.md"}
+
+
+def test_inspect_strategy_pack_rejects_missing_manifest():
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("strategy.py", VALID_SOURCE)
+
+    result = inspect_strategy_pack(buffer.getvalue(), filename="broken.zip")
+
+    assert result["valid"] is False
+    assert any(issue["code"] == "missing_pack_manifest" for issue in result["issues"])
+
+
+def test_import_strategy_pack_saves_generated_draft(tmp_path):
+    source_path = tmp_path / "source.py"
+    source_path.write_text(VALID_SOURCE, encoding="utf-8")
+    exported = export_strategy_pack(
+        {
+            "name": "valid_draft_v1",
+            "display_name": "Valid Draft",
+            "description": "A valid strategy contract.",
+            "version": "1.0.0",
+            "sdk_version": STRATEGY_SDK_VERSION,
+            "regimes": ["RANGING"],
+            "provenance": "generated",
+            "default_params": {"threshold": 35.0},
+            "param_schema": [{"name": "threshold", "type": "number", "default": 35.0}],
+            "path": str(source_path),
+        },
+        notes="Portable strategy pack",
+        strategies_dir=tmp_path,
+    )
+
+    result = import_strategy_pack(
+        exported["bytes"],
+        filename=exported["file_name"],
+        existing_catalog=[],
+        strategies_dir=tmp_path,
+    )
+
+    assert result["saved"] is True
+    assert result["validation"]["valid"] is True
+    assert Path(result["path"]).exists()
+    assert "Portable strategy pack" in result["notes"]
+
+
+def test_import_strategy_pack_rejects_invalid_zip(tmp_path):
+    result = import_strategy_pack(b"not a zip", filename="bad.zip", existing_catalog=[], strategies_dir=tmp_path)
+    assert result["saved"] is False
+    assert any(issue["code"] == "invalid_pack_zip" for issue in result["pack_validation"]["issues"])

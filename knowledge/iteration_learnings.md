@@ -5,6 +5,16 @@ Update this file after every meaningful development slice, especially when a tes
 
 ---
 
+## 2026-04-23 Strategy Pack Portability — Post-deploy flexibility improves when strategy exchange reuses the same draft gate
+**What happened:** Sprint 47 added a portable strategy-pack workflow. The dashboard can now export a strategy as a `.zip` containing `manifest.json`, the source file, and optional `notes.md`, then import a pack back into the same generated-draft path used for pasted or uploaded strategy code.
+**Why it happened:** The product goal is to deploy the base app once and evolve mostly through strategies. Single-file draft editing was already in place, but there was still no clean way to move strategies between machines or agents without manually copying files and rediscovering metadata. The missing piece was a portable bundle that still respected the existing SDK and lifecycle rules.
+**Impact:** Strategy iteration is now more deployable. A Jetson box or another workstation can receive a strategy pack and bring it in as a backtest-only generated draft without relaxing any paper/live safety rules. The base application stays fixed while strategy work becomes more transferable.
+**What we changed:** Added pack export/import helpers in `strategy/plugin_sdk.py`, exposed them in the dashboard `Create / Import Strategy Draft` expander, documented the pack format in `strategies/README.md`, and added regression coverage plus UI smoke verification.
+**What to try next:** Use the next sprint for Jetson long-run validation rather than more authoring UX. The portability layer is now good enough to support post-deploy strategy exchange, so the remaining product risk is operational continuity and paper-evidence collection, not strategy file transport.
+**Status:** RESOLVED
+
+---
+
 ## 2026-04-23 Deployment Lock Phase 2 — A compatibility contract only works if the lifecycle enforces it visibly
 **What happened:** Sprint 46 Phase 2 completed the strategy SDK lock by pushing it beyond draft validation into the actual operator workflow. The strategy lifecycle area now shows SDK version and compatibility, unsupported drafts/plugins render explicit blocked-state reasons, and `Review and Save` now rejects unsupported SDK versions before a reviewed plugin can be written to `strategies/`.
 **Why it happened:** Phase 1 defined the SDK contract, but that alone still left a trust gap: a trader could see the SDK lock while authoring drafts, then lose that context during review/promotion and wonder why actions were disabled or why paper/live rejected a strategy later. The missing piece was lifecycle visibility plus enforcement at the reviewed-plugin boundary.

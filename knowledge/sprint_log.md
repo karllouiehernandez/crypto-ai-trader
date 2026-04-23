@@ -5,6 +5,32 @@ A sprint may NOT be marked CLOSED until the code review sub-agent returns `Appro
 
 ---
 
+## Sprint 47 — Strategy Pack Import / Export
+**Date started:** 2026-04-23
+**Date closed:** 2026-04-23
+**Agent:** Shared Codex + Claude Code stream
+**Goal:** Make the deployed workbench portable enough to exchange strategies as zip bundles so future strategy iteration does not require editing core application code on the target machine.
+**Status:** CLOSED ✓
+**GitHub issue:** not created programmatically — GitHub integration returned `403 Resource not accessible by integration`
+
+### Changes Made
+- [x] `strategy/plugin_sdk.py` — added `STRATEGY_PACK_FORMAT_VERSION`, `export_strategy_pack(...)`, `inspect_strategy_pack(...)`, and `import_strategy_pack(...)`
+- [x] `strategy/plugin_sdk.py` — `strategy_sdk_support()` now also exposes the supported strategy-pack format version
+- [x] `dashboard/streamlit_app.py` — `Create / Import Strategy Draft` now includes a `Strategy Packs` section for zip export, notes inclusion, pack preview, and draft import
+- [x] `strategies/README.md` — documented the strategy-pack workflow, pack contents, and the rule that imported packs remain backtest-only drafts until reviewed
+- [x] `tests/test_strategy_plugin_sdk.py` — added pack export/import regression coverage
+
+### Verification
+- `pytest tests/test_strategy_plugin_sdk.py -q` → **22 passed**
+- `python -m py_compile strategy/plugin_sdk.py dashboard/streamlit_app.py tests/test_strategy_plugin_sdk.py` → clean
+- `pytest tests/ -q` → **700 passed, 4 warnings**
+- `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** using a temporary headless Streamlit verification server
+
+### Code Review Outcome
+Self-reviewed after targeted tests, full regression, and UI smoke verification. No CRITICAL or HIGH issues found in the Sprint 47 slice. Approved to close: YES
+
+---
+
 ## Sprint 46 — Deployment Lock & Strategy SDK Compatibility
 **Date started:** 2026-04-23
 **Date closed:** 2026-04-23

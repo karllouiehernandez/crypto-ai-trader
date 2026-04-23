@@ -39,6 +39,17 @@ Operational rules:
 - Generated/imported drafts are backtest-only. Use the dashboard review action to save a pinned reviewed plugin before paper/live activation.
 - Use `Refresh Strategy Registry` in the dashboard after editing files on disk; a full app restart should not be required for normal strategy iteration.
 
+Strategy packs:
+
+- Use the dashboard `Strategy Packs` section to export one local strategy as a portable `.zip`.
+- Each pack contains:
+  - `manifest.json`
+  - the strategy source file
+  - optional `notes.md`
+- Current pack format version: `1`
+- Importing a pack runs the same SDK validation as pasted/uploaded drafts.
+- Imported packs save as new generated drafts and remain backtest-only until reviewed into pinned plugins.
+
 Deployment strategy SDK contract:
 
 - Current SDK version: `1`

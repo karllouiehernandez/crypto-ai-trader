@@ -32,6 +32,9 @@ from strategy.runtime import (
 )
 from strategy.plugin_sdk import (
     create_strategy_draft,
+    export_strategy_pack,
+    import_strategy_pack,
+    inspect_strategy_pack,
     list_generated_draft_files,
     read_strategy_source_file,
     strategy_template_source,
@@ -1586,6 +1589,90 @@ with strategy_tab:
             issues = draft_validation.get("issues") or []
             if issues:
                 st.dataframe(pd.DataFrame(issues), width="stretch", hide_index=True)
+
+        st.markdown("#### Strategy Packs")
+        st.caption(
+            "Portable zip bundles for moving strategies between deployed workbenches without editing application code. "
+            "Imported packs still enter as backtest-only drafts until reviewed."
+        )
+        pack_candidates = [item for item in strategy_catalog if item.get("path")]
+        pack_cols = st.columns(2)
+        export_candidate = pack_cols[0].selectbox(
+            "Export strategy pack",
+            pack_candidates,
+            format_func=lambda item: (
+                f"{item.get('name')} ({format_strategy_origin(item)} · SDK {item.get('sdk_version') or '1'})"
+            ),
+            key="export_strategy_pack_candidate",
+        ) if pack_candidates else None
+        export_notes = pack_cols[1].text_area(
+            "Pack notes",
+            value=st.session_state.get("strategy_pack_notes", ""),
+            key="strategy_pack_notes",
+            height=120,
+            help="Optional test notes, caveats, or setup instructions included as notes.md in the pack.",
+        )
+        if export_candidate is not None:
+            try:
+                pack_export = export_strategy_pack(export_candidate, notes=export_notes)
+                st.download_button(
+                    "Download Strategy Pack (.zip)",
+                    data=pack_export["bytes"],
+                    file_name=pack_export["file_name"],
+                    mime="application/zip",
+                    key="download_strategy_pack_btn",
+                    width="stretch",
+                )
+                st.caption(
+                    f"Pack includes `manifest.json`, `{pack_export['manifest'].get('source_file')}`, "
+                    f"and `{pack_export['manifest'].get('notes_file') or 'no notes file'}`."
+                )
+            except Exception as _exc:
+                st.warning(f"Strategy pack export unavailable: {_exc}")
+
+        uploaded_pack = st.file_uploader(
+            "Import strategy pack (.zip)",
+            type=["zip"],
+            key="strategy_pack_upload",
+        )
+        if uploaded_pack is not None:
+            pack_preview = inspect_strategy_pack(uploaded_pack.getvalue(), filename=uploaded_pack.name)
+            if pack_preview.get("valid"):
+                pack_manifest = pack_preview.get("manifest") or {}
+                pack_strategy = pack_manifest.get("strategy") or {}
+                preview_cols = st.columns(4)
+                preview_cols[0].metric("Pack Strategy", pack_strategy.get("name") or "Unknown")
+                preview_cols[1].metric("Version", pack_strategy.get("version") or "Unknown")
+                preview_cols[2].metric("SDK Version", pack_strategy.get("sdk_version") or "Unknown")
+                preview_cols[3].metric("Format", pack_manifest.get("pack_format_version") or "Unknown")
+                if pack_preview.get("notes"):
+                    st.caption("Pack notes")
+                    st.code(pack_preview["notes"], language="markdown")
+                if st.button("Import Strategy Pack as Draft", key="import_strategy_pack_btn", width="stretch"):
+                    pack_result = import_strategy_pack(
+                        uploaded_pack.getvalue(),
+                        filename=uploaded_pack.name,
+                        existing_catalog=strategy_catalog,
+                    )
+                    st.session_state["last_strategy_draft_result"] = pack_result
+                    st.session_state["last_strategy_draft_validation"] = pack_result["validation"]
+                    if pack_result["saved"]:
+                        load_strategy_catalog.clear()
+                        load_strategy_errors.clear()
+                        st.cache_data.clear()
+                        strategy_names_saved = pack_result["validation"].get("strategy_names") or []
+                        if strategy_names_saved:
+                            st.session_state["strategy_focus_pending"] = strategy_names_saved[0]
+                        st.success(
+                            f"Strategy pack imported as `{pack_result['file_name']}`. "
+                            "It is backtest-only until reviewed."
+                        )
+                        st.rerun()
+            else:
+                st.error("Strategy pack is not importable yet.")
+                issues = pack_preview.get("issues") or []
+                if issues:
+                    st.dataframe(pd.DataFrame(issues), width="stretch", hide_index=True)
 
     with st.expander("Generate Strategy Draft", expanded=bool(st.session_state.get("last_generation_result"))):
         generation_ready = get_generation_readiness()

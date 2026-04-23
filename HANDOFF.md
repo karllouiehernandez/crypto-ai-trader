@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 46 deployment lock fully implemented) |
+| **Last updated** | 2026-04-23 (Sprint 47 strategy pack import/export implemented) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
-| **Latest completed sprint** | Sprint 46 — `#48` — Deployment Lock & Strategy SDK Compatibility |
+| **Latest completed sprint** | Sprint 47 — GitHub issue creation blocked by integration — Strategy Pack Import / Export |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **696 passed, 4 warnings** on 2026-04-23; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8790` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
+| **Tests** | `pytest tests/ -q` → **700 passed, 4 warnings** on 2026-04-23; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,11 +22,53 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 Background + Post-Sprint-46 Baseline
+## Resume Here — Sprint 42 Background + Post-Sprint-47 Baseline
 
-Sprint 46 is tracked as GitHub issue `#48` and has been completed as the deployment-lock hardening sprint. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
+Sprint 47 is completed locally as the strategy-pack portability sprint. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
 
 Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
+
+### Latest Completed — Sprint 47 (2026-04-23)
+
+- **What changed**
+  - Extended [strategy/plugin_sdk.py](strategy/plugin_sdk.py):
+    - added `STRATEGY_PACK_FORMAT_VERSION = "1"`
+    - added `export_strategy_pack(...)`
+    - added `inspect_strategy_pack(...)`
+    - added `import_strategy_pack(...)`
+    - SDK support metadata now reports the current strategy-pack format version
+  - Extended [dashboard/streamlit_app.py](dashboard/streamlit_app.py) `Create / Import Strategy Draft` expander with a new `Strategy Packs` section:
+    - export any local strategy with a filesystem-backed source path as a portable `.zip`
+    - include optional operator notes in `notes.md`
+    - preview uploaded pack metadata before import
+    - import valid packs back into the same generated-draft workflow
+  - Updated [strategies/README.md](strategies/README.md) with strategy-pack workflow notes and pack-format expectations.
+  - Added regression coverage in [tests/test_strategy_plugin_sdk.py](tests/test_strategy_plugin_sdk.py) for:
+    - pack export contents
+    - missing manifest rejection
+    - valid pack import into a generated draft
+    - invalid zip rejection
+- **What was verified**
+  - `pytest tests/test_strategy_plugin_sdk.py -q` → **22 passed**
+  - `python -m py_compile strategy/plugin_sdk.py dashboard/streamlit_app.py tests/test_strategy_plugin_sdk.py` → clean
+  - `pytest tests/ -q` → **700 passed, 4 warnings**
+  - `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** against a temporary headless Streamlit verification server
+  - Paper-evidence background thread remains alive:
+    - active worker command still `python run_live.py`
+    - artifact `#8` latest paper snapshot observed at `2026-04-23 13:16:00 UTC`
+    - artifact `#8` still has `0` tagged trades
+- **What remains next**
+  - GitHub write follow-through is still blocked by `403 Resource not accessible by integration`:
+    - Sprint 46 issue `#48` still needs manual close / board sync
+    - Sprint 47 issue / board card could not be created programmatically
+  - The next product sprint after Sprint 47 should be Jetson long-run validation:
+    - verify restart survival on the device
+    - verify backup/restore on the device
+    - verify freshness and paper snapshots stay healthy across days, not only local test windows
+  - Keep Sprint 42 as a background operational observation thread:
+    - active paper target artifact `#8` is still healthy
+    - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades
+    - the next strategy-focused corrective sprint should target entry scarcity / market fit if that remains true after a meaningful observation window
 
 ### Latest Completed — Sprint 46 Phase 2 (2026-04-23)
 
