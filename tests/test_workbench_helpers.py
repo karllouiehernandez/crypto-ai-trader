@@ -43,6 +43,7 @@ from dashboard.workbench import (
     runtime_mode_table,
     summarise_data_health,
     strategy_workflow_status,
+    strategy_sdk_compatibility,
     runtime_summary,
 )
 
@@ -392,7 +393,15 @@ def test_build_strategy_catalog_frame_formats_origin_and_regimes():
     )
     assert frame.loc[0, "origin"] == "Generated Plugin"
     assert frame.loc[0, "workflow_stage"] == "Evaluated Draft"
+    assert frame.loc[0, "sdk_version"] == "1"
+    assert frame.loc[0, "sdk_compatibility"] == "Supported"
     assert frame.loc[0, "regimes"] == "RANGING"
+
+
+def test_strategy_sdk_compatibility_marks_unsupported_version():
+    status = strategy_sdk_compatibility({"sdk_version": "999"})
+    assert status["compatible"] is False
+    assert status["label"] == "Unsupported"
 
 
 def test_strategy_workflow_status_marks_generated_without_runs_as_draft():
@@ -403,6 +412,16 @@ def test_strategy_workflow_status_marks_generated_without_runs_as_draft():
     )
     assert status["stage"] == "Draft"
     assert status["run_count"] == 0
+
+
+def test_strategy_workflow_status_marks_sdk_mismatch():
+    status = strategy_workflow_status(
+        {"name": "generated_rsi_v1", "provenance": "generated", "sdk_version": "999"},
+        pd.DataFrame(),
+        active_strategy_name="regime_router_v1",
+    )
+    assert status["stage"] == "SDK Mismatch"
+    assert "unsupported SDK" in status["next_step"]
 
 
 def test_strategy_workflow_status_marks_reviewed_plugin_with_passing_run():

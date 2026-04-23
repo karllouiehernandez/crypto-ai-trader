@@ -99,6 +99,7 @@ from dashboard.workbench import (
     normalise_params,
     normalise_preset_name,
     runtime_mode_table,
+    strategy_sdk_compatibility,
     strategy_workflow_status,
     summarise_data_health,
     runtime_summary,
@@ -1682,6 +1683,7 @@ with strategy_tab:
     selected_meta = strategy_lookup.get(selected_strategy)
     if selected_meta:
         workflow_status = strategy_workflow_status(selected_meta, all_backtest_runs, active_strategy["name"])
+        sdk_status = strategy_sdk_compatibility(selected_meta)
         selected_artifact_id = selected_meta.get("artifact_id")
         matching_runs = all_backtest_runs.copy() if not all_backtest_runs.empty else pd.DataFrame()
         if not matching_runs.empty:
@@ -1696,11 +1698,12 @@ with strategy_tab:
         latest_passing_run = passed_matching_runs.sort_values("created_at", ascending=False).head(1) if not passed_matching_runs.empty and "created_at" in passed_matching_runs.columns else passed_matching_runs.head(1)
 
         st.caption(selected_meta["description"])
-        meta_cols = st.columns(4)
+        meta_cols = st.columns(5)
         meta_cols[0].metric("Origin", format_strategy_origin(selected_meta))
         meta_cols[1].metric("Version", selected_meta["version"])
         meta_cols[2].metric("Regimes", ", ".join(selected_meta["regimes"]) or "All")
-        meta_cols[3].metric("Workflow Stage", workflow_status["stage"])
+        meta_cols[3].metric("SDK Version", sdk_status["sdk_version"])
+        meta_cols[4].metric("Workflow Stage", workflow_status["stage"])
         lifecycle_cols = st.columns(4)
         lifecycle_cols[0].metric("Artifact Status", selected_meta.get("artifact_status", "") or "—")
         lifecycle_cols[1].metric("Paper Target", "Yes" if selected_meta.get("active_paper_artifact") else "No")
@@ -1721,11 +1724,16 @@ with strategy_tab:
             st.caption(f"Last modified: {selected_meta['modified_at']}")
         if selected_meta.get("artifact_code_hash"):
             st.caption(f"Artifact: `#{selected_meta['artifact_id']}` · hash `{selected_meta['artifact_code_hash'][:12]}` · provenance `{selected_meta.get('provenance', '')}`")
-        review_cols = st.columns(3)
+        review_cols = st.columns(4)
         review_cols[0].metric("Backtest Runs", str(workflow_status["run_count"]))
         review_cols[1].metric("Passed Runs", str(workflow_status["passed_runs"]))
         review_cols[2].metric("Failed Runs", str(workflow_status["failed_runs"]))
+        review_cols[3].metric("SDK Compatibility", sdk_status["label"])
         st.info(workflow_status["next_step"])
+        if sdk_status["compatible"]:
+            st.caption(f"Strategy SDK compatibility: {sdk_status['reason']}")
+        else:
+            st.error(f"Strategy SDK compatibility: {sdk_status['reason']}")
         if selected_meta.get("is_generated"):
             st.warning("Generated plugin draft. Keep it in draft status until it passes backtesting and is reviewed as a stable plugin.")
         if selected_meta.get("default_params"):
@@ -1736,6 +1744,8 @@ with strategy_tab:
             default_review_name = selected_meta["name"]
             if default_review_name.startswith("generated_"):
                 default_review_name = default_review_name.removeprefix("generated_") or "reviewed_strategy_v1"
+            if default_review_name == selected_meta["name"]:
+                default_review_name = suggest_next_strategy_name(default_review_name, strategy_catalog)
             review_name = st.text_input(
                 "Reviewed plugin name",
                 value=default_review_name,
@@ -1754,7 +1764,11 @@ with strategy_tab:
                 "Paper/live runtime now use promoted reviewed artifacts instead of this selector."
             )
 
-        review_disabled = not (selected_meta.get("is_generated") and selected_meta.get("artifact_id"))
+        review_disabled = not (
+            selected_meta.get("is_generated")
+            and selected_meta.get("artifact_id")
+            and sdk_status["compatible"]
+        )
         if action_cols[1].button("Review and Save", width="stretch", disabled=review_disabled):
             try:
                 reviewed = review_generated_strategy(int(selected_meta["artifact_id"]), review_name)
@@ -1775,6 +1789,7 @@ with strategy_tab:
             selected_meta.get("provenance") == "plugin"
             and selected_meta.get("artifact_id")
             and not passed_matching_runs.empty
+            and sdk_status["compatible"]
         )
         if action_cols[2].button("Promote to Paper", width="stretch", disabled=not can_promote_paper):
             try:
@@ -1791,6 +1806,7 @@ with strategy_tab:
             selected_meta.get("provenance") == "plugin"
             and selected_meta.get("artifact_id")
             and str(selected_meta.get("artifact_status") or "").lower() in {"paper_passed", "live_approved", "live_active"}
+            and sdk_status["compatible"]
         )
         if action_cols[3].button("Approve for Live", width="stretch", disabled=not can_approve_live):
             try:
@@ -1807,6 +1823,7 @@ with strategy_tab:
             selected_meta.get("provenance") == "plugin"
             and selected_meta.get("artifact_id")
             and str(selected_meta.get("artifact_status") or "").lower() in {"paper_active", "paper_passed", "live_approved", "live_active"}
+            and sdk_status["compatible"]
         )
         eval_cols = st.columns([1, 3])
         evidence_result = None
@@ -1908,10 +1925,19 @@ with strategy_tab:
                 "**Promote to Paper / Approve for Live are disabled** for generated drafts. "
                 "Use **Review and Save** to create a stable reviewed plugin, then backtest it."
             )
+            if not sdk_status["compatible"]:
+                st.caption(
+                    "**Review and Save is blocked** — this draft targets an unsupported SDK version. "
+                    "Update the draft to the deployed SDK contract before reviewing it into a plugin."
+                )
         elif selected_meta.get("provenance") != "plugin":
             st.caption(
                 "**Promote to Paper / Approve for Live are only available for plugin strategies.** "
                 "Built-in strategies cannot be promoted."
+            )
+        elif not sdk_status["compatible"]:
+            st.caption(
+                f"**Paper/Live actions are blocked** — strategy SDK `{sdk_status['sdk_version']}` is unsupported by the deployed app."
             )
         elif passed_matching_runs.empty:
             st.caption(

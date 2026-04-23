@@ -11,6 +11,7 @@ Use this workflow when Codex, Claude Code, or GitHub Copilot Pro creates or edit
    - `display_name` should be short and user-facing.
    - `description` should explain the edge and intended market behavior.
    - `version` should use semantic versioning.
+   - `sdk_version` must match the deployed app strategy SDK contract. Current supported version: `1`.
    - `regimes` should define where the strategy may run.
    - `default_params()` must return a dict.
    - `param_schema()` must return dashboard-serialisable parameter metadata.
@@ -34,5 +35,17 @@ Operational rules:
 
 - Files beginning with `_` are ignored by the plugin loader and are safe for templates or notes.
 - Plugin validation/load failures appear in the dashboard. Do not rely on logs alone.
+- The deployed app is SDK-locked. Drafts or reviewed plugins that target an unsupported `sdk_version` are blocked before discovery or review.
 - Generated/imported drafts are backtest-only. Use the dashboard review action to save a pinned reviewed plugin before paper/live activation.
 - Use `Refresh Strategy Registry` in the dashboard after editing files on disk; a full app restart should not be required for normal strategy iteration.
+
+Deployment strategy SDK contract:
+
+- Current SDK version: `1`
+- Supported SDK versions: `1`
+- Required metadata: `name`, `version`, `description`, `regimes`
+- Required parameter methods: `default_params()`, `param_schema()`
+- Supported signal contract:
+  - `should_long()` + `should_short()`
+  - or `decide()`
+- The dashboard `Create / Import Strategy Draft` expander shows the same SDK lock that the validator enforces.

@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from config import STARTING_BALANCE_USD
+from strategy.plugin_sdk import STRATEGY_SDK_VERSION, SUPPORTED_STRATEGY_SDK_VERSIONS
 
 
 def compute_trade_equity_curve(
@@ -605,6 +606,36 @@ def format_strategy_origin(meta: dict[str, Any] | None) -> str:
     return "Plugin"
 
 
+def strategy_sdk_compatibility(meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Return deployment SDK compatibility details for strategy metadata."""
+    if not meta:
+        return {
+            "sdk_version": STRATEGY_SDK_VERSION,
+            "compatible": False,
+            "label": "Unknown",
+            "reason": "No strategy metadata available.",
+        }
+
+    sdk_version = str(meta.get("sdk_version") or STRATEGY_SDK_VERSION)
+    compatible = sdk_version in SUPPORTED_STRATEGY_SDK_VERSIONS
+    if compatible:
+        return {
+            "sdk_version": sdk_version,
+            "compatible": True,
+            "label": "Supported",
+            "reason": f"Compatible with deployed SDK {STRATEGY_SDK_VERSION}.",
+        }
+    return {
+        "sdk_version": sdk_version,
+        "compatible": False,
+        "label": "Unsupported",
+        "reason": (
+            f"Strategy targets SDK {sdk_version}; deployed app supports "
+            f"{', '.join(SUPPORTED_STRATEGY_SDK_VERSIONS)}."
+        ),
+    }
+
+
 def strategy_workflow_status(
     meta: dict[str, Any] | None,
     runs: pd.DataFrame | None = None,
@@ -633,6 +664,22 @@ def strategy_workflow_status(
     artifact_status = str(meta.get("artifact_status") or "").lower()
     is_active_paper = bool(meta.get("active_paper_artifact"))
     is_active_live = bool(meta.get("active_live_artifact"))
+    sdk = strategy_sdk_compatibility(meta)
+
+    if not sdk["compatible"]:
+        return {
+            "stage": "SDK Mismatch",
+            "next_step": (
+                f"{format_strategy_origin(meta)} targets unsupported SDK `{sdk['sdk_version']}`. "
+                f"Update it to the deployed SDK contract `{STRATEGY_SDK_VERSION}` before review, paper, or live use."
+            ),
+            "run_count": run_count,
+            "passed_runs": passed_runs,
+            "failed_runs": failed_runs,
+            "artifact_status": artifact_status,
+            "active_paper_artifact": is_active_paper,
+            "active_live_artifact": is_active_live,
+        }
 
     if provenance == "builtin":
         stage = "Built-in"
@@ -706,6 +753,8 @@ def build_strategy_catalog_frame(
             "paper_target": "Yes" if item.get("active_paper_artifact") else "",
             "live_target": "Yes" if item.get("active_live_artifact") else "",
             "latest_passing_run": _latest_passing_run_label(item, runs),
+            "sdk_version": strategy_sdk_compatibility(item)["sdk_version"],
+            "sdk_compatibility": strategy_sdk_compatibility(item)["label"],
             "version": item.get("version", ""),
             "regimes": ", ".join(item.get("regimes", [])) or "All",
             "file": item.get("file_name", ""),

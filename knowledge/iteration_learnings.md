@@ -5,6 +5,16 @@ Update this file after every meaningful development slice, especially when a tes
 
 ---
 
+## 2026-04-23 Deployment Lock Phase 2 — A compatibility contract only works if the lifecycle enforces it visibly
+**What happened:** Sprint 46 Phase 2 completed the strategy SDK lock by pushing it beyond draft validation into the actual operator workflow. The strategy lifecycle area now shows SDK version and compatibility, unsupported drafts/plugins render explicit blocked-state reasons, and `Review and Save` now rejects unsupported SDK versions before a reviewed plugin can be written to `strategies/`.
+**Why it happened:** Phase 1 defined the SDK contract, but that alone still left a trust gap: a trader could see the SDK lock while authoring drafts, then lose that context during review/promotion and wonder why actions were disabled or why paper/live rejected a strategy later. The missing piece was lifecycle visibility plus enforcement at the reviewed-plugin boundary.
+**Impact:** The deployed app is now closer to the intended steady state: the base software can stay fixed while strategy work continues inside a bounded compatibility envelope. Unsupported strategies fail early and visibly instead of drifting into reviewed artifacts or later runtime surprises.
+**What we changed:** Added `strategy_sdk_compatibility(...)` and `SDK Mismatch` workflow states in `dashboard/workbench.py`, surfaced SDK metrics and blocked-action explanations in `dashboard/streamlit_app.py`, validated reviewed-plugin rewrites in `strategy/artifacts.py`, documented the contract in `strategies/README.md`, and added regression coverage plus UI smoke verification.
+**What to try next:** Treat Sprint 46 as complete and keep Sprint 42 as the background ops thread. The next product-facing development sprint should improve strategy market fit or strategy-pack portability, not reopen the base-app compatibility contract unless the SDK version intentionally changes.
+**Status:** RESOLVED
+
+---
+
 ## 2026-04-21 Trader Journey Stabilization — Smoke is green but the trader journey is still the real blocker
 **What happened:** Backtest Lab now defaults to the latest complete backtest day instead of the current intraday candle date. Smoke UI and DB checks are green, and backtest rows continue to persist during trader-journey runs.
 **Why it happened:** The workbench and the trader harness were previously treating the latest fresh candle date as backtest-safe, which pushed operators into incomplete current-day windows. After fixing that, the remaining trust problem is the journey harness itself: it can still hang or lose track of terminal states while Streamlit rerenders.

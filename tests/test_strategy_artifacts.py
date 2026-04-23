@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import textwrap
 
 import pytest
 
@@ -113,6 +114,47 @@ def test_review_generated_strategy_creates_reviewed_plugin(tmp_path, monkeypatch
     assert result["artifact"]["provenance"] == "plugin"
     assert result["artifact"]["status"] == "reviewed"
     assert result["artifact"]["reviewed_from_artifact_id"] == source_artifact["id"]
+
+
+def test_review_generated_strategy_rejects_unsupported_sdk_version(tmp_path, monkeypatch):
+    source = textwrap.dedent("""
+        import pandas as pd
+        from strategy.base import StrategyBase
+        from strategy.regime import Regime
+
+        class DraftMomentum(StrategyBase):
+            name = "generated_momentum_v1"
+            description = "Generated momentum draft."
+            version = "1.0.0"
+            sdk_version = "999"
+            regimes = [Regime.TRENDING]
+
+            def default_params(self) -> dict:
+                return {}
+
+            def param_schema(self) -> list[dict]:
+                return []
+
+            def should_long(self, df: pd.DataFrame) -> bool:
+                return True
+
+            def should_short(self, df: pd.DataFrame) -> bool:
+                return False
+    """).strip()
+    source_path = _write_strategy(tmp_path, "generated_20260418_120001", source)
+    artifact = register_strategy_artifact(
+        {
+            "name": "generated_20260418_120001",
+            "version": "1.0.0",
+            "path": str(source_path),
+            "provenance": "generated",
+        }
+    )
+    assert artifact is not None
+
+    monkeypatch.setattr("strategy.artifacts.STRATEGIES_DIR", tmp_path)
+    with pytest.raises(ValueError, match="not supported"):
+        review_generated_strategy(int(artifact["id"]), "reviewed_sdk_guard_v1")
 
 
 def test_promote_artifact_to_paper_requires_passing_backtest(tmp_path, monkeypatch):

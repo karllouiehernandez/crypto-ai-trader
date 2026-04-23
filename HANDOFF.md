@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 46 deployment lock phase 1 implemented) |
-| **Active sprint** | Sprint 46 — `#48` — Deployment Lock & Strategy SDK Compatibility |
-| **Latest completed sprint** | Sprint 45 — `#47` — Strategy Authoring Polish |
+| **Last updated** | 2026-04-23 (Sprint 46 deployment lock fully implemented) |
+| **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
+| **Latest completed sprint** | Sprint 46 — `#48` — Deployment Lock & Strategy SDK Compatibility |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **693 passed, 4 warnings** on 2026-04-23; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-23; focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
+| **Tests** | `pytest tests/ -q` → **696 passed, 4 warnings** on 2026-04-23; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8790` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,13 +22,49 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 46
+## Resume Here — Sprint 42 Background + Post-Sprint-46 Baseline
 
-Sprint 46 is tracked as GitHub issue `#48` and has been added to Projects board `#1`.
+Sprint 46 is tracked as GitHub issue `#48` and has been completed as the deployment-lock hardening sprint. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
 
 Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
 
-### Latest Slice — Sprint 46 Phase 1 (2026-04-23)
+### Latest Completed — Sprint 46 Phase 2 (2026-04-23)
+
+- **What changed**
+  - Extended [dashboard/workbench.py](dashboard/workbench.py):
+    - added `strategy_sdk_compatibility(...)`
+    - strategy workflow status now surfaces `SDK Mismatch` as a first-class lifecycle state
+    - strategy catalog rows now include `sdk_version` and `sdk_compatibility`
+  - Extended [dashboard/streamlit_app.py](dashboard/streamlit_app.py) `Strategies` tab:
+    - selected-strategy lifecycle area now shows SDK version and SDK compatibility beside origin/version/regimes
+    - incompatible drafts/plugins render explicit blocked-state copy instead of leaving review/promotion buttons ambiguously disabled
+    - `Review and Save`, `Promote to Paper`, `Approve for Live`, and `Evaluate for Paper Pass` now all require SDK-compatible strategy metadata
+    - generated review-name defaults now auto-suggest a non-colliding reviewed plugin name when the current name would collide
+  - Hardened [strategy/artifacts.py](strategy/artifacts.py):
+    - `review_generated_strategy(...)` now validates the rewritten reviewed plugin source before writing it to `strategies/`
+    - unsupported SDK versions are rejected before a reviewed plugin artifact can be registered
+  - Documented the deployed strategy contract in [strategies/README.md](strategies/README.md):
+    - required metadata
+    - required parameter methods
+    - supported signal contract
+    - current and supported SDK versions
+  - Added regression coverage in:
+    - [tests/test_strategy_artifacts.py](tests/test_strategy_artifacts.py)
+    - [tests/test_workbench_helpers.py](tests/test_workbench_helpers.py)
+- **What was verified**
+  - `pytest tests/test_strategy_artifacts.py tests/test_workbench_helpers.py tests/test_strategy_plugin_sdk.py -q` → **86 passed**
+  - `python -m py_compile strategy/artifacts.py dashboard/workbench.py dashboard/streamlit_app.py tests/test_strategy_artifacts.py tests/test_workbench_helpers.py tests/test_strategy_plugin_sdk.py` → clean
+  - `pytest tests/ -q` → **696 passed, 4 warnings**
+  - `python run_ui_agent.py --ui-only --url http://localhost:8790` → **64/64 PASS** against a temporary headless Streamlit verification server
+- **What remains next**
+  - Sprint 46 is complete; the deployment-lock contract is now visible across draft authoring, strategy lifecycle UI, reviewed-plugin acceptance, and docs.
+  - GitHub write follow-through is currently blocked again by `403 Resource not accessible by integration`; if access returns, close issue `#48` and sync the Projects board status to `Done`.
+  - Keep Sprint 42 as a background operational observation thread:
+    - active paper target artifact `#8` is still healthy
+    - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades
+    - the next strategy-focused sprint should target entry scarcity / market fit if that remains true after a meaningful observation window
+
+### Latest Completed — Sprint 46 Phase 1 (2026-04-23)
 
 - **What changed**
   - Added explicit strategy SDK compatibility metadata to [strategy/base.py](strategy/base.py):

@@ -10,6 +10,7 @@ from typing import Any
 from database.models import SessionLocal, StrategyArtifact, get_app_setting, init_db, set_app_setting
 from strategies.loader import list_strategies as list_plugin_strategies
 from strategies.loader import load_strategy_path
+from strategy.plugin_sdk import validate_strategy_source
 
 ACTIVE_PAPER_ARTIFACT_ID_KEY = "active_paper_strategy_artifact_id"
 ACTIVE_LIVE_ARTIFACT_ID_KEY = "active_live_strategy_artifact_id"
@@ -219,6 +220,15 @@ def review_generated_strategy(source_artifact_id: int, reviewed_name: str) -> di
         raise ValueError("Strategy file does not declare a top-level StrategyBase name")
     rewritten = _NAME_ASSIGNMENT.sub(rf"\1{clean_name}\3", source, count=1)
     rewritten = rewritten.replace("# GENERATED STRATEGY DRAFT", "# REVIEWED STRATEGY PLUGIN", 1)
+
+    validation = validate_strategy_source(
+        rewritten,
+        file_name=str(target_path),
+        existing_catalog=list_plugin_strategies(),
+    )
+    if not validation.valid:
+        errors = [issue["message"] for issue in validation.as_dict()["issues"] if issue["severity"] == "error"]
+        raise ValueError("; ".join(errors) or "Reviewed plugin failed validation")
 
     target_path.write_text(rewritten, encoding="utf-8")
     load_strategy_path(target_path)
