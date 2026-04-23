@@ -45,8 +45,9 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
     echo ""
 fi
 
-# ── 5. Install systemd service ────────────────────────────────────────────────
-echo "[5/6] Installing systemd service..."
+# ── 5. Install systemd service + log rotation ────────────────────────────────
+echo "[5/6] Installing systemd service and log rotation..."
+mkdir -p "$INSTALL_DIR/logs"
 # Patch User= to the current user
 sed "s/User=jetson/User=$(whoami)/g; \
      s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g; \
@@ -59,9 +60,16 @@ sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME
 echo "  Service installed and enabled (will start on boot)."
 
+if [ -f "$INSTALL_DIR/deployment/crypto-trader.logrotate" ]; then
+    sudo cp "$INSTALL_DIR/deployment/crypto-trader.logrotate" /etc/logrotate.d/crypto-trader
+    echo "  Logrotate template installed at /etc/logrotate.d/crypto-trader."
+fi
+
 # ── 6. Verify Python environment ─────────────────────────────────────────────
 echo "[6/6] Verifying installation..."
 python -c "import pandas, numpy, sqlalchemy, binance; print('  Core dependencies OK')"
+python -c "from database.models import init_db; init_db(); print('  Database initialized')"
+python -m deployment.jetson_ops health
 
 echo ""
 echo "=== Install complete ==="

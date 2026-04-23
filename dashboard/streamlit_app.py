@@ -55,6 +55,8 @@ from backtester.service import (
 )
 from dashboard.workbench import (
     build_data_health_frame,
+    build_deployment_readiness_frame,
+    build_deployment_readiness_metrics,
     build_artifact_registry_frame,
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
@@ -93,6 +95,7 @@ from dashboard.workbench import (
     summarise_data_health,
     runtime_summary,
 )
+from deployment.jetson_ops import evaluate_jetson_readiness
 from strategy.paper_evaluation import build_paper_evidence_summary, evaluate_paper_evidence
 from trading_diary.service import (
     get_trading_summary,
@@ -1401,6 +1404,42 @@ with strategy_tab:
                 st.caption(f"Manifest: `{_backup['manifest_path']}`")
         except Exception as _exc:
             st.warning(f"Persistence audit unavailable: {_exc}")
+
+    with st.expander("Jetson Deployment Readiness", expanded=False):
+        st.caption(
+            "Pre-deploy operator check for running this workbench as a long-lived Jetson Nano paper-trading appliance. "
+            "This does not start live trading or modify runtime targets."
+        )
+        try:
+            _deploy_report = evaluate_jetson_readiness()
+            _deploy_metrics = build_deployment_readiness_metrics(_deploy_report)
+            _deploy_cols = st.columns(4)
+            _deploy_cols[0].metric("Deployment Status", _deploy_metrics["status"])
+            _deploy_cols[1].metric("Required Checks", _deploy_metrics["required_checks"])
+            _deploy_cols[2].metric("Issues", _deploy_metrics["issues"])
+            _deploy_cols[3].metric("Warnings", _deploy_metrics["warnings"])
+            if _deploy_report.get("ready"):
+                st.success("Jetson deployment assets and restart-survival checks are ready.")
+            else:
+                st.warning("Jetson deployment needs attention before production-style operation.")
+                for _issue in _deploy_report.get("issues") or []:
+                    st.caption(f"Issue: {_issue}")
+            st.dataframe(build_deployment_readiness_frame(_deploy_report), width="stretch", hide_index=True)
+            st.markdown("Operator commands")
+            _commands = _deploy_report.get("commands") or {}
+            st.code(
+                "\n".join(
+                    [
+                        _commands.get("install", "bash deployment/install.sh"),
+                        _commands.get("health", "python -m deployment.jetson_ops health"),
+                        _commands.get("backup", "python -m deployment.jetson_ops backup"),
+                        _commands.get("restore_dry_run", "python -m deployment.jetson_ops restore backups/<backup>/manifest.json"),
+                    ]
+                ),
+                language="bash",
+            )
+        except Exception as _exc:
+            st.warning(f"Jetson deployment readiness unavailable: {_exc}")
 
     with st.expander("Manual Agent Workflow", expanded=False):
         st.markdown(

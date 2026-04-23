@@ -14,14 +14,15 @@ Read order for a new agent:
 - Sprint 41 is closed.
 - Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure` remains operationally active for real paper-evidence collection.
 - GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
-- Latest completed sprint: `Sprint 43 — Strategy Plugin SDK & Draft Import Workflow`
-  - GitHub issue: `#45`
+- Latest completed sprint: `Sprint 44 — Jetson Deployment Readiness`
+  - GitHub issue: `#46`
   - Projects board `#1` status: `Done`
-  - Delivered: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
-  - Later scope: strategy-pack `.zip` import/export and editable invalid-draft recovery.
+  - Delivered: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
+  - Sprint 43 remains complete: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
 - Baseline after the current Sprint 42 work:
-  - `pytest tests/ -q` -> `673 passed, 4 warnings` on `2026-04-23`
-  - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22` with `run_live.py` active
+  - `pytest tests/ -q` -> `683 passed, 4 warnings` on `2026-04-23`
+  - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-23`
+  - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-23`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
   - `python run_ui_agent.py --ui-only --url http://localhost:8785` -> `64/64 PASS`
   - The trader journey now exits deterministically, writes a report, and no longer produces false plugin `run-failed` partials; the remaining operator gap is real paper evidence, not UI audit completion
@@ -54,6 +55,12 @@ Read order for a new agent:
     - `strategies/loader.py` validates before discovery and unregisters stale strategy entries when a plugin becomes invalid
     - `dashboard/streamlit_app.py` exposes `Create / Import Strategy Draft` with template, paste, upload, validate, save, and `Refresh Strategy Registry`
     - generated/imported drafts remain backtest-only until reviewed into pinned plugin artifacts
+  - Sprint 44 added Jetson deployment operations:
+    - `python -m deployment.jetson_ops health`
+    - `python -m deployment.jetson_ops backup`
+    - `python -m deployment.jetson_ops restore <manifest>` with dry-run default
+    - `python -m deployment.jetson_ops repin-artifact <id> --apply` for explicit reviewed hash acknowledgment
+    - active paper target was moved from stale artifact `#2` to current matching artifact `#8` for the same `rsi_mean_reversion_v1` reviewed plugin
 
 ## Why This Exists
 
@@ -188,13 +195,13 @@ Read order for a new agent:
 **Sprint 42 continuation** — persistence/recovery, evidence-progress visibility, and Sprint 43 strategy-authoring flexibility are implemented. The next work is operational follow-through, not another redesign.
 
 Next steps:
-1. Keep the active paper-mode `run_live.py` process on paper target `rsi_mean_reversion_v1` artifact `#2` until the first real tagged BUY and SELL trades exist
+1. Keep the active paper-mode `run_live.py` process on paper target `rsi_mean_reversion_v1` artifact `#8` until the first real tagged BUY and SELL trades exist
 2. Once real SELL trades exist, use the deterministic evidence summary to decide whether `paper_passed` is justified or which metric gate is failing
 3. Trader-journey false partials are now resolved:
    - the harness scopes terminal-state detection to the actual `Last Backtest Attempt` block
    - dashboard backtests refresh plugin strategies from disk before execution
    - all 8 visible strategies now save runs and open complete Inspect surfaces in the headed journey
-4. Manually exercise the new Sprint 43 dashboard draft workflow in a headed Streamlit session before claiming it as operator-polished
+4. Manually exercise the Sprint 43 dashboard draft workflow and Sprint 44 Jetson readiness panel in a headed Streamlit session before claiming them as operator-polished
 5. Keep Sprint 42 issue `#44` updated as operational evidence lands
 6. Keep recording one entry in `knowledge/iteration_learnings.md` after each meaningful development or validation slice
 7. Avoid parallel pytest invocations; the current session-level temp DB bootstrap is not safe for concurrent pytest commands
@@ -234,12 +241,12 @@ Next steps:
 - Data checks: `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22`
 - Smoke UI: `64/64 PASS` on the latest headed validation run
 - Dashboard compile: `python -m py_compile dashboard/streamlit_app.py dashboard/workbench.py strategy/paper_evaluation.py simulator/paper_trader.py run_live.py` passed in the latest Sprint 42 validation slice
-- Paper target: `rsi_mean_reversion_v1` artifact #2 = `paper_active` in DB
+- Paper target: `rsi_mean_reversion_v1` artifact #8 = `paper_active` in DB after Sprint 44 repin from stale artifact #2
 - Freshness contract: maintained universe (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`) now passes freshness; stale exploratory symbols no longer create false freshness PARTIALs
 - Maintained-universe sync on `2026-04-22` inserted `1295` fresh `1m` candles each for `BTCUSDT`, `ETHUSDT`, and `BNBUSDT`, restoring the clean data-only baseline
 - New continuity guard: `maintain_symbol_freshness()` repaired an additional `14` stale minutes per maintained symbol during live verification; `run_live.py` now includes this guard at startup and every 5 minutes, but it still requires an active runner process to operate continuously
 - Current runtime validation: `run_live.py` is active again in paper mode, startup and heartbeat logs are ASCII-clean, and maintained-universe candles are advancing in real time
-- Paper-evidence blocker is now classified precisely: artifact `#2` has `0` artifact-tagged trades total (`0` BUY, `0` SELL), so the current gate failure is `no entries yet`
+- Paper-evidence blocker is now classified precisely: current paper artifact `#8` has `0` artifact-tagged trades total (`0` BUY, `0` SELL), so the current gate failure is `no entries yet`
 - Trader-journey draft-path coverage is now active: the generated draft guard passes against artifact `#4` instead of being skipped
 - Verification caveat: do not run multiple `pytest` commands in parallel; the shared temp-DB bootstrap in `tests/conftest.py` can race and produce a false `table candles already exists` error
 - Test isolation: full `pytest` now runs against a temp DB and no longer wipes live candles, artifacts, or app settings

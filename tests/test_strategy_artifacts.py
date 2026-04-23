@@ -14,6 +14,7 @@ from strategy.artifacts import (
     list_all_strategy_artifacts,
     promote_artifact_to_paper,
     register_strategy_artifact,
+    repin_reviewed_artifact_hash,
     review_generated_strategy,
     set_active_runtime_artifact_id,
     validate_runtime_artifact,
@@ -250,3 +251,44 @@ def test_list_all_strategy_artifacts_returns_registered(tmp_path, monkeypatch):
 def test_list_all_strategy_artifacts_empty_returns_list():
     result = list_all_strategy_artifacts()
     assert isinstance(result, list)
+
+
+def test_repin_reviewed_artifact_hash_updates_hash(tmp_path):
+    source = GENERATED_DRAFT.replace("generated_momentum_v1", "repin_me_v1")
+    path = _write_strategy(tmp_path, "repin_me_v1", source)
+    meta = _load_meta(path)
+    artifact = register_strategy_artifact({**meta, "provenance": "plugin"})
+    assert artifact is not None
+
+    path.write_text(source + "\n# reviewed metadata update\n", encoding="utf-8")
+    valid, error = validate_runtime_artifact(int(artifact["id"]))
+    assert valid is None
+    assert "hash mismatch" in str(error).lower()
+
+    repinned = repin_reviewed_artifact_hash(int(artifact["id"]))
+    assert repinned["changed"] is True
+    valid, error = validate_runtime_artifact(int(artifact["id"]))
+    assert valid is not None
+    assert error is None
+
+
+def test_repin_reviewed_artifact_hash_reuses_existing_matching_artifact(tmp_path):
+    source = GENERATED_DRAFT.replace("generated_momentum_v1", "repin_existing_v1")
+    path = _write_strategy(tmp_path, "repin_existing_v1", source)
+    meta = _load_meta(path)
+    old_artifact = register_strategy_artifact({**meta, "provenance": "plugin"})
+    assert old_artifact is not None
+    set_active_runtime_artifact_id("paper", int(old_artifact["id"]))
+
+    path.write_text(source + "\n# reviewed metadata update\n", encoding="utf-8")
+    newer_meta = _load_meta(path)
+    existing_artifact = register_strategy_artifact({**newer_meta, "provenance": "plugin"})
+    assert existing_artifact is not None
+    assert existing_artifact["id"] != old_artifact["id"]
+
+    repinned = repin_reviewed_artifact_hash(int(old_artifact["id"]))
+
+    assert repinned["reused_existing_artifact"] is True
+    assert repinned["id"] == existing_artifact["id"]
+    assert repinned["moved_runtime_modes"] == ["paper"]
+    assert get_active_runtime_artifact_id("paper") == existing_artifact["id"]

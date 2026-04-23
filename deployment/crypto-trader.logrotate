@@ -1,0 +1,12 @@
+# Optional file-log rotation for crypto_ai_trader operator logs.
+# The default systemd service logs to journald; keep this template installed so
+# deployments that redirect logs under ./logs do not grow without bounds.
+
+/home/*/crypto_ai_trader/logs/*.log /home/*/crypto_ai_trader/logs/*.err {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

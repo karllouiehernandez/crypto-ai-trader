@@ -368,6 +368,81 @@ def validate_runtime_artifact(artifact_id: int | None) -> tuple[dict[str, Any] |
     return artifact, None
 
 
+def repin_reviewed_artifact_hash(artifact_id: int) -> dict[str, Any]:
+    """Acknowledge a reviewed plugin file update by storing its current hash.
+
+    This is intentionally explicit because paper/live runtime safety depends on
+    hash pinning. Use only after a human/operator has reviewed the file update.
+    """
+    artifact = get_strategy_artifact(artifact_id)
+    if not artifact:
+        raise ValueError("Strategy artifact could not be found")
+    if artifact["provenance"] != "plugin":
+        raise ValueError("Only reviewed plugin artifacts can be repinned")
+    artifact_path = Path(str(artifact.get("path") or ""))
+    if not artifact_path.exists():
+        raise ValueError(f"Strategy artifact file is missing: {artifact_path}")
+
+    actual_hash = compute_strategy_code_hash(artifact_path)
+    init_db()
+    with SessionLocal() as sess:
+        row = sess.get(StrategyArtifact, int(artifact_id))
+        if row is None:
+            raise ValueError("Strategy artifact could not be found")
+        old_hash = row.code_hash
+        duplicate = (
+            sess.query(StrategyArtifact)
+            .filter(
+                StrategyArtifact.name == row.name,
+                StrategyArtifact.version == row.version,
+                StrategyArtifact.code_hash == actual_hash,
+                StrategyArtifact.id != row.id,
+            )
+            .one_or_none()
+        )
+        moved_runtime_modes: list[str] = []
+        if duplicate is not None:
+            duplicate.status = _status_max(duplicate.status, row.status)
+            duplicate.path = row.path
+            duplicate.provenance = row.provenance
+            duplicate.reviewed_from_artifact_id = (
+                duplicate.reviewed_from_artifact_id or row.reviewed_from_artifact_id
+            )
+            if get_app_setting(sess, ACTIVE_PAPER_ARTIFACT_ID_KEY, "") == str(row.id):
+                set_app_setting(sess, ACTIVE_PAPER_ARTIFACT_ID_KEY, str(duplicate.id))
+                moved_runtime_modes.append("paper")
+            if get_app_setting(sess, ACTIVE_LIVE_ARTIFACT_ID_KEY, "") == str(row.id):
+                set_app_setting(sess, ACTIVE_LIVE_ARTIFACT_ID_KEY, str(duplicate.id))
+                moved_runtime_modes.append("live")
+            if row.status == "paper_active":
+                row.status = "backtest_passed"
+            elif row.status in {"live_approved", "live_active"}:
+                row.status = "paper_passed"
+            sess.commit()
+            sess.refresh(duplicate)
+            updated = _artifact_to_dict(duplicate) or {}
+            return {
+                **updated,
+                "old_artifact_id": artifact_id,
+                "old_code_hash": old_hash,
+                "changed": old_hash != actual_hash,
+                "reused_existing_artifact": True,
+                "moved_runtime_modes": moved_runtime_modes,
+            }
+        row.code_hash = actual_hash
+        sess.commit()
+        sess.refresh(row)
+        updated = _artifact_to_dict(row) or {}
+    return {
+        **updated,
+        "old_artifact_id": artifact_id,
+        "old_code_hash": old_hash,
+        "changed": old_hash != actual_hash,
+        "reused_existing_artifact": False,
+        "moved_runtime_modes": moved_runtime_modes,
+    }
+
+
 def deactivate_runtime_artifact(run_mode: str) -> None:
     """Clear the active paper or live artifact target (fail-safe deactivation)."""
     set_active_runtime_artifact_id(run_mode, None)

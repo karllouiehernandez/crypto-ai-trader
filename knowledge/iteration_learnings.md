@@ -122,3 +122,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Added `strategy/plugin_sdk.py`, relaxed `StrategyBase` to support either `should_long`/`should_short` or `decide`, enforced validation in `strategies/loader.py`, added a dashboard `Create / Import Strategy Draft` workflow with `Refresh Strategy Registry`, updated plugin templates/prompts, and added regression tests for the SDK and loader validation.
 **What to try next:** Extend this into strategy pack import/export once the single-file workflow has been exercised by real strategy authors, and consider adding a dashboard editor for revising existing invalid drafts instead of only validating pasted/uploaded code.
 **Status:** RESOLVED
+
+---
+
+## 2026-04-23 Jetson Deployment Readiness — Deployment needs operator commands, not just instructions
+**What happened:** Sprint 44 turned Jetson deployment readiness into executable checks and commands. The repo now has a deployment health CLI, backup/restore CLI, explicit artifact repin command, logrotate template, improved systemd unit, and a dashboard readiness panel.
+**Why it happened:** A long-running Jetson deployment must be restart-safe and observable for weeks. Documentation alone is not enough; the operator needs commands that verify DB/artifact/data freshness, create backups, and make risky actions explicit.
+**Impact:** Production readiness improved because deployment health is now testable and visible. The Sprint 43 plugin-contract update also exposed a real hash-pinning issue; the new repin command resolved it safely by moving the paper target from stale artifact `#2` to current matching artifact `#8`.
+**What we changed:** Added `deployment/jetson_ops.py`, `deployment/crypto-trader.logrotate`, restore planning/apply support in `database/persistence.py`, reviewed-artifact repin support in `strategy/artifacts.py`, dashboard Jetson readiness UI, deployment docs, and regression tests.
+**What to try next:** On the physical Jetson, run `bash deployment/install.sh`, then `python -m deployment.jetson_ops health --strict`, keep `run_live.py` active through systemd, and let paper target `#8` collect real BUY/SELL evidence over weeks.
+**Status:** RESOLVED

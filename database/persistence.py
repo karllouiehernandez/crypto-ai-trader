@@ -70,12 +70,18 @@ def evaluate_restart_survival() -> dict[str, Any]:
     db_size_bytes = db_path.stat().st_size if db_exists else 0
     paper_target = _target_state("paper")
     live_target = _target_state("live")
+    active_artifact_ids = {
+        int(target["artifact_id"])
+        for target in (paper_target, live_target)
+        if target.get("artifact_id") is not None
+    }
     artifacts = list_all_strategy_artifacts()
 
     artifact_rows: list[dict[str, Any]] = []
     missing_count = 0
     hash_mismatch_count = 0
     issues: list[str] = []
+    artifact_warnings: list[str] = []
     for artifact in artifacts:
         path = Path(str(artifact.get("path") or "")).resolve()
         file_exists = path.exists()
@@ -86,10 +92,18 @@ def evaluate_restart_survival() -> dict[str, Any]:
             hash_matches = actual_hash == artifact.get("code_hash")
         if not file_exists:
             missing_count += 1
-            issues.append(f"Artifact #{artifact['id']} is missing on disk: {path}")
+            message = f"Artifact #{artifact['id']} is missing on disk: {path}"
+            if int(artifact["id"]) in active_artifact_ids:
+                issues.append(message)
+            else:
+                artifact_warnings.append(message)
         elif not hash_matches:
             hash_mismatch_count += 1
-            issues.append(f"Artifact #{artifact['id']} hash mismatch: {artifact.get('name')}")
+            message = f"Artifact #{artifact['id']} hash mismatch: {artifact.get('name')}"
+            if int(artifact["id"]) in active_artifact_ids:
+                issues.append(message)
+            else:
+                artifact_warnings.append(message)
         artifact_rows.append(
             {
                 **artifact,
@@ -173,6 +187,7 @@ def evaluate_restart_survival() -> dict[str, Any]:
         "latest_saved_run_id": int(latest_saved_run_id) if latest_saved_run_id else None,
         "mvp_symbols": mvp_symbols,
         "issues": deduped_issues,
+        "artifact_warnings": list(dict.fromkeys(artifact_warnings)),
         "ready_for_restart": not deduped_issues,
         "artifacts": artifact_rows,
         "generated_at": now_utc.isoformat(),
@@ -234,3 +249,94 @@ def create_state_backup(
     )
     manifest["manifest_path"] = str(manifest_path)
     return manifest
+
+
+def plan_state_restore(
+    manifest_path: str | Path,
+    *,
+    include_env: bool = False,
+) -> dict[str, Any]:
+    """Build a safe restore plan from a state-backup manifest."""
+    manifest_file = Path(manifest_path).resolve()
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    backup_dir = Path(str(manifest.get("backup_dir") or manifest_file.parent)).resolve()
+    repo_root = Path(__file__).resolve().parent.parent
+    strategies_dir = repo_root / "strategies"
+
+    operations: list[dict[str, str]] = []
+    warnings: list[str] = []
+    db_copy = manifest.get("database_copy")
+    if db_copy:
+        db_source = Path(str(db_copy)).resolve()
+        db_target = Path(DB_PATH).resolve()
+        if db_source.exists():
+            operations.append({"type": "database", "source": str(db_source), "target": str(db_target)})
+        else:
+            warnings.append(f"Database copy is missing from backup: {db_source}")
+    else:
+        warnings.append("Backup manifest has no database copy.")
+
+    strategy_backup_dir = backup_dir / "strategies"
+    for artifact in ((manifest.get("audit") or {}).get("artifacts") or []):
+        raw_path = artifact.get("path")
+        raw_id = artifact.get("id")
+        if not raw_path or raw_id is None:
+            continue
+        target = Path(str(raw_path)).resolve()
+        if strategies_dir.resolve() not in target.parents and target.parent != strategies_dir.resolve():
+            warnings.append(f"Skipping strategy restore outside strategies/: {target}")
+            continue
+        source = strategy_backup_dir / f"{raw_id}_{target.name}"
+        if source.exists():
+            operations.append({"type": "strategy", "source": str(source.resolve()), "target": str(target)})
+        else:
+            warnings.append(f"Strategy backup file is missing: {source}")
+
+    env_copy = manifest.get("env_copy")
+    if include_env:
+        if env_copy and Path(str(env_copy)).exists():
+            operations.append(
+                {
+                    "type": "env",
+                    "source": str(Path(str(env_copy)).resolve()),
+                    "target": str((repo_root / ".env").resolve()),
+                }
+            )
+        else:
+            warnings.append("include_env requested, but backup manifest has no .env copy.")
+    elif env_copy:
+        warnings.append(".env backup exists but will not be restored without include_env=True.")
+
+    return {
+        "manifest_path": str(manifest_file),
+        "backup_dir": str(backup_dir),
+        "operations": operations,
+        "warnings": warnings,
+        "can_apply": any(item["type"] == "database" for item in operations),
+    }
+
+
+def restore_state_backup(
+    manifest_path: str | Path,
+    *,
+    apply: bool = False,
+    include_env: bool = False,
+) -> dict[str, Any]:
+    """Dry-run or apply a backup restore. Applying first creates a pre-restore backup."""
+    plan = plan_state_restore(manifest_path, include_env=include_env)
+    result = {**plan, "applied": False, "pre_restore_backup": None}
+    if not apply:
+        return result
+    if not plan["can_apply"]:
+        raise ValueError("Backup restore plan has no database copy to apply.")
+
+    pre_restore_backup = create_state_backup()
+    for operation in plan["operations"]:
+        source = Path(operation["source"])
+        target = Path(operation["target"])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    init_db()
+    result["applied"] = True
+    result["pre_restore_backup"] = pre_restore_backup
+    return result

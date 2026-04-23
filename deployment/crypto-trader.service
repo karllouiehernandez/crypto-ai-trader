@@ -11,8 +11,11 @@ User=jetson
 WorkingDirectory=/home/jetson/crypto_ai_trader
 ExecStart=/home/jetson/crypto_ai_trader/.venv/bin/python run_live.py
 EnvironmentFile=/home/jetson/crypto_ai_trader/.env
+Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=30s
+KillSignal=SIGINT
+TimeoutStopSec=45s
 
 # Memory guard — OOM-kill if RSS exceeds limit
 MemoryMax=900M

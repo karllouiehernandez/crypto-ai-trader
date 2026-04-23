@@ -27,6 +27,40 @@ sudo systemctl start crypto-trader
 journalctl -fu crypto-trader
 ```
 
+The installer is intentionally non-destructive:
+- it does not overwrite an existing `.env`
+- it does not reset the SQLite database
+- it does not change active paper/live artifact settings
+- it installs a systemd unit, an optional logrotate template, initializes missing DB tables, and prints a deployment health report
+
+## Health Check
+
+Run this after install, after every update, and before leaving the Jetson unattended:
+
+```bash
+cd ~/crypto_ai_trader
+.venv/bin/python -m deployment.jetson_ops health
+```
+
+For automation:
+
+```bash
+.venv/bin/python -m deployment.jetson_ops health --json
+.venv/bin/python -m deployment.jetson_ops health --strict
+```
+
+`--strict` exits non-zero when required readiness checks fail.
+
+If health reports a reviewed artifact hash mismatch after an intentional code
+review/update, acknowledge the exact artifact explicitly:
+
+```bash
+.venv/bin/python -m deployment.jetson_ops repin-artifact <artifact_id>
+.venv/bin/python -m deployment.jetson_ops repin-artifact <artifact_id> --apply
+```
+
+Do not repin unknown strategy changes. Review the file first.
+
 ## Windows One-Time Bootstrap
 
 For a Windows dev machine, run the repo-root batch installer once:
@@ -58,6 +92,43 @@ sudo systemctl stop crypto-trader      # stop
 journalctl -fu crypto-trader           # follow live logs
 journalctl -u crypto-trader --since "1 hour ago"  # recent logs
 ```
+
+## Backups And Restore
+
+Create a non-destructive state backup before upgrades or experiments:
+
+```bash
+cd ~/crypto_ai_trader
+.venv/bin/python -m deployment.jetson_ops backup
+```
+
+This copies the current SQLite DB and registered strategy files into `backups/`.
+It does not copy `.env` unless you explicitly add `--include-env`.
+
+Dry-run a restore first:
+
+```bash
+.venv/bin/python -m deployment.jetson_ops restore backups/<backup_dir>/manifest.json
+```
+
+Apply a restore only after reading the dry-run operation list:
+
+```bash
+.venv/bin/python -m deployment.jetson_ops restore backups/<backup_dir>/manifest.json --apply
+```
+
+Applying a restore first creates a fresh pre-restore backup, then copies the DB and backed-up strategy files into place.
+
+## Log Retention
+
+The default service logs to journald:
+
+```bash
+journalctl -fu crypto-trader
+sudo journalctl --vacuum-time=14d
+```
+
+The installer also places `deployment/crypto-trader.logrotate` at `/etc/logrotate.d/crypto-trader` for optional file logs under `~/crypto_ai_trader/logs/`.
 
 ## Memory Monitoring
 
@@ -139,6 +210,8 @@ Once the trader is running, send commands to your bot:
 
 ```bash
 cd ~/crypto_ai_trader
+.venv/bin/python -m deployment.jetson_ops backup
 git pull
+.venv/bin/python -m deployment.jetson_ops health
 sudo systemctl restart crypto-trader
 ```

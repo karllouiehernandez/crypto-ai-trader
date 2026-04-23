@@ -1392,3 +1392,61 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 - A trader can now create/import a strategy after deployment, get actionable validation feedback, save valid drafts into `strategies/`, backtest drafts, and keep paper/live protected by the reviewed artifact lifecycle.
 - Generated/imported drafts remain backtest-only until reviewed into pinned plugin artifacts.
 - Future strategy-pack `.zip` import/export remains deliberately out of scope.
+
+---
+
+## Sprint 44 — Jetson Deployment Readiness
+**Date created:** 2026-04-23
+**Date closed:** 2026-04-23
+**Goal:** Make the app deployable on Jetson Nano as a durable research/paper-trading appliance with health checks, service assets, logs, backup/restore, and dashboard readiness visibility.
+**Status:** CLOSED ✓
+
+### GitHub Tracking
+- Created GitHub issue `#46` — `Sprint 44 — Jetson Deployment Readiness`
+- Added issue `#46` to GitHub Projects board `#1`
+- Project status set to `Done`
+
+### Changes Made
+- [x] Added `deployment/jetson_ops.py`
+  - `health` command for deployment readiness
+  - `backup` command using existing state backups
+  - `restore` command with dry-run default and explicit `--apply`
+  - `repin-artifact` command for reviewed plugin hash acknowledgment after intentional code review
+- [x] Added `deployment/crypto-trader.logrotate` and improved `deployment/crypto-trader.service`
+  - unbuffered runtime output
+  - SIGINT shutdown path
+  - timeout guard
+- [x] Updated `deployment/install.sh`
+  - creates logs directory
+  - installs logrotate template
+  - initializes DB tables
+  - prints deployment health
+- [x] Extended `database/persistence.py`
+  - restore planning/apply support with pre-restore backup
+  - inactive artifact hash mismatches now become warnings instead of restart blockers
+- [x] Extended `strategy/artifacts.py`
+  - explicit reviewed-artifact repin helper
+  - safely transfers active runtime settings to an existing matching artifact when one already exists
+- [x] Added dashboard `Jetson Deployment Readiness` expander in `dashboard/streamlit_app.py`
+- [x] Added tests:
+  - `tests/test_deployment_ops.py`
+  - `tests/test_persistence_restore.py`
+  - extra artifact repin coverage in `tests/test_strategy_artifacts.py`
+
+### Operational Repair
+- Sprint 43 intentionally changed reviewed strategy files to add the new plugin contract methods.
+- That invalidated the old active paper artifact hash.
+- Ran `python -m deployment.jetson_ops repin-artifact 2 --apply`.
+- The operation created a pre-repin backup and moved the active paper target from stale artifact `#2` to matching artifact `#8`, still `rsi_mean_reversion_v1`.
+
+### Verification
+- `pytest tests/test_deployment_ops.py tests/test_persistence_restore.py tests/test_strategy_artifacts.py tests/test_persistence.py tests/test_workbench_helpers.py -q` → **77 passed**
+- `python -m py_compile deployment/jetson_ops.py database/persistence.py dashboard/workbench.py dashboard/streamlit_app.py strategy/artifacts.py` → clean
+- `pytest tests/ -q` → **683 passed, 4 warnings**
+- `python -m deployment.jetson_ops health` → **Ready** on required checks; warnings only for Windows/AMD64 host and inactive historical artifact mismatches
+- `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP**
+
+### Outcome
+- Jetson deployment now has a first-class operator path: install, service, health, logs, backup, restore, and dashboard readiness.
+- Paper target remains the same strategy (`rsi_mean_reversion_v1`) but is now pinned to current reviewed artifact `#8`.
+- Live target remains unconfigured by design.

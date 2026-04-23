@@ -1521,6 +1521,43 @@ def build_restart_survival_frame(report: dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_deployment_readiness_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    """Return headline metrics for the Jetson deployment readiness panel."""
+    checks = report.get("checks") or []
+    required = [item for item in checks if item.get("required")]
+    required_passed = [item for item in required if item.get("passed")]
+    warnings = report.get("warnings") or []
+    issues = report.get("issues") or []
+    return {
+        "status": report.get("status") or ("Ready" if report.get("ready") else "Attention"),
+        "required_checks": f"{len(required_passed)}/{len(required)}" if required else "0/0",
+        "warnings": len(warnings),
+        "issues": len(issues),
+        "host": f"{report.get('platform', 'unknown')} / {report.get('machine', 'unknown')}",
+    }
+
+
+def build_deployment_readiness_frame(report: dict[str, Any]) -> pd.DataFrame:
+    """Return operator-readable deployment readiness rows."""
+    rows = []
+    for check in report.get("checks") or []:
+        if check.get("passed"):
+            status = "Pass"
+        elif check.get("required"):
+            status = "Fail"
+        else:
+            status = "Warning"
+        rows.append(
+            {
+                "check": check.get("name"),
+                "status": status,
+                "required": "Yes" if check.get("required") else "No",
+                "details": check.get("detail"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def build_paper_evidence_metrics(summary: dict[str, Any]) -> dict[str, str]:
     """Return headline labels for paper-evidence progress surfaces."""
     return {
