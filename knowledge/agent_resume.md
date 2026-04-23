@@ -14,6 +14,11 @@ Read order for a new agent:
 - Sprint 41 is closed.
 - Active local follow-on work: `Sprint 42 — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure`
 - GitHub status: Sprint 42 is issue `#44` on Projects board `#1`, and the board card is now `In Progress`; `HANDOFF.md` remains the source of truth for the exact current continuation state.
+- Queued next sprint: `Sprint 43 — Strategy Plugin SDK & Draft Import Workflow`
+  - GitHub issue: `#45`
+  - Projects board `#1` status: `Todo`
+  - Goal: let traders create/import/validate/backtest/review strategy drafts after deployment without changing application code.
+  - Core requirements: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, reviewed artifact pinning, and later strategy-pack support.
 - Baseline after the current Sprint 42 work:
   - `pytest tests/ -q` -> `660 passed, 4 warnings`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-22` with `run_live.py` active

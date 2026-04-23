@@ -12,6 +12,7 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | **Last active agent** | Codex |
 | **Last updated** | 2026-04-22 (Sprint 42 trader-journey false partials resolved; headed journey now clean) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure |
+| **Queued sprint** | Sprint 43 — `#45` — Strategy Plugin SDK & Draft Import Workflow |
 | **Sprint 40** | `#42` — Done on board |
 | **Tests** | `pytest tests/ -q` → **660 passed, 4 warnings**; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-22 with `run_live.py` active; latest headed trader journey `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` → **0 FAIL, 0 PARTIAL, 2 SKIP** on 2026-04-22; latest smoke UI `python run_ui_agent.py --ui-only --url http://localhost:8785` → **64/64 PASS** on 2026-04-22 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
@@ -25,6 +26,38 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 Sprint 41 is closed. Sprint 42 is now tracked as GitHub issue `#44` and has been added to Projects board `#1`.
 The Sprint 42 issue title/body have now been updated and the board card is set to `In Progress`.
+
+### Queued Next — Sprint 43
+
+Sprint 43 is now tracked as GitHub issue `#45` and has been added to Projects board `#1` with status `Todo`.
+
+Goal: make the deployed application flexible enough that new strategies can be created, imported, validated, backtested, reviewed, and promoted as versioned artifacts without changing application code.
+
+Required direction:
+- Create a formal Strategy Plugin SDK / strategy template contract.
+- Every plugin strategy must define `name`, `version`, `description`, `regimes`, `param_schema`, `default_params`, and either `should_long`/`should_short` or `decide`.
+- Add dashboard strategy create/import workflow:
+  - create from template
+  - paste code
+  - upload `.py`
+  - save into `strategies/` as a draft artifact
+- Validate before discovery:
+  - syntax
+  - required metadata
+  - behavior methods
+  - params schema/default compatibility
+  - duplicate `name + version`
+  - indicator-column references where practical
+- Add explicit hot reload so the dashboard/backtester can refresh strategy registry from disk without restarting Streamlit.
+- Preserve backtest-only draft rules:
+  - generated/imported drafts can backtest
+  - drafts cannot be promoted to paper/live
+  - review/save creates a separate reviewed plugin artifact
+- Preserve reviewed artifact pinning:
+  - paper/live resolves by artifact ID
+  - paper/live verifies path/version/code hash before runtime
+  - hash mismatch fails closed
+- Strategy pack `.zip` support is later scope unless low-risk scaffolding fits Sprint 43.
 
 ### Latest Slice (2026-04-22)
 

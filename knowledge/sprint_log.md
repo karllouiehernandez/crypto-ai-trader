@@ -1347,3 +1347,52 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 - The dashboard now exposes the Trading Diary backend that had already been implemented but not surfaced in the UI.
 - Traders can review aggregate outcomes, annotate entries, record a paper/live session summary, read deterministic backtest insights, and export diary knowledge into `knowledge/diary_learnings.md`.
 - The repo baseline increased from **594** to **607** passing tests without regressions.
+
+---
+
+## Sprint 43 — Strategy Plugin SDK & Draft Import Workflow
+**Date created:** 2026-04-23
+**Date closed:** Queued
+**Goal:** Make the deployed application flexible enough that new strategies can be created, imported, validated, backtested, reviewed, and promoted as versioned artifacts without changing application code.
+**Status:** QUEUED
+
+### GitHub Tracking
+- Created GitHub issue `#45` — `Sprint 43 — Strategy Plugin SDK & Draft Import Workflow`
+- Added issue `#45` to GitHub Projects board `#1`
+- Project status set to `Todo`
+
+### Sprint Direction
+- Add a formal Strategy Plugin SDK / strategy template contract.
+- Require every plugin strategy to define:
+  - `name`
+  - `version`
+  - `description`
+  - `regimes`
+  - `param_schema`
+  - `default_params`
+  - either `should_long` / `should_short` or `decide`
+- Add dashboard create/import draft workflow:
+  - create from template
+  - paste code
+  - upload `.py`
+  - save into `strategies/` as a draft artifact
+- Validate before discovery:
+  - syntax
+  - required metadata
+  - behavior methods
+  - params schema/default compatibility
+  - duplicate `name + version`
+  - indicator-column references where practical
+- Add explicit hot reload for the strategy registry without restarting Streamlit.
+- Preserve backtest-only draft rules:
+  - generated/imported drafts can backtest
+  - drafts cannot be promoted to paper/live
+  - review/save creates a separate reviewed plugin artifact
+- Preserve reviewed artifact pinning:
+  - paper/live resolves by artifact ID
+  - paper/live verifies path/version/code hash before runtime
+  - hash mismatch fails closed
+- Design for later `.zip` strategy packs containing strategy code, manifest, params/presets, notes, and test results.
+
+### Acceptance Target
+- A trader can create or import a strategy after deployment, get actionable validation feedback, backtest valid drafts, review/save accepted drafts into pinned reviewed artifacts, and keep paper/live protected by the existing artifact lifecycle.
