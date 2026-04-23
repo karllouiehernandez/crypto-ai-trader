@@ -71,7 +71,7 @@ Read order for a new agent:
     - active paper target remains reviewed artifact `#8` (`rsi_mean_reversion_v1`)
     - `run_live.py` had stopped and was relaunched; paper snapshots resumed at current-minute cadence
     - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades, so paper-evidence remains blocked by no entries, not by failing metrics
-    - accidental `python run_live.py --help` launches are currently unsafe because the script ignores CLI args and can boot a duplicate runtime
+    - accidental `python run_live.py --help` launches are now fixed in code: `argparse` owns the help path and exits before any boot logic runs
 
 ## Why This Exists
 

@@ -10,7 +10,7 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 42 paper-runtime follow-through refreshed after Sprint 45 close) |
+| **Last updated** | 2026-04-23 (Sprint 42 paper-runtime follow-through refreshed and run_live help path fixed) |
 | **Active sprint** | Sprint 42 — `#44` — Paper Evidence, Trader Journey Stabilization, and Legacy Integrity Closure (operational paper-evidence follow-through remains) |
 | **Latest completed sprint** | Sprint 45 — `#47` — Strategy Authoring Polish |
 | **Sprint 40** | `#42` — Done on board |
@@ -114,13 +114,19 @@ Verification:
   - Confirmed the previous paper runtime had stopped: last paper snapshot before intervention was `2026-04-23 10:27:00 UTC`, and artifact `#8` still had `0` tagged BUY trades and `0` tagged SELL trades.
   - Re-synced maintained-universe freshness with `maintain_symbol_freshness()` so `BTCUSDT`, `ETHUSDT`, and `BNBUSDT` returned to current-minute coverage.
   - Restarted `run_live.py` safely in the background and verified paper snapshots resumed for artifact `#8`.
-  - Detected an operational hazard: `python run_live.py --help` is **not** a harmless help path and booted a second runtime worker because `run_live.py` currently ignores CLI args.
+  - Detected an operational hazard: `python run_live.py --help` was **not** a harmless help path and booted a second runtime worker because `run_live.py` ignored CLI args.
   - Confirmed the accidental `--help` worker by duplicate paper snapshot writes at `2026-04-23 10:28:00 UTC`, then terminated only that mistaken duplicate and left the correct plain `run_live.py` worker alive.
+  - Fixed the help-path bug in code by adding a real `argparse` entrypoint to [run_live.py](run_live.py), so CLI help exits before env validation or runtime boot.
+  - Added regression coverage in [tests/test_run_live.py](tests/test_run_live.py) to prove `main(["--help"])` exits with code `0` and never calls `validate_env()` or `asyncio.run(...)`.
 - **What was verified**
   - `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** after freshness repair.
+  - `pytest tests/test_run_live.py -q` → **7 passed**
+  - `pytest tests/ -q` → **690 passed, 4 warnings**
+  - `python run_live.py --help` now prints help text and exits safely with no duplicate worker (`before=1 after=1`).
   - Active paper worker now writes fresh snapshots again:
     - resumed at `2026-04-23 10:27:05 UTC`
     - single-writer cadence restored by `2026-04-23 10:29:00 UTC`
+    - still advancing cleanly at `2026-04-23 10:43:00 UTC`
   - Artifact `#8` still has no tagged trades:
     - `0` BUY
     - `0` SELL
@@ -131,7 +137,7 @@ Verification:
 - **What remains next**
   - Keep the restarted plain `run_live.py` paper worker alive long enough to capture the first real artifact-tagged BUY and then SELL trades for artifact `#8`.
   - If artifact `#8` still shows zero tagged BUY trades after a meaningful additional observation window, open the next corrective sprint around entry scarcity / market-fit rather than paper-evidence scoring.
-  - Fix the `run_live.py --help` safety bug in code so an operator cannot accidentally launch a duplicate runtime while expecting CLI help.
+  - The next corrective code sprint should target entry scarcity / market fit, not runner CLI safety, because the `run_live.py --help` duplicate-launch bug is now fixed.
 
 ### Latest Slice (2026-04-23 — Sprint 43)
 

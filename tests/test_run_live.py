@@ -1,7 +1,15 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from run_live import _format_freshness_maintenance_summary, _status_fields, log_runner_snapshot
+import pytest
+
+from run_live import (
+    _format_freshness_maintenance_summary,
+    _status_fields,
+    build_arg_parser,
+    log_runner_snapshot,
+    main,
+)
 
 
 def test_status_fields_formats_snapshot_values():
@@ -110,3 +118,20 @@ def test_format_freshness_maintenance_summary_only_reports_refreshed_symbols():
 
 def test_format_freshness_maintenance_summary_returns_none_when_nothing_refreshed():
     assert _format_freshness_maintenance_summary({"BTCUSDT": {"status": "fresh", "rows_inserted": 0}}) is None
+
+
+def test_build_arg_parser_help_describes_runtime_worker():
+    parser = build_arg_parser()
+
+    assert "runtime worker" in parser.format_help()
+
+
+def test_main_help_exits_before_validate_or_boot():
+    with patch("run_live.validate_env") as mock_validate:
+        with patch("run_live.asyncio.run") as mock_asyncio_run:
+            with pytest.raises(SystemExit) as exc:
+                main(["--help"])
+
+    assert exc.value.code == 0
+    mock_validate.assert_not_called()
+    mock_asyncio_run.assert_not_called()

@@ -2,6 +2,7 @@
 """
 Boot sequence: load history, start live streamer, then launch paper trader + coordinator.
 """
+import argparse
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -195,7 +196,15 @@ async def boot():
         log.info("run_live shutdown complete")
 
 
-if __name__ == "__main__":
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the crypto_ai_trader paper/live runtime worker.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    build_arg_parser().parse_args(argv)
     validate_env()                # fail fast with clear error if .env is missing
     avail_gb = check_available_memory_gb()
     if 0 < avail_gb < 1.0:
@@ -209,3 +218,8 @@ if __name__ == "__main__":
         asyncio.run(boot())
     except KeyboardInterrupt:
         log.info("run_live interrupted by user; shutting down")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
