@@ -11,7 +11,7 @@ if /I "%~1"=="-h" goto :help
 if /I "%~1"=="--help" goto :help
 
 if "%TARGET_ROOT%"=="" (
-    set /P TARGET_ROOT=Enter flash drive root or target folder (example E:\): 
+    set /P TARGET_ROOT=Enter flash drive root or target folder ^(example E:\^): 
 )
 
 if "%TARGET_ROOT%"=="" goto :fail
@@ -32,12 +32,16 @@ if not exist "%BUNDLE_DIR%" mkdir "%BUNDLE_DIR%"
 echo [1/2] Mirroring repo into bundle folder...
 robocopy "%REPO_ROOT%" "%BUNDLE_DIR%" /MIR ^
     /XD ".git" ".venv" "backups" "reports" "__pycache__" ".pytest_cache" ".mypy_cache" ".ruff_cache" ^
-    /XF ".env" "knowledge\\experiment_log.md" ".run_live_eval.err" ".run_live_eval.out" ".streamlit_eval.err" ".streamlit_eval.out" ".streamlit_eval_phase2.err" ".streamlit_eval_phase2.out" ".streamlit_eval_phase47.err" ".streamlit_eval_phase47.out" "*.pyc" "*.pyo" "*.db-shm" "*.db-wal"
+    /XF ".env" "app.db" "crypto_trader.db" "knowledge\\experiment_log.md" ".run_live_eval.err" ".run_live_eval.out" ".streamlit_eval.err" ".streamlit_eval.out" ".streamlit_eval_phase2.err" ".streamlit_eval_phase2.out" ".streamlit_eval_phase47.err" ".streamlit_eval_phase47.out" ".streamlit_headed.err" ".streamlit_headed.out" ".streamlit_phase1.err" ".streamlit_phase1.out" "*.pyc" "*.pyo" "*.db-shm" "*.db-wal"
 set "RC=%ERRORLEVEL%"
 if %RC% GEQ 8 (
     echo Robocopy failed with code %RC%.
     goto :fail
 )
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$items = @('.streamlit_headed.err','.streamlit_headed.out','.streamlit_phase1.err','.streamlit_phase1.out','.streamlit_eval.err','.streamlit_eval.out','.streamlit_eval_phase2.err','.streamlit_eval_phase2.out','.streamlit_eval_phase47.err','.streamlit_eval_phase47.out','app.db','crypto_trader.db');" ^
+    "$items | ForEach-Object { $path = Join-Path '%BUNDLE_DIR%' $_; if (Test-Path $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } }" >nul 2>nul
 
 echo [2/2] Bundle ready.
 echo.
@@ -65,7 +69,7 @@ echo.
 echo This creates or refreshes:
 echo   FLASH_DRIVE_ROOT\crypto_ai_trader_bundle
 echo.
-echo It excludes local runtime artifacts, .env, .venv, reports, backups, and experiment logs.
+echo It excludes local runtime artifacts, .env, local DB placeholders, .venv, reports, backups, and experiment logs.
 exit /b 0
 
 :fail
