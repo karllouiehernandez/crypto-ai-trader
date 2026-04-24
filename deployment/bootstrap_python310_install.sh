@@ -57,6 +57,7 @@ echo "[4/8] Recreating virtual environment..."
 rm -rf "$VENV_DIR"
 "$PYTHON_BIN" -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
+cd "$INSTALL_DIR"
 
 echo "[5/8] Installing Python requirements..."
 pip install --upgrade pip
