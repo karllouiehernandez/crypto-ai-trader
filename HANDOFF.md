@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-25 (live data freshness panel + persisted worker heartbeat added) |
+| **Last updated** | 2026-04-25 (Jetson Streamlit systemd service added and validated) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
-| **Latest completed sprint** | Sprint 48.2 — GitHub issue creation blocked by integration — Live Data Freshness Panel |
+| **Latest completed sprint** | Sprint 48.3 — GitHub issue creation blocked by integration — Jetson Streamlit systemd Service |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **704 passed, 4 warnings** on 2026-04-25; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-25 |
+| **Tests** | `pytest tests/ -q` → **704 passed, 4 warnings** on 2026-04-25; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-25; Jetson services `crypto-trader` + `crypto-trader-dashboard` both active on 2026-04-25 and dashboard reachable at `http://192.168.100.30:8501` |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,11 +22,40 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 Background + Post-Sprint-48.2 Baseline
+## Resume Here — Sprint 42 Background + Post-Sprint-48.3 Baseline
 
 Sprint 48 is completed locally as the Jetson deployment bootstrap sprint, and Sprint 48.2 added a runtime liveness surface for the workbench. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
 
 Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
+
+### Latest Completed — Sprint 48.3 (2026-04-25)
+
+- **What changed**
+  - Added [deployment/crypto-trader-dashboard.service](deployment/crypto-trader-dashboard.service):
+    - Streamlit dashboard managed by `systemd`
+    - binds on `0.0.0.0:8501`
+    - restarts on failure
+    - uses journald logging and a tighter memory cap than the runtime worker
+  - Updated Jetson installer paths:
+    - [deployment/install.sh](deployment/install.sh)
+    - [deployment/install_from_bundle.sh](deployment/install_from_bundle.sh)
+    - [deployment/bootstrap_python310_install.sh](deployment/bootstrap_python310_install.sh)
+    - all now install and enable both `crypto-trader` and `crypto-trader-dashboard`
+  - Updated [deployment/README.md](deployment/README.md) with:
+    - dashboard service lifecycle commands
+    - dashboard access URL expectations
+    - explicit note that `Runtime Monitor -> Live Data Freshness` is the fast operator liveness check
+- **What was verified**
+  - Jetson deployment updated in place over SSH/SFTP
+  - `crypto-trader.service` active under `systemd`
+  - `crypto-trader-dashboard.service` active under `systemd`
+  - dashboard reachable from the dev machine at `http://192.168.100.30:8501`
+- **What remains next**
+  - Keep Sprint 42 as the background operational observation thread:
+    - Jetson runtime and dashboard now both survive SSH disconnects and reboots
+    - active paper target artifact `#8` is still valid on-device
+    - snapshots are advancing, but artifact `#8` still has `0` tagged trades
+    - the next strategy-focused corrective sprint should still target entry scarcity / market fit if that remains true after a longer observation window
 
 ### Latest Completed — Sprint 48.2 (2026-04-25)
 

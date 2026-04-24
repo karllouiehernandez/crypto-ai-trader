@@ -5,6 +5,16 @@ Update this file after every meaningful development slice, especially when a tes
 
 ---
 
+## 2026-04-25 Jetson Dashboard Service — Operator visibility needs its own supervisor, not only a background shell
+**What happened:** The Jetson dashboard was first launched with `nohup`, which was enough for quick validation but not a real deployment posture. A dedicated `crypto-trader-dashboard.service` was then added, installed, enabled, and validated on the device, and the dashboard is now reachable at `http://192.168.100.30:8501`.
+**Why it happened:** A deployed appliance should not depend on a remembered SSH command or an orphaned shell process for its operator console. The trader runtime was already under `systemd`; the dashboard needed the same treatment so the liveness panel and workbench remained available after disconnects and reboots.
+**Impact:** The Jetson now exposes both core surfaces durably: `crypto-trader.service` for the paper worker and `crypto-trader-dashboard.service` for Streamlit. That makes the new `Live Data Freshness` panel operationally useful instead of just a local feature.
+**What we changed:** Added `deployment/crypto-trader-dashboard.service`, updated all Jetson installer paths to install and enable it, documented dashboard operations and the `:8501` URL in `deployment/README.md`, deployed the updated files over SSH/SFTP, and validated that both services are active under `systemd`.
+**What to try next:** Leave both services running and use the dashboard plus journald as the normal monitoring pair. The remaining product question is still strategy evidence: whether artifact `#8` ever produces the first real tagged BUY and SELL trades.
+**Status:** RESOLVED
+
+---
+
 ## 2026-04-25 Runtime Liveness Surface — Deployed trust improves when the dashboard shows heartbeat age, not only charts
 **What happened:** A new `Live Data Freshness` panel was added to `Runtime Monitor`, and `run_live.py` now persists a worker heartbeat timestamp into `app_settings` on startup and every 30-second heartbeat.
 **Why it happened:** On the Jetson deployment, logs and direct DB queries proved the worker was healthy, but the Streamlit dashboard still could not honestly answer the simple operator question: “is the runtime worker alive right now?” Snapshot timestamps and moving charts are useful, but they are indirect signals.

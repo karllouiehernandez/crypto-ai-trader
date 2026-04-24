@@ -20,18 +20,20 @@ bash deployment/install.sh
 # 3. Edit credentials
 nano .env
 
-# 4. Start the service
+# 4. Start the services
 sudo systemctl start crypto-trader
+sudo systemctl start crypto-trader-dashboard
 
 # 5. Watch logs
 journalctl -fu crypto-trader
+journalctl -fu crypto-trader-dashboard
 ```
 
 The installer is intentionally non-destructive:
 - it does not overwrite an existing `.env`
 - it does not reset the SQLite database
 - it does not change active paper/live artifact settings
-- it installs a systemd unit, an optional logrotate template, initializes missing DB tables, and prints a deployment health report
+- it installs the trader and dashboard systemd units, an optional logrotate template, initializes missing DB tables, and prints a deployment health report
 
 ## Flash-Drive Deployment
 
@@ -78,7 +80,7 @@ What it does:
 - compiles Python `3.10.14` under `/usr/local`
 - recreates `.venv` with that interpreter
 - installs app requirements
-- installs the systemd service and logrotate config
+- installs the trader and dashboard systemd services plus logrotate config
 - runs `deployment.jetson_ops health`
 
 This fallback is still non-destructive with respect to:
@@ -171,11 +173,36 @@ After it finishes, use `run_all.ps1` or launch the dashboard/runtime manually fr
 
 ```bash
 sudo systemctl status crypto-trader    # health check
+sudo systemctl status crypto-trader-dashboard
 sudo systemctl restart crypto-trader   # restart
+sudo systemctl restart crypto-trader-dashboard
 sudo systemctl stop crypto-trader      # stop
+sudo systemctl stop crypto-trader-dashboard
 journalctl -fu crypto-trader           # follow live logs
+journalctl -fu crypto-trader-dashboard
 journalctl -u crypto-trader --since "1 hour ago"  # recent logs
 ```
+
+## Dashboard Access
+
+The Streamlit dashboard is exposed on port `8501` by the `crypto-trader-dashboard` service:
+
+```bash
+http://<jetson_ip>:8501
+```
+
+Example:
+
+```bash
+http://192.168.100.30:8501
+```
+
+Use `Runtime Monitor -> Live Data Freshness` as the quick operator proof that the runtime is alive:
+- worker heartbeat age
+- last portfolio snapshot timestamp
+- last trade timestamp
+- last candle timestamp per runtime symbol
+- candle age in minutes
 
 ## Backups And Restore
 

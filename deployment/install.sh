@@ -8,6 +8,7 @@ REPO_URL="https://github.com/karllouiehernandez/crypto-ai-trader.git"
 INSTALL_DIR="$HOME/crypto_ai_trader"
 VENV_DIR="$INSTALL_DIR/.venv"
 SERVICE_NAME="crypto-trader"
+DASHBOARD_SERVICE_NAME="crypto-trader-dashboard"
 
 echo "=== Crypto AI Trader — Jetson Nano Install ==="
 echo "Install dir : $INSTALL_DIR"
@@ -46,7 +47,7 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
 fi
 
 # ── 5. Install systemd service + log rotation ────────────────────────────────
-echo "[5/6] Installing systemd service and log rotation..."
+echo "[5/6] Installing systemd services and log rotation..."
 mkdir -p "$INSTALL_DIR/logs"
 # Patch User= to the current user
 sed "s/User=jetson/User=$(whoami)/g; \
@@ -59,6 +60,16 @@ sed "s/User=jetson/User=$(whoami)/g; \
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME
 echo "  Service installed and enabled (will start on boot)."
+
+sed "s/User=jetson/User=$(whoami)/g; \
+     s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g; \
+     s|ExecStart=.*|ExecStart=$VENV_DIR/bin/python -m streamlit run $INSTALL_DIR/dashboard/streamlit_app.py --server.address 0.0.0.0 --server.port 8501 --browser.gatherUsageStats false|g; \
+     s|EnvironmentFile=.*|EnvironmentFile=$INSTALL_DIR/.env|g" \
+    "$INSTALL_DIR/deployment/crypto-trader-dashboard.service" \
+    | sudo tee /etc/systemd/system/$DASHBOARD_SERVICE_NAME.service > /dev/null
+
+sudo systemctl enable $DASHBOARD_SERVICE_NAME
+echo "  Dashboard service installed and enabled (will start on boot)."
 
 if [ -f "$INSTALL_DIR/deployment/crypto-trader.logrotate" ]; then
     sudo cp "$INSTALL_DIR/deployment/crypto-trader.logrotate" /etc/logrotate.d/crypto-trader
@@ -77,8 +88,11 @@ echo ""
 echo "Next steps:"
 echo "  1. Edit your credentials:  nano $INSTALL_DIR/.env"
 echo "  2. Start the trader:       sudo systemctl start $SERVICE_NAME"
-echo "  3. Watch the logs:         journalctl -fu $SERVICE_NAME"
-echo "  4. Start MCP server:       cd $INSTALL_DIR && $VENV_DIR/bin/python run_mcp_server.py --transport sse"
+echo "  3. Start dashboard:        sudo systemctl start $DASHBOARD_SERVICE_NAME"
+echo "  4. Watch trader logs:      journalctl -fu $SERVICE_NAME"
+echo "  5. Watch dashboard logs:   journalctl -fu $DASHBOARD_SERVICE_NAME"
+echo "  6. Visit dashboard:        http://$(hostname -I | awk '{print $1}'):8501"
+echo "  7. Start MCP server:       cd $INSTALL_DIR && $VENV_DIR/bin/python run_mcp_server.py --transport sse"
 echo ""
 echo "SSH tunnel for remote agent access (run on your dev machine):"
 echo "  ssh -L 8765:localhost:8765 $(whoami)@\$(hostname -I | awk '{print \$1}')"

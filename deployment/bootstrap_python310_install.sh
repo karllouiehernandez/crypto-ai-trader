@@ -13,6 +13,7 @@ PYTHON_SRC_DIR="/tmp/Python-${PYTHON_VERSION}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/crypto_ai_trader}"
 VENV_DIR="$INSTALL_DIR/.venv"
 SERVICE_NAME="crypto-trader"
+DASHBOARD_SERVICE_NAME="crypto-trader-dashboard"
 MAKE_JOBS="${MAKE_JOBS:-2}"
 
 echo "=== Crypto AI Trader — Jetson Python 3.10 Bootstrap ==="
@@ -69,7 +70,7 @@ if [[ ! -f "$INSTALL_DIR/.env" ]]; then
     echo "  Created $INSTALL_DIR/.env from deployment/jetson.env.example"
 fi
 
-echo "[7/8] Installing systemd service..."
+echo "[7/8] Installing systemd services..."
 mkdir -p "$INSTALL_DIR/logs"
 sed "s/User=jetson/User=$(whoami)/g; \
      s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g; \
@@ -80,6 +81,15 @@ sed "s/User=jetson/User=$(whoami)/g; \
 
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME"
+
+sed "s/User=jetson/User=$(whoami)/g; \
+     s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g; \
+     s|ExecStart=.*|ExecStart=$VENV_DIR/bin/python -m streamlit run $INSTALL_DIR/dashboard/streamlit_app.py --server.address 0.0.0.0 --server.port 8501 --browser.gatherUsageStats false|g; \
+     s|EnvironmentFile=.*|EnvironmentFile=$INSTALL_DIR/.env|g" \
+    "$INSTALL_DIR/deployment/crypto-trader-dashboard.service" \
+    | sudo tee /etc/systemd/system/$DASHBOARD_SERVICE_NAME.service > /dev/null
+
+sudo systemctl enable "$DASHBOARD_SERVICE_NAME"
 if [[ -f "$INSTALL_DIR/deployment/crypto-trader.logrotate" ]]; then
     sudo cp "$INSTALL_DIR/deployment/crypto-trader.logrotate" /etc/logrotate.d/crypto-trader
 fi
@@ -95,5 +105,9 @@ echo ""
 echo "Next steps:"
 echo "  1. Edit credentials:  nano $INSTALL_DIR/.env"
 echo "  2. Start service:     sudo systemctl start $SERVICE_NAME"
-echo "  3. Check status:      sudo systemctl status $SERVICE_NAME --no-pager"
-echo "  4. Follow logs:       journalctl -fu $SERVICE_NAME"
+echo "  3. Start dashboard:   sudo systemctl start $DASHBOARD_SERVICE_NAME"
+echo "  4. Check trader:      sudo systemctl status $SERVICE_NAME --no-pager"
+echo "  5. Check dashboard:   sudo systemctl status $DASHBOARD_SERVICE_NAME --no-pager"
+echo "  6. Follow trader:     journalctl -fu $SERVICE_NAME"
+echo "  7. Follow dashboard:  journalctl -fu $DASHBOARD_SERVICE_NAME"
+echo "  8. Visit dashboard:   http://$(hostname -I | awk '{print $1}'):8501"
