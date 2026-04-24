@@ -33,6 +33,68 @@ The installer is intentionally non-destructive:
 - it does not change active paper/live artifact settings
 - it installs a systemd unit, an optional logrotate template, initializes missing DB tables, and prints a deployment health report
 
+## Flash-Drive Deployment
+
+If you already have the repo on a Windows machine and want to move it to Jetson Nano by USB instead of `git clone`, use the repo-root bundle script:
+
+```bat
+prepare_jetson_flash_drive.bat E:\
+```
+
+That creates:
+
+```text
+E:\crypto_ai_trader_bundle
+```
+
+The bundle excludes local-only state such as:
+- `.env`
+- `.venv`
+- `reports/`
+- `backups/`
+- runtime eval files
+- `knowledge/experiment_log.md`
+
+On the Jetson:
+
+```bash
+# after inserting the flash drive and finding the mount path
+bash /media/$USER/<usb_name>/crypto_ai_trader_bundle/deployment/install_from_bundle.sh /media/$USER/<usb_name>/crypto_ai_trader_bundle
+```
+
+This installs from the copied bundle instead of cloning from GitHub and preserves the same non-destructive guarantees as `deployment/install.sh`.
+
+## One-Time SSH + SFTP Setup From Windows
+
+If you want direct remote access to the Jetson aside from CI/CD, use the repo-root batch helper:
+
+```bat
+setup_jetson_remote_access.bat 192.168.1.50 jetson 22
+```
+
+What it does:
+- creates a local `ed25519` SSH key if you do not already have one
+- copies a Jetson-side helper script to `/tmp`
+- installs/enables `openssh-server` on the Jetson
+- prepares `~/.ssh/authorized_keys`
+- appends your Windows public key to the Jetson
+- verifies passwordless SSH access
+
+What it does not do:
+- change the trader runtime
+- modify `.env`
+- start live trading
+- change paper/live artifact settings
+
+After it completes:
+
+```bash
+ssh -p 22 jetson@192.168.1.50
+sftp -P 22 jetson@192.168.1.50
+```
+
+SFTP rides on the same OpenSSH service, so no separate SFTP server is required.
+
 ## Health Check
 
 Run this after install, after every update, and before leaving the Jetson unattended:

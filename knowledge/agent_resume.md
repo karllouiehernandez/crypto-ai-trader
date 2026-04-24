@@ -15,7 +15,21 @@ Read order for a new agent:
 - Active local sprint: `Sprint 42 — Operational paper-evidence follow-through (background observation thread)`
 - GitHub status: Sprint 46 is issue `#48` on Projects board `#1`; Sprint 47 issue creation/update is currently blocked by GitHub integration write permissions; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - GitHub write caveat: close-out comment/state sync for issue `#48` is currently blocked by `403 Resource not accessible by integration`, so repo-local handoff marks Sprint 46 complete even if GitHub issue state still needs a manual close.
-- Latest completed sprint: `Sprint 47 — Strategy Pack Import / Export`
+- Latest completed sprint: `Sprint 48 — Jetson Flash Deployment + Remote Access Bootstrap`
+  - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
+  - Projects board `#1` status: not synced programmatically for the same reason
+  - Delivered:
+    - repo-root `prepare_jetson_flash_drive.bat` for creating a sanitized `crypto_ai_trader_bundle` on a flash drive
+    - `deployment/install_from_bundle.sh` for installing on Jetson from that bundle instead of cloning
+    - repo-root `setup_jetson_remote_access.bat` for one-time Windows-side SSH key install and remote-access bootstrap
+    - `deployment/setup_remote_access.sh` for enabling OpenSSH/SFTP on Jetson
+    - updated `deployment/README.md` with flash-drive and SSH/SFTP instructions
+  - Verified:
+    - `cmd /c prepare_jetson_flash_drive.bat /?` -> help renders correctly on `2026-04-24`
+    - `cmd /c setup_jetson_remote_access.bat /?` -> help renders correctly on `2026-04-24`
+    - `pytest tests/ -q` -> `700 passed, 4 warnings` on `2026-04-24`
+    - Linux shell scripts were reviewed but not executed locally because this Windows machine has no installed WSL distribution
+- Previously completed sprint: `Sprint 47 — Strategy Pack Import / Export`
   - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
   - Projects board `#1` status: not synced programmatically for the same reason
   - Delivered:
@@ -27,7 +41,7 @@ Read order for a new agent:
     - `pytest tests/test_strategy_plugin_sdk.py -q` -> `22 passed` on `2026-04-23`
     - `pytest tests/ -q` -> `700 passed, 4 warnings` on `2026-04-23`
     - `python run_ui_agent.py --ui-only --url http://localhost:8791` -> `64/64 PASS` on `2026-04-23` against a temporary headless verification server
-- Previously completed sprint: `Sprint 46 — Deployment Lock & Strategy SDK Compatibility`
+- Earlier completed sprint: `Sprint 46 — Deployment Lock & Strategy SDK Compatibility`
   - GitHub issue: `#48`
   - Projects board `#1` status: `In Progress` until close-out is confirmed; `HANDOFF.md` is the current source of truth
   - Delivered:
@@ -46,7 +60,7 @@ Read order for a new agent:
   - Sprint 44 remains complete: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
   - Sprint 43 remains complete: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
 - Baseline after Sprint 47 completion:
-  - `pytest tests/ -q` -> `700 passed, 4 warnings` on `2026-04-23`
+  - `pytest tests/ -q` -> `700 passed, 4 warnings` on `2026-04-24`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-23`
   - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-23`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
@@ -110,6 +124,10 @@ Read order for a new agent:
     - `strategy/plugin_sdk.py` now exports/imports strategy packs with a manifest + source + optional notes bundle
     - `dashboard/streamlit_app.py` now exposes `Strategy Packs` inside `Create / Import Strategy Draft`
     - imported packs remain generated drafts, so paper/live safety rules are unchanged
+  - Sprint 48 adds offline Jetson bootstrap and remote access:
+    - `prepare_jetson_flash_drive.bat` builds a sanitized deployment bundle on removable media
+    - `deployment/install_from_bundle.sh` installs from the copied bundle without requiring GitHub access on the Jetson
+    - `setup_jetson_remote_access.bat` plus `deployment/setup_remote_access.sh` establish one-time SSH/SFTP access from Windows
 
 ## Why This Exists
 

@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-23 (Sprint 47 strategy pack import/export implemented) |
+| **Last updated** | 2026-04-24 (Jetson flash deployment + remote access bootstrap implemented) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
-| **Latest completed sprint** | Sprint 47 — GitHub issue creation blocked by integration — Strategy Pack Import / Export |
+| **Latest completed sprint** | Sprint 48 — GitHub issue creation blocked by integration — Jetson Flash Deployment + Remote Access Bootstrap |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **700 passed, 4 warnings** on 2026-04-23; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
+| **Tests** | `pytest tests/ -q` → **700 passed, 4 warnings** on 2026-04-24; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,11 +22,51 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 Background + Post-Sprint-47 Baseline
+## Resume Here — Sprint 42 Background + Post-Sprint-48 Baseline
 
-Sprint 47 is completed locally as the strategy-pack portability sprint. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
+Sprint 48 is completed locally as the Jetson deployment bootstrap sprint. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
 
 Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
+
+### Latest Completed — Sprint 48 (2026-04-24)
+
+- **What changed**
+  - Added repo-root [prepare_jetson_flash_drive.bat](prepare_jetson_flash_drive.bat):
+    - builds a `crypto_ai_trader_bundle` on a flash drive or target folder
+    - excludes local runtime state such as `.env`, `.venv`, reports, backups, and eval artifacts
+  - Added [deployment/install_from_bundle.sh](deployment/install_from_bundle.sh):
+    - installs the app on Jetson Nano from a copied flash-drive bundle instead of `git clone`
+    - preserves the same non-destructive rules as the existing Jetson installer
+  - Added repo-root [setup_jetson_remote_access.bat](setup_jetson_remote_access.bat):
+    - creates a local SSH key if missing
+    - copies a Jetson-side helper
+    - enables SSH/SFTP access and installs the Windows public key for passwordless access
+  - Added [deployment/setup_remote_access.sh](deployment/setup_remote_access.sh):
+    - installs `openssh-server` if missing
+    - enables/restarts the SSH service
+    - prepares `~/.ssh/authorized_keys`
+    - opens firewall access when `ufw` is active
+  - Updated [deployment/README.md](deployment/README.md) with:
+    - flash-drive deployment steps
+    - one-time SSH/SFTP setup steps from Windows
+- **What was verified**
+  - `cmd /c prepare_jetson_flash_drive.bat /?` → help renders correctly
+  - `cmd /c setup_jetson_remote_access.bat /?` → help renders correctly
+  - `pytest tests/ -q` → **700 passed, 4 warnings**
+  - Linux shell scripts were reviewed carefully but not executed locally because this Windows machine has no installed WSL distribution
+- **What remains next**
+  - Use Sprint 48 assets on the actual Jetson Nano:
+    - build the flash-drive bundle from Windows
+    - install from the bundle on Jetson
+    - run the one-time SSH/SFTP bootstrap
+    - then move into long-run validation under `systemd`
+  - GitHub write follow-through is still blocked by `403 Resource not accessible by integration`:
+    - Sprint 46 issue `#48` still needs manual close / board sync
+    - Sprint 47 and Sprint 48 issues / board cards could not be created programmatically
+  - Keep Sprint 42 as a background operational observation thread:
+    - active paper target artifact `#8` is still healthy
+    - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades
+    - the next strategy-focused corrective sprint should target entry scarcity / market fit if that remains true after a meaningful observation window
 
 ### Latest Completed — Sprint 47 (2026-04-23)
 

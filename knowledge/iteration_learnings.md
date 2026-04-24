@@ -5,6 +5,16 @@ Update this file after every meaningful development slice, especially when a tes
 
 ---
 
+## 2026-04-24 Jetson Bootstrap Practicality — Deployability is not just systemd, it is how the first install actually happens
+**What happened:** A flash-drive deployment path and a one-time Windows SSH/SFTP bootstrap were added for Jetson Nano. The repo can now produce a sanitized `crypto_ai_trader_bundle` for removable media, Jetson can install from that bundle without cloning from GitHub, and Windows can establish passwordless SSH/SFTP access using the standard OpenSSH server.
+**Why it happened:** The deployment docs assumed network-first setup and manual remote-access preparation. That is fine for a comfortable Linux workflow, but it is not the most practical first-install path when the operator already has the repo on a Windows machine and a flash drive. The missing piece was an offline-friendly bootstrap path that preserves the same non-destructive guarantees as the main installer.
+**Impact:** Jetson deployment is now much more realistic as a next step. The base app can be carried over by USB, installed locally on the device, and then managed remotely over SSH/SFTP without needing a second ad hoc setup sprint. This lowers the friction between “locally validated” and “actually running on the target appliance.”
+**What we changed:** Added `prepare_jetson_flash_drive.bat`, `deployment/install_from_bundle.sh`, `setup_jetson_remote_access.bat`, `deployment/setup_remote_access.sh`, and updated `deployment/README.md`. Verified the Windows-side scripts locally and kept full Python regression green.
+**What to try next:** Use these scripts on the actual Jetson Nano, then move immediately into multi-day long-run validation under `systemd`: service restart survival, backup/restore drills, candle freshness continuity, and paper-snapshot continuity.
+**Status:** RESOLVED
+
+---
+
 ## 2026-04-23 Strategy Pack Portability — Post-deploy flexibility improves when strategy exchange reuses the same draft gate
 **What happened:** Sprint 47 added a portable strategy-pack workflow. The dashboard can now export a strategy as a `.zip` containing `manifest.json`, the source file, and optional `notes.md`, then import a pack back into the same generated-draft path used for pasted or uploaded strategy code.
 **Why it happened:** The product goal is to deploy the base app once and evolve mostly through strategies. Single-file draft editing was already in place, but there was still no clean way to move strategies between machines or agents without manually copying files and rediscovering metadata. The missing piece was a portable bundle that still respected the existing SDK and lifecycle rules.
