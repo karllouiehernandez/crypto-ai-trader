@@ -5,6 +5,14 @@ Update this file after every meaningful development slice, especially when a tes
 
 ---
 
+## 2026-04-24 Jetson Python Reality — Deployment docs need a source-build fallback, not only an apt path
+**What happened:** A real Jetson Nano install hit the first practical blocker: the device was on Ubuntu 20.04 arm64, but `apt` could not locate `python3.10` or `python3.10-venv`. The flash-drive installer therefore failed at virtual-environment creation.
+**Why it happened:** The deployment flow assumed Python 3.10+ would be available from package repositories. On this Jetson image, that assumption was false, and the original Nano’s Ubuntu support path is already less standard than a regular x86 Ubuntu box.
+**Impact:** The deployment path needed a real fallback, not more advice. Without it, the otherwise-correct bundle and service setup still could not get past interpreter setup on the actual device.
+**What we changed:** Added `deployment/bootstrap_python310_install.sh` to compile Python `3.10.14` from source, rebuild the app venv, install requirements, wire the systemd service, and run health checks. Updated `deployment/README.md` to document this as the supported fallback when `apt` lacks Python 3.10.
+**What to try next:** Run the fallback bootstrap directly on the Jetson from `~/crypto_ai_trader`, then continue with `.env` editing and `crypto-trader` service validation. The next useful learning should come from the first successful service start on the real device.
+**Status:** RESOLVED
+
 ## 2026-04-24 Jetson Bootstrap Practicality — Deployability is not just systemd, it is how the first install actually happens
 **What happened:** A flash-drive deployment path and a one-time Windows SSH/SFTP bootstrap were added for Jetson Nano. The repo can now produce a sanitized `crypto_ai_trader_bundle` for removable media, Jetson can install from that bundle without cloning from GitHub, and Windows can establish passwordless SSH/SFTP access using the standard OpenSSH server.
 **Why it happened:** The deployment docs assumed network-first setup and manual remote-access preparation. That is fine for a comfortable Linux workflow, but it is not the most practical first-install path when the operator already has the repo on a Windows machine and a flash drive. The missing piece was an offline-friendly bootstrap path that preserves the same non-destructive guarantees as the main installer.

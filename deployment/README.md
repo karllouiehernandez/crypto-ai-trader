@@ -64,6 +64,28 @@ bash /media/$USER/<usb_name>/crypto_ai_trader_bundle/deployment/install_from_bun
 
 This installs from the copied bundle instead of cloning from GitHub and preserves the same non-destructive guarantees as `deployment/install.sh`.
 
+### If Jetson Lacks Python 3.10 Packages
+
+Some Jetson Nano images do not provide `python3.10` or `python3.10-venv` through `apt`, even on Ubuntu 20.04. In that case use the fallback bootstrap:
+
+```bash
+cd ~/crypto_ai_trader
+bash deployment/bootstrap_python310_install.sh
+```
+
+What it does:
+- installs Python build dependencies
+- compiles Python `3.10.14` under `/usr/local`
+- recreates `.venv` with that interpreter
+- installs app requirements
+- installs the systemd service and logrotate config
+- runs `deployment.jetson_ops health`
+
+This fallback is still non-destructive with respect to:
+- `.env`
+- active paper/live artifact settings
+- existing SQLite app state
+
 ## One-Time SSH + SFTP Setup From Windows
 
 If you want direct remote access to the Jetson aside from CI/CD, use the repo-root batch helper:

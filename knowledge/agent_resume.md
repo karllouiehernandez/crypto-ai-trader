@@ -15,7 +15,14 @@ Read order for a new agent:
 - Active local sprint: `Sprint 42 — Operational paper-evidence follow-through (background observation thread)`
 - GitHub status: Sprint 46 is issue `#48` on Projects board `#1`; Sprint 47 issue creation/update is currently blocked by GitHub integration write permissions; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - GitHub write caveat: close-out comment/state sync for issue `#48` is currently blocked by `403 Resource not accessible by integration`, so repo-local handoff marks Sprint 46 complete even if GitHub issue state still needs a manual close.
-- Latest completed sprint: `Sprint 48 — Jetson Flash Deployment + Remote Access Bootstrap`
+- Latest completed sprint: `Sprint 48.1 — Jetson Python 3.10 Bootstrap Fallback`
+  - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
+  - Delivered:
+    - `deployment/bootstrap_python310_install.sh` to handle Jetson Nano images where `apt` cannot provide Python 3.10
+    - deployment docs now include the explicit compile-from-source fallback
+  - Verified:
+    - fallback added in response to a real Jetson Nano install failure on Ubuntu 20.04 arm64 where `python3.10` packages were unavailable from `apt`
+- Previously completed sprint: `Sprint 48 — Jetson Flash Deployment + Remote Access Bootstrap`
   - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
   - Projects board `#1` status: not synced programmatically for the same reason
   - Delivered:
@@ -128,6 +135,8 @@ Read order for a new agent:
     - `prepare_jetson_flash_drive.bat` builds a sanitized deployment bundle on removable media
     - `deployment/install_from_bundle.sh` installs from the copied bundle without requiring GitHub access on the Jetson
     - `setup_jetson_remote_access.bat` plus `deployment/setup_remote_access.sh` establish one-time SSH/SFTP access from Windows
+  - Sprint 48.1 adds the missing Python-runtime fallback for real Jetson installs:
+    - `deployment/bootstrap_python310_install.sh` compiles Python `3.10.14` locally when `apt` lacks `python3.10`
 
 ## Why This Exists
 

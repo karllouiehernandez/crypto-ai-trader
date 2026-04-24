@@ -10,9 +10,9 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-24 (Jetson flash deployment + remote access bootstrap implemented) |
+| **Last updated** | 2026-04-24 (Jetson Python 3.10 bootstrap fallback added) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
-| **Latest completed sprint** | Sprint 48 — GitHub issue creation blocked by integration — Jetson Flash Deployment + Remote Access Bootstrap |
+| **Latest completed sprint** | Sprint 48.1 — GitHub issue creation blocked by integration — Jetson Python 3.10 Bootstrap Fallback |
 | **Sprint 40** | `#42` — Done on board |
 | **Tests** | `pytest tests/ -q` → **700 passed, 4 warnings** on 2026-04-24; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
@@ -67,6 +67,24 @@ Goal: lock the deployed base application so future post-deploy work focuses on c
     - active paper target artifact `#8` is still healthy
     - artifact `#8` still has `0` tagged BUY trades and `0` tagged SELL trades
     - the next strategy-focused corrective sprint should target entry scarcity / market fit if that remains true after a meaningful observation window
+
+### Latest Completed — Sprint 48.1 (2026-04-24)
+
+- **What changed**
+  - Added [deployment/bootstrap_python310_install.sh](deployment/bootstrap_python310_install.sh):
+    - installs Jetson build dependencies
+    - compiles Python `3.10.14` under `/usr/local`
+    - recreates the app `.venv` with `/usr/local/bin/python3.10`
+    - installs requirements
+    - installs the systemd service and logrotate config
+    - runs `deployment.jetson_ops health`
+  - Updated [deployment/README.md](deployment/README.md) with the explicit fallback path for Jetson images where `apt` cannot provide `python3.10` / `python3.10-venv`.
+- **What was verified**
+  - Script reviewed locally for correctness; not executed on Windows because it is Linux-only.
+  - This fallback was added in direct response to a real Jetson Nano install failure where `apt` could not locate `python3.10` packages on Ubuntu 20.04 arm64.
+- **What remains next**
+  - Paste or copy the fallback script onto the Jetson and run it from `~/crypto_ai_trader`.
+  - After it completes, edit `.env`, start `crypto-trader`, and verify service health.
 
 ### Latest Completed — Sprint 47 (2026-04-23)
 
