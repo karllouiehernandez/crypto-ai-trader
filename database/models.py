@@ -78,6 +78,9 @@ class AppSetting(Base):
     key   = Column(String(128), primary_key=True)
     value = Column(String, nullable=False)
 
+
+RUNTIME_WORKER_HEARTBEAT_TS_KEY = "runtime_worker_heartbeat_ts"
+
 class Promotion(Base):
     __tablename__ = "promotions"
     id                   = Column(Integer, primary_key=True, autoincrement=True)

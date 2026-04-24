@@ -15,7 +15,16 @@ Read order for a new agent:
 - Active local sprint: `Sprint 42 — Operational paper-evidence follow-through (background observation thread)`
 - GitHub status: Sprint 46 is issue `#48` on Projects board `#1`; Sprint 47 issue creation/update is currently blocked by GitHub integration write permissions; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - GitHub write caveat: close-out comment/state sync for issue `#48` is currently blocked by `403 Resource not accessible by integration`, so repo-local handoff marks Sprint 46 complete even if GitHub issue state still needs a manual close.
-- Latest completed sprint: `Sprint 48.1 — Jetson Python 3.10 Bootstrap Fallback`
+- Latest completed sprint: `Sprint 48.2 — Live Data Freshness Panel`
+  - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
+  - Delivered:
+    - persisted runtime worker heartbeat in `run_live.py` via `app_settings`
+    - `Runtime Monitor` now has a `Live Data Freshness` panel showing heartbeat age, last snapshot, last trade, and per-symbol candle freshness
+    - pure freshness-formatting helpers in `dashboard/workbench.py`
+  - Verified:
+    - `pytest tests/test_run_live.py tests/test_workbench_helpers.py -q` -> `66 passed` on `2026-04-25`
+    - `pytest tests/ -q` -> `704 passed, 4 warnings` on `2026-04-25`
+- Previously completed sprint: `Sprint 48.1 — Jetson Python 3.10 Bootstrap Fallback`
   - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
   - Delivered:
     - `deployment/bootstrap_python310_install.sh` to handle Jetson Nano images where `apt` cannot provide Python 3.10
@@ -66,10 +75,10 @@ Read order for a new agent:
   - Delivered: dashboard editing for existing generated drafts, safe draft source loading, generated-draft listing, next-name suggestions for duplicate drafts, and SDK regression coverage.
   - Sprint 44 remains complete: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
   - Sprint 43 remains complete: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
-- Baseline after Sprint 47 completion:
-  - `pytest tests/ -q` -> `700 passed, 4 warnings` on `2026-04-24`
+- Baseline after Sprint 48.2 completion:
+  - `pytest tests/ -q` -> `704 passed, 4 warnings` on `2026-04-25`
   - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-23`
-  - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-23`
+  - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-25`
   - `python run_ui_agent.py --journey trader --ui-only --headed --url http://localhost:8785` -> `29/31 PASS`, `0 FAIL`, `0 PARTIAL`, `2 SKIP` on `2026-04-22`
   - `python run_ui_agent.py --ui-only --url http://localhost:8791` -> `64/64 PASS`
   - The trader journey now exits deterministically, writes a report, and no longer produces false plugin `run-failed` partials; the remaining operator gap is real paper evidence, not UI audit completion
@@ -137,6 +146,10 @@ Read order for a new agent:
     - `setup_jetson_remote_access.bat` plus `deployment/setup_remote_access.sh` establish one-time SSH/SFTP access from Windows
   - Sprint 48.1 adds the missing Python-runtime fallback for real Jetson installs:
     - `deployment/bootstrap_python310_install.sh` compiles Python `3.10.14` locally when `apt` lacks `python3.10`
+  - Sprint 48.2 adds a runtime liveness surface for deployed monitoring:
+    - `run_live.py` now persists `runtime_worker_heartbeat_ts`
+    - `dashboard/streamlit_app.py` `Runtime Monitor` now shows `Live Data Freshness`
+    - `dashboard/workbench.py` formats operator-facing freshness metrics and per-symbol candle recency
 
 ## Why This Exists
 

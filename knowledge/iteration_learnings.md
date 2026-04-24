@@ -5,6 +5,16 @@ Update this file after every meaningful development slice, especially when a tes
 
 ---
 
+## 2026-04-25 Runtime Liveness Surface — Deployed trust improves when the dashboard shows heartbeat age, not only charts
+**What happened:** A new `Live Data Freshness` panel was added to `Runtime Monitor`, and `run_live.py` now persists a worker heartbeat timestamp into `app_settings` on startup and every 30-second heartbeat.
+**Why it happened:** On the Jetson deployment, logs and direct DB queries proved the worker was healthy, but the Streamlit dashboard still could not honestly answer the simple operator question: “is the runtime worker alive right now?” Snapshot timestamps and moving charts are useful, but they are indirect signals.
+**Impact:** The workbench can now become a better operator console once this slice is deployed to Jetson. Traders will be able to see last candle timestamps per runtime symbol, candle age in minutes, last portfolio snapshot timestamp, last trade timestamp, and worker heartbeat age in one place.
+**What we changed:** Persisted `runtime_worker_heartbeat_ts` in `run_live.py`, added pure freshness-formatting helpers in `dashboard/workbench.py`, extended `dashboard/streamlit_app.py` with the `Live Data Freshness` panel, and added regression coverage in `tests/test_run_live.py` and `tests/test_workbench_helpers.py`.
+**What to try next:** Pull this commit onto the Jetson if you want the dashboard there to reflect the new liveness surface, then keep the device running and use the panel plus journald to observe whether artifact `#8` ever produces the first real tagged BUY and SELL trades.
+**Status:** RESOLVED
+
+---
+
 ## 2026-04-24 Jetson Python Reality — Deployment docs need a source-build fallback, not only an apt path
 **What happened:** A real Jetson Nano install hit the first practical blocker: the device was on Ubuntu 20.04 arm64, but `apt` could not locate `python3.10` or `python3.10-venv`. The flash-drive installer therefore failed at virtual-environment creation.
 **Why it happened:** The deployment flow assumed Python 3.10+ would be available from package repositories. On this Jetson image, that assumption was false, and the original Nano’s Ubuntu support path is already less standard than a regular x86 Ubuntu box.

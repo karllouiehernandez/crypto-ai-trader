@@ -78,6 +78,8 @@ from dashboard.workbench import (
     build_restart_survival_metrics,
     build_diary_summary_metrics,
     build_focus_candidate_frame,
+    build_live_freshness_frame,
+    build_live_freshness_metrics,
     build_runtime_target_summary,
     build_trader_summary,
     build_trading_chart_payload,
@@ -116,6 +118,7 @@ from trading_diary.service import (
     update_diary_entry,
 )
 from trading_diary.export import export_diary_to_knowledge
+from database.models import RUNTIME_WORKER_HEARTBEAT_TS_KEY
 from database.promotion_queries import query_promotions
 from database.persistence import create_state_backup, evaluate_restart_survival
 from database.models import init_db
@@ -239,6 +242,40 @@ def load_equity() -> pd.DataFrame:
             return df
         except Exception:
             return pd.DataFrame()
+
+
+@st.cache_data(ttl=5)
+def load_live_data_freshness(symbols: tuple[str, ...]) -> dict[str, object]:
+    ordered_symbols = [str(symbol) for symbol in symbols if str(symbol)]
+    candles = pd.DataFrame(columns=["symbol", "latest_candle_ts"])
+    worker_heartbeat_ts: str | None = None
+    try:
+        con = sqlite3.connect(DB_PATH)
+        if ordered_symbols:
+            placeholders = ",".join(["?"] * len(ordered_symbols))
+            candles = pd.read_sql(
+                "SELECT symbol, MAX(open_time) AS latest_candle_ts "
+                f"FROM candles WHERE symbol IN ({placeholders}) GROUP BY symbol",
+                con,
+                params=ordered_symbols,
+                parse_dates=["latest_candle_ts"],
+            )
+        heartbeat_row = con.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            [RUNTIME_WORKER_HEARTBEAT_TS_KEY],
+        ).fetchone()
+        worker_heartbeat_ts = heartbeat_row[0] if heartbeat_row else None
+        con.close()
+    except Exception:
+        return {
+            "candles": pd.DataFrame(columns=["symbol", "latest_candle_ts"]),
+            "worker_heartbeat_ts": None,
+        }
+
+    return {
+        "candles": candles,
+        "worker_heartbeat_ts": worker_heartbeat_ts,
+    }
 
 
 @st.cache_data(ttl=30)
@@ -538,6 +575,8 @@ def render_runtime_monitor_panel(
     """Render the runtime monitor body; can be called from a fragment for partial refresh."""
     runtime_trades_all = load_trades(symbol)
     runtime_equity_all = load_equity()
+    runtime_symbols = list(dict.fromkeys([*(runtime_watchlist or []), symbol]))
+    freshness_payload = load_live_data_freshness(tuple(runtime_symbols))
 
     st.markdown("### Runtime Monitor")
     st.caption(
@@ -577,6 +616,29 @@ def render_runtime_monitor_panel(
     tr = filter_runtime_data(runtime_trades_all, runtime_strategy_filter, runtime_mode_filter)
     eq = filter_runtime_data(runtime_equity_all, runtime_strategy_filter, runtime_mode_filter)
     runtime_stats = runtime_summary(tr, eq)
+    candle_freshness = freshness_payload.get("candles", pd.DataFrame())
+    candle_map = (
+        {
+            str(row.get("symbol")): row.get("latest_candle_ts")
+            for row in candle_freshness.to_dict("records")
+        }
+        if isinstance(candle_freshness, pd.DataFrame) and not candle_freshness.empty
+        else {}
+    )
+    freshness_rows = [
+        {"symbol": runtime_symbol, "latest_candle_ts": candle_map.get(runtime_symbol)}
+        for runtime_symbol in runtime_symbols
+    ]
+    freshness_frame = build_live_freshness_frame(
+        freshness_rows,
+        freshness_minutes=MVP_FRESHNESS_MINUTES,
+    )
+    freshness_metrics = build_live_freshness_metrics(
+        freshness_frame,
+        worker_heartbeat_ts=freshness_payload.get("worker_heartbeat_ts"),
+        last_snapshot_ts=runtime_stats.get("last_snapshot_ts"),
+        last_trade_ts=runtime_stats.get("last_trade_ts"),
+    )
     mode_table = runtime_mode_table(
         filter_runtime_data(runtime_trades_all, runtime_strategy_filter, "All"),
         filter_runtime_data(runtime_equity_all, runtime_strategy_filter, "All"),
@@ -591,6 +653,41 @@ def render_runtime_monitor_panel(
             pass
 
     chart_df = enrich_chart_studies(ohlcv) if not ohlcv.empty else pd.DataFrame()
+
+    st.markdown("#### Live Data Freshness")
+    st.caption(
+        "Quick operator proof that the runtime worker is alive: latest worker heartbeat, "
+        "latest persisted portfolio state, latest trade timestamp, and per-symbol candle freshness."
+    )
+    freshness_cols = st.columns(4)
+    freshness_cols[0].metric(
+        "Worker Heartbeat",
+        freshness_metrics["heartbeat_value"],
+        freshness_metrics["heartbeat_delta"],
+    )
+    freshness_cols[1].metric(
+        "Last Portfolio Snapshot",
+        freshness_metrics["snapshot_value"],
+        freshness_metrics["snapshot_delta"],
+    )
+    freshness_cols[2].metric(
+        "Last Trade",
+        freshness_metrics["trade_value"],
+        freshness_metrics["trade_delta"],
+    )
+    freshness_cols[3].metric(
+        "Fresh Runtime Symbols",
+        freshness_metrics["fresh_symbols_value"],
+        freshness_metrics["fresh_symbols_delta"],
+    )
+    if not freshness_frame.empty:
+        st.dataframe(
+            freshness_frame[["symbol", "last_candle_ts", "candle_age_minutes", "freshness"]],
+            width="stretch",
+            hide_index=True,
+        )
+    else:
+        st.info("No runtime symbols are configured yet, so candle freshness cannot be audited.")
 
     st.caption("Responsive chart shows the active studies directly on the workbench: EMA overlays, Bollinger Bands, RSI, MACD, and runtime trade markers.")
     if runtime_mode_filter == "All":

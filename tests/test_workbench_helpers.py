@@ -12,6 +12,8 @@ from dashboard.workbench import (
     build_backtest_preset_frame,
     build_backtest_run_leaderboard,
     build_data_health_frame,
+    build_live_freshness_frame,
+    build_live_freshness_metrics,
     build_paper_evidence_checklist_frame,
     build_paper_evidence_metrics,
     build_restart_survival_frame,
@@ -30,6 +32,8 @@ from dashboard.workbench import (
     find_matching_preset_name,
     filter_backtest_runs,
     filter_runtime_data,
+    format_monitor_age,
+    format_monitor_timestamp,
     format_params_summary,
     format_scenario_label,
     format_strategy_origin,
@@ -935,3 +939,55 @@ def test_list_rollback_candidates_live_requires_paper_passed():
 def test_list_rollback_candidates_unknown_mode_returns_empty():
     artifacts = [{"id": 1, "name": "a", "version": "1.0.0", "provenance": "plugin", "status": "paper_passed"}]
     assert list_rollback_candidates(artifacts, "staging", None) == []
+
+
+def test_build_live_freshness_frame_formats_candle_ages():
+    frame = build_live_freshness_frame(
+        [
+            {"symbol": "BTCUSDT", "latest_candle_ts": "2026-04-25T00:00:00+00:00"},
+            {"symbol": "ETHUSDT", "latest_candle_ts": None},
+        ],
+        freshness_minutes=10,
+        now="2026-04-25T00:05:00+00:00",
+    )
+
+    assert list(frame["symbol"]) == ["BTCUSDT", "ETHUSDT"]
+    assert frame.loc[0, "last_candle_ts"] == "2026-04-25 00:00:00 UTC"
+    assert frame.loc[0, "candle_age_minutes"] == pytest.approx(5.0)
+    assert frame.loc[0, "freshness"] == "Fresh"
+    assert bool(frame.loc[0, "is_fresh"]) is True
+    assert frame.loc[1, "freshness"] == "No candles"
+    assert pd.isna(frame.loc[1, "candle_age_minutes"])
+
+
+def test_build_live_freshness_metrics_formats_runtime_liveness_labels():
+    freshness_frame = build_live_freshness_frame(
+        [
+            {"symbol": "BTCUSDT", "latest_candle_ts": "2026-04-25T00:00:00+00:00"},
+            {"symbol": "ETHUSDT", "latest_candle_ts": "2026-04-24T23:30:00+00:00"},
+        ],
+        freshness_minutes=10,
+        now="2026-04-25T00:05:00+00:00",
+    )
+
+    metrics = build_live_freshness_metrics(
+        freshness_frame,
+        worker_heartbeat_ts="2026-04-25T00:04:30+00:00",
+        last_snapshot_ts="2026-04-25T00:04:00+00:00",
+        last_trade_ts=None,
+        now="2026-04-25T00:05:00+00:00",
+    )
+
+    assert metrics["heartbeat_value"] == "2026-04-25 00:04:30 UTC"
+    assert metrics["heartbeat_delta"] == "<1 min old"
+    assert metrics["snapshot_value"] == "2026-04-25 00:04:00 UTC"
+    assert metrics["snapshot_delta"] == "1.0 min old"
+    assert metrics["trade_value"] == "—"
+    assert metrics["trade_delta"] == "No trades yet"
+    assert metrics["fresh_symbols_value"] == "1/2"
+    assert metrics["fresh_symbols_delta"] == "1 stale"
+
+
+def test_format_monitor_helpers_return_empty_labels_when_missing():
+    assert format_monitor_timestamp(None) == "—"
+    assert format_monitor_age(None, empty_label="No heartbeat yet") == "No heartbeat yet"

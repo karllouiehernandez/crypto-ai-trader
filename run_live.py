@@ -14,6 +14,11 @@ from config import (
 )
 from collectors.historical_loader import main as load_history
 from collectors.live_streamer     import main as live_stream
+from database.models              import (
+    RUNTIME_WORKER_HEARTBEAT_TS_KEY,
+    SessionLocal,
+    set_app_setting,
+)
 from market_data.history          import maintain_symbol_freshness
 from simulator.paper_trader       import PaperTrader
 from simulator.coordinator        import Coordinator
@@ -111,9 +116,21 @@ def _format_freshness_maintenance_summary(results: dict) -> str | None:
     return None
 
 
+def persist_worker_heartbeat(ts: datetime | None = None) -> None:
+    """Persist the runtime worker heartbeat so the dashboard can show liveness directly."""
+    heartbeat_ts = ts or datetime.now(timezone.utc)
+    with SessionLocal() as sess:
+        set_app_setting(sess, RUNTIME_WORKER_HEARTBEAT_TS_KEY, heartbeat_ts.isoformat())
+        sess.commit()
+
+
 async def heartbeat_loop(trader: PaperTrader, interval_seconds: int = HEARTBEAT_SECONDS) -> None:
     """Emit a concise runner heartbeat so quiet markets do not look like a dead process."""
     while True:
+        try:
+            persist_worker_heartbeat()
+        except Exception:
+            log.exception("Failed to persist runner heartbeat")
         log_runner_snapshot("Runner heartbeat", trader.get_status_snapshot())
         await asyncio.sleep(interval_seconds)
 
@@ -160,6 +177,10 @@ async def boot():
             if live_target else "unconfigured"
         ),
     )
+    try:
+        persist_worker_heartbeat()
+    except Exception:
+        log.exception("Failed to persist runner heartbeat at startup")
     log_runner_snapshot(
         "Runner startup",
         trader.get_status_snapshot(),

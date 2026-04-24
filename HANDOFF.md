@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-24 (Jetson Python 3.10 bootstrap fallback added) |
+| **Last updated** | 2026-04-25 (live data freshness panel + persisted worker heartbeat added) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
-| **Latest completed sprint** | Sprint 48.1 — GitHub issue creation blocked by integration — Jetson Python 3.10 Bootstrap Fallback |
+| **Latest completed sprint** | Sprint 48.2 — GitHub issue creation blocked by integration — Live Data Freshness Panel |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **700 passed, 4 warnings** on 2026-04-24; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-23 |
+| **Tests** | `pytest tests/ -q` → **704 passed, 4 warnings** on 2026-04-25; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-25 |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,11 +22,42 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 Background + Post-Sprint-48 Baseline
+## Resume Here — Sprint 42 Background + Post-Sprint-48.2 Baseline
 
-Sprint 48 is completed locally as the Jetson deployment bootstrap sprint. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
+Sprint 48 is completed locally as the Jetson deployment bootstrap sprint, and Sprint 48.2 added a runtime liveness surface for the workbench. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
 
 Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
+
+### Latest Completed — Sprint 48.2 (2026-04-25)
+
+- **What changed**
+  - Added a persisted runtime worker heartbeat in [run_live.py](run_live.py):
+    - every heartbeat now writes `runtime_worker_heartbeat_ts` into `app_settings`
+    - startup also writes an initial heartbeat so the dashboard can show liveness immediately after boot
+  - Added runtime freshness helpers in [dashboard/workbench.py](dashboard/workbench.py):
+    - `build_live_freshness_frame(...)`
+    - `build_live_freshness_metrics(...)`
+    - compact UTC timestamp and age formatting for operator-facing runtime surfaces
+  - Extended [dashboard/streamlit_app.py](dashboard/streamlit_app.py) `Runtime Monitor` with a new `Live Data Freshness` panel:
+    - last candle timestamp per runtime symbol
+    - candle age in minutes
+    - last portfolio snapshot timestamp
+    - last trade timestamp
+    - worker heartbeat age
+  - Added regression coverage in:
+    - [tests/test_run_live.py](tests/test_run_live.py)
+    - [tests/test_workbench_helpers.py](tests/test_workbench_helpers.py)
+- **What was verified**
+  - `pytest tests/test_run_live.py tests/test_workbench_helpers.py -q` → **66 passed**
+  - `python -m py_compile run_live.py dashboard/streamlit_app.py dashboard/workbench.py tests/test_run_live.py tests/test_workbench_helpers.py` → clean
+  - `pytest tests/ -q` → **704 passed, 4 warnings**
+- **What remains next**
+  - Pull this slice onto the Jetson deployment if you want the new liveness panel there; the current Jetson runtime is healthy, but it will not show the dashboard freshness panel until this commit is deployed.
+  - Keep Sprint 42 as the background operational observation thread:
+    - Jetson `crypto-trader` is still running under `systemd`
+    - active paper target artifact `#8` is valid on-device
+    - snapshots are advancing, but artifact `#8` still has `0` tagged trades
+    - the next strategy-focused corrective sprint should still target entry scarcity / market fit if that remains true after a longer observation window
 
 ### Latest Completed — Sprint 48 (2026-04-24)
 

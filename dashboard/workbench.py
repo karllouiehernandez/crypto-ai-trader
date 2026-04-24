@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-from config import STARTING_BALANCE_USD
+from config import MVP_FRESHNESS_MINUTES, STARTING_BALANCE_USD
 from strategy.plugin_sdk import STRATEGY_SDK_VERSION, SUPPORTED_STRATEGY_SDK_VERSIONS
 
 
@@ -1158,6 +1158,113 @@ def runtime_summary(
         "last_trade_regime": last_trade.get("regime", "—"),
         "last_trade_ts": last_trade.get("ts"),
         "last_snapshot_ts": equity["ts"].iloc[-1] if not equity.empty and "ts" in equity.columns else None,
+    }
+
+
+def _normalise_monitor_timestamp(value: Any) -> pd.Timestamp | None:
+    """Return a UTC-aware timestamp for monitor surfaces."""
+    if value in {None, ""}:
+        return None
+    try:
+        ts = pd.Timestamp(value)
+    except Exception:
+        return None
+    if pd.isna(ts):
+        return None
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
+
+
+def minutes_since_timestamp(value: Any, now: Any | None = None) -> float | None:
+    """Return whole runtime freshness age in minutes for a timestamp-like value."""
+    ts = _normalise_monitor_timestamp(value)
+    if ts is None:
+        return None
+    reference = _normalise_monitor_timestamp(now) or pd.Timestamp.now(tz="UTC")
+    age_minutes = (reference - ts).total_seconds() / 60.0
+    return max(float(age_minutes), 0.0)
+
+
+def format_monitor_timestamp(value: Any) -> str:
+    """Return a compact UTC timestamp for runtime monitor labels."""
+    ts = _normalise_monitor_timestamp(value)
+    if ts is None:
+        return "—"
+    return ts.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def format_monitor_age(value: Any, *, now: Any | None = None, empty_label: str) -> str:
+    """Return a compact age label for operator-facing monitor metrics."""
+    age_minutes = minutes_since_timestamp(value, now=now)
+    if age_minutes is None:
+        return empty_label
+    if age_minutes < 1:
+        return "<1 min old"
+    return f"{age_minutes:.1f} min old"
+
+
+def build_live_freshness_frame(
+    symbol_rows: list[dict[str, Any]],
+    *,
+    freshness_minutes: float = MVP_FRESHNESS_MINUTES,
+    now: Any | None = None,
+) -> pd.DataFrame:
+    """Return a runtime freshness table for the current watchlist."""
+    if not symbol_rows:
+        return pd.DataFrame(columns=["symbol", "last_candle_ts", "candle_age_minutes", "freshness", "is_fresh"])
+
+    rows: list[dict[str, Any]] = []
+    for item in symbol_rows:
+        symbol = str(item.get("symbol") or "")
+        latest_candle_ts = item.get("latest_candle_ts")
+        age_minutes = minutes_since_timestamp(latest_candle_ts, now=now)
+        is_fresh = bool(age_minutes is not None and age_minutes <= float(freshness_minutes))
+        if age_minutes is None:
+            freshness = "No candles"
+        else:
+            freshness = "Fresh" if is_fresh else "Stale"
+        rows.append(
+            {
+                "symbol": symbol,
+                "last_candle_ts": format_monitor_timestamp(latest_candle_ts),
+                "candle_age_minutes": round(age_minutes, 1) if age_minutes is not None else None,
+                "freshness": freshness,
+                "is_fresh": is_fresh,
+            }
+        )
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    return frame.sort_values(["is_fresh", "symbol"], ascending=[False, True], kind="stable").reset_index(drop=True)
+
+
+def build_live_freshness_metrics(
+    freshness_frame: pd.DataFrame,
+    *,
+    worker_heartbeat_ts: Any = None,
+    last_snapshot_ts: Any = None,
+    last_trade_ts: Any = None,
+    now: Any | None = None,
+) -> dict[str, str]:
+    """Return dashboard metric labels for runtime liveness and freshness."""
+    total_symbols = int(len(freshness_frame)) if isinstance(freshness_frame, pd.DataFrame) else 0
+    fresh_symbols = (
+        int(freshness_frame["is_fresh"].fillna(False).astype(bool).sum())
+        if total_symbols and "is_fresh" in freshness_frame.columns
+        else 0
+    )
+    stale_symbols = max(total_symbols - fresh_symbols, 0)
+    return {
+        "heartbeat_value": format_monitor_timestamp(worker_heartbeat_ts),
+        "heartbeat_delta": format_monitor_age(worker_heartbeat_ts, now=now, empty_label="No heartbeat yet"),
+        "snapshot_value": format_monitor_timestamp(last_snapshot_ts),
+        "snapshot_delta": format_monitor_age(last_snapshot_ts, now=now, empty_label="No snapshots yet"),
+        "trade_value": format_monitor_timestamp(last_trade_ts),
+        "trade_delta": format_monitor_age(last_trade_ts, now=now, empty_label="No trades yet"),
+        "fresh_symbols_value": f"{fresh_symbols}/{total_symbols}" if total_symbols else "0/0",
+        "fresh_symbols_delta": "All fresh" if total_symbols and stale_symbols == 0 else f"{stale_symbols} stale",
     }
 
 

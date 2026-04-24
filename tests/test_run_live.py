@@ -3,12 +3,18 @@ from unittest.mock import patch
 
 import pytest
 
+from database.models import (
+    RUNTIME_WORKER_HEARTBEAT_TS_KEY,
+    SessionLocal,
+    get_app_setting,
+)
 from run_live import (
     _format_freshness_maintenance_summary,
     _status_fields,
     build_arg_parser,
     log_runner_snapshot,
     main,
+    persist_worker_heartbeat,
 )
 
 
@@ -124,6 +130,15 @@ def test_build_arg_parser_help_describes_runtime_worker():
     parser = build_arg_parser()
 
     assert "runtime worker" in parser.format_help()
+
+
+def test_persist_worker_heartbeat_writes_app_setting():
+    ts = datetime(2026, 4, 25, 0, 0, tzinfo=timezone.utc)
+
+    persist_worker_heartbeat(ts)
+
+    with SessionLocal() as sess:
+        assert get_app_setting(sess, RUNTIME_WORKER_HEARTBEAT_TS_KEY) == ts.isoformat()
 
 
 def test_main_help_exits_before_validate_or_boot():
