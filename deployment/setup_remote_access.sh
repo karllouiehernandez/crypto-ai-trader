@@ -18,12 +18,14 @@ else
 fi
 
 echo "[2/4] Enabling and restarting ssh service..."
-if systemctl list-unit-files | grep -q "^ssh.service"; then
-    sudo systemctl enable ssh
+if systemctl list-unit-files --type=service | grep -q "^ssh\.service"; then
+    sudo systemctl enable ssh || true
     sudo systemctl restart ssh
-else
-    sudo systemctl enable sshd
+elif systemctl list-unit-files --type=service | grep -q "^sshd\.service"; then
+    sudo systemctl enable sshd || true
     sudo systemctl restart sshd
+else
+    echo "  Could not find ssh.service or sshd.service in systemd. SSH may already be managed externally."
 fi
 
 echo "[3/4] Preparing ~/.ssh directory..."
