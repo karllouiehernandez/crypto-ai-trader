@@ -10,7 +10,7 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-25 (Sprint 49 professional universe + history mirror added and validated) |
+| **Last updated** | 2026-04-25 (Sprint 49 deployed to Jetson; runtime remains alive) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
 | **Latest completed sprint** | Sprint 49 — GitHub issue creation blocked by integration — Professional Symbol Universe + Historical Data Mirror |
 | **Sprint 40** | `#42` — Done on board |
@@ -56,7 +56,12 @@ Goal: lock the deployed base application so future post-deploy work focuses on c
   - Temporary headless dashboard smoke: `python run_ui_agent.py --ui-only --url http://localhost:8794` → **63/64 PASS, 1 PARTIAL, 0 FAIL**
   - `python run_ui_agent.py --data-only` → **0 FAIL, 1 PARTIAL, 1 SKIP**
 - **What remains next**
-  - Deploy Sprint 49 to Jetson if you want the Professional 20 panel and mirror cache there.
+  - Sprint 49 was deployed to Jetson on 2026-04-25:
+    - Jetson backup created at `/home/jetson/crypto_ai_trader/backups/state_backup_20260425T011511Z`
+    - source/docs/tests copied in place without touching `.env`, live DB, or active paper target settings
+    - `crypto-trader-dashboard` restarted so the Professional 20 panel is live at `http://192.168.100.30:8501`
+    - `crypto-trader` runtime was left running; heartbeats remained current after deployment
+    - Jetson `deployment.jetson_ops health` remained **Ready**
   - On Jetson, optionally set `BINANCE_HISTORY_CACHE_DIR` to USB/local storage and run:
     - `.venv/bin/python -m collectors.historical_loader warm-cache --universe professional --days 30`
   - Data-only partial on the Windows dev DB is stale local candle freshness; Jetson runtime remains the deployment truth for live freshness.

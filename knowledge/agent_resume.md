@@ -28,6 +28,11 @@ Read order for a new agent:
     - `pytest tests/ -q` -> `712 passed, 4 warnings` on `2026-04-25`
     - `python run_ui_agent.py --ui-only --url http://localhost:8794` -> `63/64 PASS, 1 PARTIAL, 0 FAIL` on `2026-04-25`
     - `python run_ui_agent.py --data-only` -> `0 FAIL, 1 PARTIAL, 1 SKIP` on `2026-04-25`; partial is stale Windows dev DB candle freshness
+  - Deployed to Jetson on `2026-04-25`:
+    - backup created at `/home/jetson/crypto_ai_trader/backups/state_backup_20260425T011511Z`
+    - dashboard service restarted and reachable at `http://192.168.100.30:8501`
+    - runtime service left active so artifact `#8` continues paper evidence observation
+    - `python -m deployment.jetson_ops health` -> `Ready`
 - Previously completed sprint: `Sprint 48.4 — Jetson Thermal Fan Service`
   - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
   - Delivered:
