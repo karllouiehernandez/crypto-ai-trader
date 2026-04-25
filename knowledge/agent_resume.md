@@ -33,6 +33,12 @@ Read order for a new agent:
     - dashboard service restarted and reachable at `http://192.168.100.30:8501`
     - runtime service left active so artifact `#8` continues paper evidence observation
     - `python -m deployment.jetson_ops health` -> `Ready`
+- Jetson VNC / browser automation note:
+  - `deployment/JETSON_VNC_PLAYWRIGHT.md` documents the working approach
+  - use TigerVNC `192.168.100.30:5901` for a controllable Openbox desktop
+  - GNOME Vino `5900` connected but showed a broken NVIDIA root surface in headless mode
+  - Playwright Chromium is installed on the Jetson and validated against local Streamlit
+  - headed Playwright should run with `DISPLAY=:1` and Chromium args `--no-sandbox --disable-dev-shm-usage`
 - Previously completed sprint: `Sprint 48.4 — Jetson Thermal Fan Service`
   - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
   - Delivered:

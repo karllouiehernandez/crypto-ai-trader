@@ -67,6 +67,13 @@ Goal: lock the deployed base application so future post-deploy work focuses on c
   - Data-only partial on the Windows dev DB is stale local candle freshness; Jetson runtime remains the deployment truth for live freshness.
   - Sprint 42 remains the background operational observation thread: active paper artifact `#8` still needs real tagged BUY/SELL trades.
 
+### Jetson VNC + Headed Playwright Note (2026-04-25)
+
+- Working operator GUI path is documented in [deployment/JETSON_VNC_PLAYWRIGHT.md](deployment/JETSON_VNC_PLAYWRIGHT.md).
+- Use TigerVNC on `192.168.100.30:5901`, not GNOME Vino on `5900`.
+- Playwright Chromium is installed on the Jetson and validated against `http://127.0.0.1:8501`.
+- For headed Playwright on Jetson, use `DISPLAY=:1` and Chromium args `--no-sandbox --disable-dev-shm-usage`.
+
 ### Latest Completed — Sprint 48.4 (2026-04-25)
 
 - **What changed**
