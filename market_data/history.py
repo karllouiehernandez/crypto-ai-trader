@@ -6,12 +6,13 @@ import csv
 import io
 import zipfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import requests
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from config import DAYS_BACK, MVP_FRESHNESS_MINUTES, MVP_RESEARCH_UNIVERSE
+from config import BINANCE_HISTORY_CACHE_DIR, DAYS_BACK, MVP_FRESHNESS_MINUTES, MVP_RESEARCH_UNIVERSE
 from database.models import Candle, SessionLocal, init_db
 
 _SUPPORTED_INTERVALS = {"1m": timedelta(minutes=1)}
@@ -76,20 +77,15 @@ def _kline_to_row(symbol: str, kline: list[Any]) -> dict[str, Any]:
     }
 
 
-def _filter_rows_to_window(rows: list[dict[str, Any]], start: datetime, end: datetime) -> list[dict[str, Any]]:
-    return [row for row in rows if start <= row["open_time"] <= end]
+def _archive_cache_path(symbol: str, day: datetime, interval: str) -> Path:
+    clean = _normalise_symbol(symbol)
+    filename = f"{clean}-{interval}-{day.strftime('%Y-%m-%d')}.zip"
+    return Path(BINANCE_HISTORY_CACHE_DIR) / "spot" / "daily" / "klines" / clean / interval / filename
 
 
-def _download_archive_day(symbol: str, day: datetime, interval: str) -> list[dict[str, Any]]:
-    day_str = day.strftime("%Y-%m-%d")
-    url = _ARCHIVE_URL_TEMPLATE.format(symbol=_normalise_symbol(symbol), interval=interval, day=day_str)
-    resp = requests.get(url, timeout=30)
-    if resp.status_code == 404:
-        return []
-    resp.raise_for_status()
-
+def _parse_archive_bytes(symbol: str, content: bytes) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
         names = archive.namelist()
         if not names:
             return []
@@ -100,6 +96,28 @@ def _download_archive_day(symbol: str, day: datetime, interval: str) -> list[dic
                     continue
                 rows.append(_kline_to_row(symbol, record))
     return rows
+
+
+def _filter_rows_to_window(rows: list[dict[str, Any]], start: datetime, end: datetime) -> list[dict[str, Any]]:
+    return [row for row in rows if start <= row["open_time"] <= end]
+
+
+def _download_archive_day(symbol: str, day: datetime, interval: str) -> list[dict[str, Any]]:
+    day_str = day.strftime("%Y-%m-%d")
+    clean = _normalise_symbol(symbol)
+    cache_path = _archive_cache_path(clean, day, interval)
+    if cache_path.exists():
+        return _parse_archive_bytes(clean, cache_path.read_bytes())
+
+    url = _ARCHIVE_URL_TEMPLATE.format(symbol=clean, interval=interval, day=day_str)
+    resp = requests.get(url, timeout=30)
+    if resp.status_code == 404:
+        return []
+    resp.raise_for_status()
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(resp.content)
+    return _parse_archive_bytes(clean, resp.content)
 
 
 def _fetch_api_klines(

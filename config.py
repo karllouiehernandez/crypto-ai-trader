@@ -13,6 +13,8 @@ BASE_DIR  = Path(__file__).resolve().parent
 DATA_DIR  = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 DB_PATH   = DATA_DIR / "market_data.db"
+_BINANCE_HISTORY_CACHE_DIR_RAW = os.environ.get("BINANCE_HISTORY_CACHE_DIR", "").strip()
+BINANCE_HISTORY_CACHE_DIR = Path(_BINANCE_HISTORY_CACHE_DIR_RAW) if _BINANCE_HISTORY_CACHE_DIR_RAW else DATA_DIR / "binance_history_cache"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ▓▓  Credentials — loaded from .env (see .env.example)
@@ -65,6 +67,13 @@ def validate_env_backtest():
 SYMBOLS: List[str] = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
 HIST_INTERVAL      = "1m"   # candle interval for history
 LIVE_POLL_SECONDS  = 1      # real-time ticker poll
+
+PROFESSIONAL_SYMBOL_UNIVERSE: List[str] = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "DOGEUSDT", "TRXUSDT", "ADAUSDT", "LINKUSDT", "AVAXUSDT",
+    "TONUSDT", "DOTUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT",
+    "AAVEUSDT", "UNIUSDT", "OPUSDT", "ARBUSDT", "SUIUSDT",
+]
 
 MVP_RESEARCH_UNIVERSE: List[str] = [
     symbol.strip().upper()

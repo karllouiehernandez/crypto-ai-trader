@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from config import HIST_INTERVAL
 from database.models import init_db
@@ -16,6 +16,7 @@ from market_data.history import (
     format_audit_summary,
     sync_recent,
 )
+from market_data.professional_universe import list_professional_universe
 from market_data.runtime_watchlist import list_runtime_symbols
 
 
@@ -52,7 +53,33 @@ def _run_cli(args: argparse.Namespace) -> int:
         result = sync_recent(args.symbol, interval=args.interval)
         _print_audit(result)
         return 0
+    if args.command == "warm-cache":
+        symbols = _symbols_for_universe(args.universe)
+        end = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
+        start = end - timedelta(days=int(args.days))
+        print(
+            f"Warming Binance history cache for {len(symbols)} symbol(s), "
+            f"{args.days} day(s), interval={args.interval}"
+        )
+        failures: list[str] = []
+        for symbol in symbols:
+            try:
+                result = backfill(symbol, start, end, interval=args.interval)
+                print(f"{symbol}: {format_audit_summary(result)}")
+            except Exception as exc:
+                failures.append(symbol)
+                print(f"{symbol}: failed: {exc}")
+        return 1 if failures else 0
     raise ValueError(f"Unknown command: {args.command}")
+
+
+def _symbols_for_universe(name: str) -> list[str]:
+    clean = str(name or "").strip().lower()
+    if clean == "professional":
+        return list_professional_universe()
+    if clean == "runtime":
+        return list_runtime_symbols()
+    raise ValueError(f"Unknown universe: {name}")
 
 
 if __name__ == "__main__":
@@ -74,6 +101,11 @@ if __name__ == "__main__":
     sync_parser = sub.add_parser("sync_recent")
     sync_parser.add_argument("symbol")
     sync_parser.add_argument("--interval", default=HIST_INTERVAL)
+
+    warm_parser = sub.add_parser("warm-cache")
+    warm_parser.add_argument("--universe", choices=["professional", "runtime"], default="professional")
+    warm_parser.add_argument("--days", type=int, default=30)
+    warm_parser.add_argument("--interval", default=HIST_INTERVAL)
 
     args = parser.parse_args()
     if args.command:

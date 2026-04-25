@@ -15,7 +15,20 @@ Read order for a new agent:
 - Active local sprint: `Sprint 42 — Operational paper-evidence follow-through (background observation thread)`
 - GitHub status: Sprint 46 is issue `#48` on Projects board `#1`; Sprint 47 issue creation/update is currently blocked by GitHub integration write permissions; `HANDOFF.md` remains the source of truth for the exact current continuation state.
 - GitHub write caveat: close-out comment/state sync for issue `#48` is currently blocked by `403 Resource not accessible by integration`, so repo-local handoff marks Sprint 46 complete even if GitHub issue state still needs a manual close.
-- Latest completed sprint: `Sprint 48.4 — Jetson Thermal Fan Service`
+- Latest completed sprint: `Sprint 49 — Professional Symbol Universe + Historical Data Mirror`
+  - GitHub issue: not created programmatically; current integration previously returned `403 Resource not accessible by integration`
+  - Delivered:
+    - curated Professional 20 Binance spot USDT research universe in `market_data/professional_universe.py`
+    - sidebar dashboard panel to queue Professional 20 history, inspect status/readiness, and save a Jetson-safe runtime subset
+    - Binance Data Vision archive ZIP mirror cache controlled by `BINANCE_HISTORY_CACHE_DIR`
+    - `python -m collectors.historical_loader warm-cache --universe professional --days 30`
+    - deployment docs/env templates for USB/local cache operation
+  - Verified:
+    - `pytest tests/test_market_data_services.py -q` -> `26 passed` on `2026-04-25`
+    - `pytest tests/ -q` -> `712 passed, 4 warnings` on `2026-04-25`
+    - `python run_ui_agent.py --ui-only --url http://localhost:8794` -> `63/64 PASS, 1 PARTIAL, 0 FAIL` on `2026-04-25`
+    - `python run_ui_agent.py --data-only` -> `0 FAIL, 1 PARTIAL, 1 SKIP` on `2026-04-25`; partial is stale Windows dev DB candle freshness
+- Previously completed sprint: `Sprint 48.4 — Jetson Thermal Fan Service`
   - GitHub issue: not created programmatically; current integration returned `403 Resource not accessible by integration`
   - Delivered:
     - `deployment/jetson_fan_control.py` with hysteresis-based PWM control
@@ -96,9 +109,10 @@ Read order for a new agent:
   - Delivered: dashboard editing for existing generated drafts, safe draft source loading, generated-draft listing, next-name suggestions for duplicate drafts, and SDK regression coverage.
   - Sprint 44 remains complete: Jetson health CLI, backup/restore CLI, reviewed-artifact repin command, systemd/logrotate assets, installer hardening, and dashboard deployment readiness panel.
   - Sprint 43 remains complete: formal strategy template contract, dashboard create/import draft workflow, validation before discovery, explicit hot reload, backtest-only drafts, and reviewed artifact pinning preservation.
-- Baseline after Sprint 48.4 completion:
-  - `pytest tests/ -q` -> `707 passed, 4 warnings` on `2026-04-25`
-  - `python run_ui_agent.py --data-only` -> `0 FAIL, 0 PARTIAL, 1 SKIP` on `2026-04-23`
+- Baseline after Sprint 49 completion:
+  - `pytest tests/ -q` -> `712 passed, 4 warnings` on `2026-04-25`
+  - `python run_ui_agent.py --data-only` -> `0 FAIL, 1 PARTIAL, 1 SKIP` on `2026-04-25` (local Windows dev DB candle freshness stale)
+  - `python run_ui_agent.py --ui-only --url http://localhost:8794` -> `63/64 PASS, 1 PARTIAL, 0 FAIL` on `2026-04-25` (backtest click response partial under stale local data)
   - `python -m deployment.jetson_ops health` -> `Ready` on required checks on `2026-04-25`
   - Jetson runtime, dashboard, and fan services are all active under `systemd` on `2026-04-25`
   - Jetson dashboard is reachable at `http://192.168.100.30:8501`

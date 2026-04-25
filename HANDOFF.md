@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-25 (Jetson thermal fan service added and validated) |
+| **Last updated** | 2026-04-25 (Sprint 49 professional universe + history mirror added and validated) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
-| **Latest completed sprint** | Sprint 48.4 — GitHub issue creation blocked by integration — Jetson Thermal Fan Service |
+| **Latest completed sprint** | Sprint 49 — GitHub issue creation blocked by integration — Professional Symbol Universe + Historical Data Mirror |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **707 passed, 4 warnings** on 2026-04-25; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-25; Jetson services `crypto-trader` + `crypto-trader-dashboard` + `crypto-trader-fan` active on 2026-04-25 and dashboard reachable at `http://192.168.100.30:8501` |
+| **Tests** | `pytest tests/ -q` → **712 passed, 4 warnings** on 2026-04-25; `python run_ui_agent.py --ui-only --url http://localhost:8794` → **63/64 PASS, 1 PARTIAL, 0 FAIL** on 2026-04-25 (partial = local stale/incomplete backtest response); `python run_ui_agent.py --data-only` → **0 FAIL, 1 PARTIAL, 1 SKIP** on 2026-04-25 (partial = local dev DB candle freshness stale); `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-25; Jetson services `crypto-trader` + `crypto-trader-dashboard` + `crypto-trader-fan` active on 2026-04-25 and dashboard reachable at `http://192.168.100.30:8501` |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,11 +22,45 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 Background + Post-Sprint-48.4 Baseline
+## Resume Here — Sprint 42 Background + Post-Sprint-49 Baseline
 
 Sprint 48 is completed locally as the Jetson deployment bootstrap sprint, and Sprint 48.2 added a runtime liveness surface for the workbench. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
 
 Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
+
+### Latest Completed — Sprint 49 (2026-04-25)
+
+- **What changed**
+  - Added [market_data/professional_universe.py](market_data/professional_universe.py):
+    - durable Professional 20 research universe for Binance spot USDT day-trading workflows
+    - excludes stable/stable and wrapped-token pairs from the long-term tracker
+    - provides validation and dashboard-frame helpers for catalog/status display
+  - Added local Binance Data Vision mirror-cache support in [market_data/history.py](market_data/history.py):
+    - archive ZIP downloads are cached under `BINANCE_HISTORY_CACHE_DIR`
+    - existing cached ZIPs are parsed before any network request
+    - default cache path is `data/binance_history_cache`
+  - Extended [collectors/historical_loader.py](collectors/historical_loader.py):
+    - new `warm-cache` CLI for Professional 20 or runtime universe cache preloading
+    - example: `python -m collectors.historical_loader warm-cache --universe professional --days 30`
+  - Extended [dashboard/streamlit_app.py](dashboard/streamlit_app.py):
+    - sidebar `Professional 20 Research Universe` panel
+    - queue 30-day history loads for all 20 symbols
+    - inspect Binance status, quote-volume rank, local history readiness, load status, latest candle, and runtime-watchlist state
+    - save a Jetson-safe selected subset into the runtime watchlist with a 5-symbol cap
+  - Updated deployment docs and env templates with `BINANCE_HISTORY_CACHE_DIR` and Professional 20 operations.
+- **What was verified**
+  - `python -m py_compile config.py market_data/professional_universe.py market_data/history.py collectors/historical_loader.py dashboard/streamlit_app.py tests/test_market_data_services.py` → clean
+  - `pytest tests/test_market_data_services.py -q` → **26 passed**
+  - `python -m collectors.historical_loader --help` and `warm-cache --help` → clean CLI help
+  - `pytest tests/ -q` → **712 passed, 4 warnings**
+  - Temporary headless dashboard smoke: `python run_ui_agent.py --ui-only --url http://localhost:8794` → **63/64 PASS, 1 PARTIAL, 0 FAIL**
+  - `python run_ui_agent.py --data-only` → **0 FAIL, 1 PARTIAL, 1 SKIP**
+- **What remains next**
+  - Deploy Sprint 49 to Jetson if you want the Professional 20 panel and mirror cache there.
+  - On Jetson, optionally set `BINANCE_HISTORY_CACHE_DIR` to USB/local storage and run:
+    - `.venv/bin/python -m collectors.historical_loader warm-cache --universe professional --days 30`
+  - Data-only partial on the Windows dev DB is stale local candle freshness; Jetson runtime remains the deployment truth for live freshness.
+  - Sprint 42 remains the background operational observation thread: active paper artifact `#8` still needs real tagged BUY/SELL trades.
 
 ### Latest Completed — Sprint 48.4 (2026-04-25)
 

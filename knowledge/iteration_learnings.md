@@ -240,3 +240,13 @@ Update this file after every meaningful development slice, especially when a tes
 **What we changed:** Added `sdk_version` to `StrategyBase.meta()`, defined `STRATEGY_SDK_VERSION = "1"` and `SUPPORTED_STRATEGY_SDK_VERSIONS` in `strategy/plugin_sdk.py`, added `strategy_sdk_support()`, rejected unsupported SDK versions during validation, updated both generated and manual templates to include `sdk_version = "1"`, and surfaced the deployment SDK lock in the dashboard `Create / Import Strategy Draft` expander.
 **What to try next:** Extend the same compatibility lock into reviewed-plugin acceptance, strategy catalog visibility, and docs so the deployment contract is visible not only while drafting but across the full strategy lifecycle.
 **Status:** OPEN
+
+---
+
+## 2026-04-25 Professional Universe — Research tracking must be separated from runtime streaming
+**What happened:** Sprint 49 added a curated Professional 20 Binance spot USDT research universe and a local Binance Data Vision mirror cache. The dashboard can now queue history for all 20 symbols while keeping the runtime watchlist capped to a smaller Jetson-safe subset.
+**Why it happened:** Raw Binance volume ranking includes stablecoin pairs and temporary hype listings, and adding every candidate directly to paper/live streaming would create unnecessary Jetson/API load. The app needs a durable research tracker for strategy creation without turning every tracked symbol into an active runtime symbol.
+**Impact:** The product is better aligned with post-deploy strategy work: operators can maintain a long-term research universe, backfill/cache history for strategy development, and only promote selected symbols into the live paper runtime.
+**What we changed:** Added `market_data/professional_universe.py`, archive ZIP mirror caching in `market_data/history.py`, the `warm-cache` historical-loader command, a sidebar Professional 20 panel, and deployment docs/env templates for `BINANCE_HISTORY_CACHE_DIR`.
+**What to try next:** Deploy this slice to Jetson, set the cache path to USB/local storage if needed, warm the Professional 20 cache, and then use strategy generation/backtesting across this universe while keeping paper runtime limited to 3-5 symbols.
+**Status:** RESOLVED

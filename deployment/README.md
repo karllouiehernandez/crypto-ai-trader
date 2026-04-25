@@ -187,6 +187,23 @@ journalctl -fu crypto-trader-fan
 journalctl -u crypto-trader --since "1 hour ago"  # recent logs
 ```
 
+## Professional Symbol Universe
+
+The deployed workbench separates the long-term research tracker from the smaller paper/live runtime watchlist:
+
+- Professional 20 research universe: BTC, ETH, SOL, BNB, XRP, DOGE, TRX, ADA, LINK, AVAX, TON, DOT, LTC, BCH, NEAR, AAVE, UNI, OP, ARB, and SUI versus USDT.
+- Runtime watchlist: keep this to 3-5 active symbols on Jetson unless you have measured enough headroom.
+- Dashboard path: sidebar -> `Professional 20 Research Universe` -> queue history, inspect readiness, then save selected runtime symbols.
+
+To pre-warm the local Binance archive mirror for the Professional 20:
+
+```bash
+cd ~/crypto_ai_trader
+.venv/bin/python -m collectors.historical_loader warm-cache --universe professional --days 30
+```
+
+Set `BINANCE_HISTORY_CACHE_DIR` in `.env` to move the ZIP mirror onto USB or larger local storage.
+
 ## Dashboard Access
 
 The Streamlit dashboard is exposed on port `8501` by the `crypto-trader-dashboard` service:

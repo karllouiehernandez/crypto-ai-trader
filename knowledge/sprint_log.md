@@ -1632,3 +1632,44 @@ Ready for Sprint 9 (or production deployment after 30+ days paper trading).
 - The deployed app now declares an explicit strategy SDK contract instead of relying on implied compatibility.
 - Draft strategy authors can see the supported SDK version directly in the dashboard before saving or reviewing a plugin.
 - The next sprint phase should extend the same contract lock into reviewed-plugin acceptance and documentation so post-deploy strategy iteration stays inside the supported rails.
+
+---
+
+## Sprint 49 — Professional Symbol Universe + Historical Data Mirror
+**Date created:** 2026-04-25
+**Date closed:** 2026-04-25
+**Goal:** Add a durable 20-symbol Binance spot USDT research universe and a local historical-data mirror cache so strategy work can expand after deployment without overloading the Jetson runtime.
+**Status:** CLOSED
+
+### GitHub Tracking
+- GitHub issue / board creation attempted by convention, but current integration has recently returned `403 Resource not accessible by integration`.
+- Repo-local source of truth: `HANDOFF.md` and `knowledge/agent_resume.md`.
+
+### Changes Made
+- [x] Added `market_data/professional_universe.py`
+  - Professional 20 symbol list
+  - stable/wrapped-pair exclusion guard
+  - catalog validation and dashboard table helpers
+- [x] Added Binance archive ZIP mirror support in `market_data/history.py`
+  - checks `BINANCE_HISTORY_CACHE_DIR` before network
+  - writes downloaded Binance Data Vision ZIPs to cache
+- [x] Added historical-loader cache warming
+  - `python -m collectors.historical_loader warm-cache --universe professional --days 30`
+- [x] Added dashboard sidebar controls
+  - queue Professional 20 history loads
+  - inspect Binance status, volume rank, local readiness, runtime state, and latest candle
+  - save selected Professional 20 symbols into the runtime watchlist with a 5-symbol Jetson cap
+- [x] Updated deployment docs and env templates.
+
+### Verification
+- `python -m py_compile config.py market_data/professional_universe.py market_data/history.py collectors/historical_loader.py dashboard/streamlit_app.py tests/test_market_data_services.py` -> clean
+- `pytest tests/test_market_data_services.py -q` -> **26 passed**
+- `python -m collectors.historical_loader --help` -> clean
+- `python -m collectors.historical_loader warm-cache --help` -> clean
+- `pytest tests/ -q` -> **712 passed, 4 warnings**
+- `python run_ui_agent.py --ui-only --url http://localhost:8794` -> **63/64 PASS, 1 PARTIAL, 0 FAIL**
+- `python run_ui_agent.py --data-only` -> **0 FAIL, 1 PARTIAL, 1 SKIP**
+
+### Outcome
+- The app now has a durable research-tracker layer separate from paper/live runtime streaming.
+- Operators can pre-warm history for a professional multi-year day-trading universe and keep Jetson runtime active on a smaller selected subset.

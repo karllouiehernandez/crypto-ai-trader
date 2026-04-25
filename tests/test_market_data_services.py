@@ -15,6 +15,12 @@ from market_data import runtime_watchlist as runtime_watchlist_module
 from market_data import symbol_readiness as symbol_readiness_module
 from market_data.binance_symbols import list_binance_spot_usdt_symbol_names, list_binance_spot_usdt_symbols
 from market_data.history import _download_archive_day, audit, backfill, maintain_symbol_freshness, sync_recent
+from market_data.professional_universe import (
+    EXCLUDED_LONG_TERM_RESEARCH_SYMBOLS,
+    build_professional_universe_frame,
+    list_professional_universe,
+    validate_professional_universe_catalog,
+)
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
 from market_data.symbol_readiness import (
     is_symbol_ready,
@@ -46,6 +52,13 @@ def _clear_market_data_state() -> None:
         sess.query(Candle).delete()
         sess.query(AppSetting).delete()
         sess.commit()
+
+
+def _archive_zip_bytes(filename: str, content: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(filename, content)
+    return buffer.getvalue()
 
 
 def test_list_binance_spot_usdt_symbols_filters_trading_spot_usdt_only():
@@ -95,6 +108,58 @@ def test_list_binance_spot_usdt_symbol_names_sorted_by_volume():
         names = list_binance_spot_usdt_symbol_names()
 
     assert names == ["BTCUSDT", "ETHUSDT"]
+
+
+def test_professional_universe_has_twenty_durable_non_stable_symbols():
+    universe = list_professional_universe()
+
+    assert len(universe) == 20
+    assert len(set(universe)) == 20
+    assert all(symbol.endswith("USDT") for symbol in universe)
+    assert not (set(universe) & EXCLUDED_LONG_TERM_RESEARCH_SYMBOLS)
+
+
+def test_professional_universe_validates_active_catalog_rows():
+    catalog = [
+        {
+            "symbol": symbol,
+            "status": "TRADING",
+            "quote_volume_rank": idx,
+            "quote_volume": 1000.0,
+        }
+        for idx, symbol in enumerate(list_professional_universe(), start=1)
+    ]
+
+    result = validate_professional_universe_catalog(catalog)
+
+    assert result["is_valid"] is True
+    assert result["missing"] == []
+    assert result["inactive"] == []
+
+
+def test_build_professional_universe_frame_marks_ready_and_runtime_state():
+    catalog = [
+        {
+            "symbol": symbol,
+            "status": "TRADING",
+            "quote_volume_rank": idx,
+            "quote_volume": float(1000 - idx),
+        }
+        for idx, symbol in enumerate(list_professional_universe(), start=1)
+    ]
+    rows = build_professional_universe_frame(
+        catalog,
+        ready_symbols=["BTCUSDT"],
+        runtime_symbols=["BTCUSDT", "ETHUSDT"],
+        load_jobs=[{"symbol": "ETHUSDT", "status": "queued"}],
+        latest_candles={"BTCUSDT": datetime(2024, 1, 1, tzinfo=timezone.utc)},
+    )
+
+    by_symbol = {row["symbol"]: row for row in rows}
+    assert by_symbol["BTCUSDT"]["local_history"] == "ready"
+    assert by_symbol["BTCUSDT"]["runtime_watchlist"] == "active"
+    assert by_symbol["ETHUSDT"]["load_status"] == "queued"
+    assert by_symbol["SOLUSDT"]["runtime_watchlist"] == "research only"
 
 
 def test_runtime_watchlist_seeds_from_config_defaults():
@@ -181,6 +246,61 @@ def test_download_archive_day_supports_microsecond_spot_timestamps():
 
     assert len(rows) == 1
     assert rows[0]["open_time"] == datetime(2026, 4, 18, 0, 0, tzinfo=timezone.utc)
+
+
+def test_download_archive_day_reads_mirror_cache_before_network(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(history_module, "BINANCE_HISTORY_CACHE_DIR", cache_dir)
+    cache_file = (
+        cache_dir
+        / "spot"
+        / "daily"
+        / "klines"
+        / "DOGEUSDT"
+        / "1m"
+        / "DOGEUSDT-1m-2026-04-18.zip"
+    )
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_bytes(
+        _archive_zip_bytes(
+            "DOGEUSDT-1m-2026-04-18.csv",
+            "1776470400000000,0.1500,0.1600,0.1400,0.1550,1000,1776470459999999,0,0,0,0,0\n",
+        )
+    )
+
+    with patch("market_data.history.requests.get") as get_mock:
+        rows = _download_archive_day("DOGEUSDT", datetime(2026, 4, 18, tzinfo=timezone.utc), "1m")
+
+    get_mock.assert_not_called()
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "DOGEUSDT"
+
+
+def test_download_archive_day_writes_mirror_cache_on_network_fetch(monkeypatch, tmp_path):
+    monkeypatch.setattr(history_module, "BINANCE_HISTORY_CACHE_DIR", tmp_path / "cache")
+    response = MagicMock()
+    response.status_code = 200
+    response.content = _archive_zip_bytes(
+        "DOGEUSDT-1m-2026-04-18.csv",
+        "1776470400000000,0.1500,0.1600,0.1400,0.1550,1000,1776470459999999,0,0,0,0,0\n",
+    )
+    response.raise_for_status = MagicMock()
+
+    with patch("market_data.history.requests.get", return_value=response):
+        rows = _download_archive_day("DOGEUSDT", datetime(2026, 4, 18, tzinfo=timezone.utc), "1m")
+
+    cache_file = (
+        tmp_path
+        / "cache"
+        / "spot"
+        / "daily"
+        / "klines"
+        / "DOGEUSDT"
+        / "1m"
+        / "DOGEUSDT-1m-2026-04-18.zip"
+    )
+    assert len(rows) == 1
+    assert cache_file.exists()
 
 
 def test_sync_recent_is_idempotent_when_no_new_rows():

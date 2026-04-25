@@ -135,6 +135,11 @@ from market_data.history import (
     get_latest_candle_time,
     sync_recent as sync_recent_history,
 )
+from market_data.professional_universe import (
+    build_professional_universe_frame,
+    list_professional_universe,
+    validate_professional_universe_catalog,
+)
 from market_data.runtime_watchlist import list_runtime_symbols, set_runtime_symbols
 from market_data.symbol_readiness import (
     list_load_jobs as list_symbol_load_jobs,
@@ -556,6 +561,35 @@ def load_ready_symbols_cached() -> list[str]:
 def load_symbol_jobs() -> list[dict]:
     """Return symbol load jobs, most recent first."""
     return list_symbol_load_jobs()
+
+
+@st.cache_data(ttl=30)
+def load_professional_universe_frame_cached(
+    catalog_rows: tuple[tuple[str, str, int | None, float], ...],
+    ready_symbols_tuple: tuple[str, ...],
+    runtime_symbols_tuple: tuple[str, ...],
+    jobs_tuple: tuple[tuple[str, str], ...],
+) -> pd.DataFrame:
+    """Return Professional 20 readiness rows for dashboard display."""
+    catalog = [
+        {
+            "symbol": symbol,
+            "status": status,
+            "quote_volume_rank": rank,
+            "quote_volume": volume,
+        }
+        for symbol, status, rank, volume in catalog_rows
+    ]
+    jobs = [{"symbol": symbol, "status": status} for symbol, status in jobs_tuple]
+    latest = {symbol: get_latest_candle_time(symbol) for symbol in list_professional_universe()}
+    rows = build_professional_universe_frame(
+        catalog,
+        list(ready_symbols_tuple),
+        list(runtime_symbols_tuple),
+        jobs,
+        latest,
+    )
+    return pd.DataFrame(rows)
 
 
 def render_runtime_monitor_panel(
@@ -1129,6 +1163,104 @@ with st.sidebar.expander(f"Load New Symbol ({len(_unloaded_symbols)} available)"
         st.markdown("**Recently Loaded**")
         for _j in _recently_ready:
             st.caption(f"✅ {_j['symbol']}")
+
+st.sidebar.markdown("---")
+professional_universe = list_professional_universe()
+professional_validation = validate_professional_universe_catalog(symbol_catalog)
+_catalog_tuple = tuple(
+    (
+        str(row.get("symbol", "")),
+        str(row.get("status", "")),
+        row.get("quote_volume_rank"),
+        float(row.get("quote_volume", 0.0) or 0.0),
+    )
+    for row in symbol_catalog
+)
+_job_tuple = tuple((str(job.get("symbol", "")), str(job.get("status", ""))) for job in load_symbol_jobs())
+professional_frame = load_professional_universe_frame_cached(
+    _catalog_tuple,
+    tuple(ready_symbols),
+    tuple(runtime_watchlist),
+    _job_tuple,
+)
+with st.sidebar.expander("Professional 20 Research Universe", expanded=False):
+    st.caption(
+        "Long-term research tracker. Queue history for all 20, then promote only selected symbols "
+        "into the smaller paper/live runtime watchlist."
+    )
+    if professional_validation["is_valid"]:
+        st.success("Professional 20 active on Binance spot USDT.")
+    else:
+        st.warning("Professional 20 needs review against the latest Binance catalog.")
+        if professional_validation["missing"]:
+            st.caption("Missing: " + ", ".join(professional_validation["missing"]))
+        if professional_validation["inactive"]:
+            st.caption("Inactive: " + ", ".join(professional_validation["inactive"]))
+
+    loaded_count = int((professional_frame["local_history"] == "ready").sum()) if not professional_frame.empty else 0
+    runtime_count = int((professional_frame["runtime_watchlist"] == "active").sum()) if not professional_frame.empty else 0
+    st.caption(f"History ready: {loaded_count}/20 · runtime active: {runtime_count}/20")
+
+    if st.button("Queue Professional 20 History", key="queue_professional_20", use_container_width=True):
+        queued = []
+        for _sym in professional_universe:
+            _job = queue_symbol_load(_sym)
+            queued.append(f"{_sym}:{_job['status']}")
+        load_symbol_jobs.clear()
+        load_ready_symbols_cached.clear()
+        load_professional_universe_frame_cached.clear()
+        st.info("Queued/reused jobs: " + ", ".join(queued[:20]))
+        st.rerun()
+
+    _runtime_candidates = [sym for sym in professional_universe if sym in available_symbols]
+    _current_prof_runtime = [sym for sym in runtime_watchlist if sym in _runtime_candidates]
+    _prof_runtime_selection = st.multiselect(
+        "Promote to runtime watchlist (max 5 recommended)",
+        _runtime_candidates,
+        default=_current_prof_runtime[:5],
+        key="professional_runtime_picker",
+    )
+    if len(_prof_runtime_selection) > 5:
+        st.warning("Jetson-safe default is 3-5 active runtime symbols. Reduce the selection before saving.")
+    if st.button(
+        "Save Professional Runtime Symbols",
+        key="save_professional_runtime_symbols",
+        disabled=len(_prof_runtime_selection) > 5,
+        use_container_width=True,
+    ):
+        set_runtime_symbols(list(_prof_runtime_selection))
+        load_professional_universe_frame_cached.clear()
+        load_ready_symbol_health.clear()
+        st.success("Runtime watchlist updated from Professional 20 selection.")
+        st.rerun()
+
+    if not professional_frame.empty:
+        display_professional = professional_frame.copy()
+        if "quote_volume" in display_professional.columns:
+            display_professional["quote_volume"] = display_professional["quote_volume"].apply(
+                lambda value: f"{float(value):,.0f}"
+            )
+        if "latest_candle_ts" in display_professional.columns:
+            display_professional["latest_candle_ts"] = pd.to_datetime(
+                display_professional["latest_candle_ts"],
+                errors="coerce",
+            ).dt.strftime("%Y-%m-%d %H:%M")
+            display_professional["latest_candle_ts"] = display_professional["latest_candle_ts"].fillna("No data")
+        st.dataframe(
+            display_professional[
+                [
+                    "symbol",
+                    "binance_status",
+                    "quote_volume_rank",
+                    "local_history",
+                    "runtime_watchlist",
+                    "load_status",
+                    "latest_candle_ts",
+                ]
+            ],
+            hide_index=True,
+            width="stretch",
+        )
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**MVP Data Health**")
