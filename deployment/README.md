@@ -174,12 +174,16 @@ After it finishes, use `run_all.ps1` or launch the dashboard/runtime manually fr
 ```bash
 sudo systemctl status crypto-trader    # health check
 sudo systemctl status crypto-trader-dashboard
+sudo systemctl status crypto-trader-fan
 sudo systemctl restart crypto-trader   # restart
 sudo systemctl restart crypto-trader-dashboard
+sudo systemctl restart crypto-trader-fan
 sudo systemctl stop crypto-trader      # stop
 sudo systemctl stop crypto-trader-dashboard
+sudo systemctl stop crypto-trader-fan
 journalctl -fu crypto-trader           # follow live logs
 journalctl -fu crypto-trader-dashboard
+journalctl -fu crypto-trader-fan
 journalctl -u crypto-trader --since "1 hour ago"  # recent logs
 ```
 
@@ -203,6 +207,24 @@ Use `Runtime Monitor -> Live Data Freshness` as the quick operator proof that th
 - last trade timestamp
 - last candle timestamp per runtime symbol
 - candle age in minutes
+
+## Fan Control
+
+Jetson Nano can now run a simple hysteresis-based fan controller as a system service:
+
+```bash
+sudo systemctl status crypto-trader-fan --no-pager
+journalctl -fu crypto-trader-fan
+```
+
+Behavior:
+- uses `thermal-fan-est` when available
+- turns fan to medium PWM at `50C`
+- turns fan to high PWM at `58C`
+- drops from high to medium at `52C`
+- turns fan fully off once temperature cools to `42C`
+
+This avoids constant fan flapping while still responding before the board gets hot.
 
 ## Backups And Restore
 

@@ -5,6 +5,16 @@ Update this file after every meaningful development slice, especially when a tes
 
 ---
 
+## 2026-04-25 Jetson Thermal Control — Appliance deployment should include board cooling, not only app uptime
+**What happened:** The Jetson Nano exposed a simple writable PWM fan interface at `/sys/devices/pwm-fan/target_pwm`, and a dedicated `crypto-trader-fan.service` was added to manage it automatically from temperature sensors.
+**Why it happened:** A deployed Nano can run the trader and dashboard continuously, but uptime alone is not enough if the board can still heat-soak in a warm environment. Thermal protection needed to be treated as part of deployment hardening, not as a manual operator habit.
+**Impact:** The Jetson is now closer to a real unattended appliance. The runtime, dashboard, and thermal fan control all survive reboots under `systemd`, and the board will spin the fan up only when needed instead of leaving it always-on.
+**What we changed:** Added `deployment/jetson_fan_control.py` with hysteresis-based state transitions, added `deployment/crypto-trader-fan.service`, updated installer scripts and deployment docs, deployed the service in place over SSH/SFTP, and verified it selected `off` at the current `39.2C` control temperature with PWM `0`.
+**What to try next:** Leave the Jetson running in the real location and monitor `journalctl -fu crypto-trader-fan` plus temperatures from `tegrastats` during warmer hours. If the environment is hotter than expected, tune the thresholds rather than rewriting the control model.
+**Status:** RESOLVED
+
+---
+
 ## 2026-04-25 Jetson Dashboard Service — Operator visibility needs its own supervisor, not only a background shell
 **What happened:** The Jetson dashboard was first launched with `nohup`, which was enough for quick validation but not a real deployment posture. A dedicated `crypto-trader-dashboard.service` was then added, installed, enabled, and validated on the device, and the dashboard is now reachable at `http://192.168.100.30:8501`.
 **Why it happened:** A deployed appliance should not depend on a remembered SSH command or an orphaned shell process for its operator console. The trader runtime was already under `systemd`; the dashboard needed the same treatment so the liveness panel and workbench remained available after disconnects and reboots.

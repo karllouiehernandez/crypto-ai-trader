@@ -10,11 +10,11 @@ Both Codex and Claude Code must read this file first and update it last, and the
 | Field | Value |
 |-------|-------|
 | **Last active agent** | Codex |
-| **Last updated** | 2026-04-25 (Jetson Streamlit systemd service added and validated) |
+| **Last updated** | 2026-04-25 (Jetson thermal fan service added and validated) |
 | **Active sprint** | Sprint 42 — `#44` — Operational paper-evidence follow-through (background observation thread) |
-| **Latest completed sprint** | Sprint 48.3 — GitHub issue creation blocked by integration — Jetson Streamlit systemd Service |
+| **Latest completed sprint** | Sprint 48.4 — GitHub issue creation blocked by integration — Jetson Thermal Fan Service |
 | **Sprint 40** | `#42` — Done on board |
-| **Tests** | `pytest tests/ -q` → **704 passed, 4 warnings** on 2026-04-25; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-25; Jetson services `crypto-trader` + `crypto-trader-dashboard` both active on 2026-04-25 and dashboard reachable at `http://192.168.100.30:8501` |
+| **Tests** | `pytest tests/ -q` → **707 passed, 4 warnings** on 2026-04-25; `python run_live.py --help` → safe CLI help exit on 2026-04-23; `python run_ui_agent.py --ui-only --url http://localhost:8791` → **64/64 PASS** on 2026-04-23 (temporary headless verification server); focused headed Sprint 45 check → **PASS** on 2026-04-23; `python run_ui_agent.py --data-only` → **0 FAIL, 0 PARTIAL, 1 SKIP** on 2026-04-23; `python -m deployment.jetson_ops health` → **Ready** on required checks on 2026-04-25; Jetson services `crypto-trader` + `crypto-trader-dashboard` + `crypto-trader-fan` active on 2026-04-25 and dashboard reachable at `http://192.168.100.30:8501` |
 | **Branch** | `codex/sprint-27-responsive-chart` (shared working branch) |
 | **GitHub repo** | https://github.com/karllouiehernandez/crypto-ai-trader |
 | **GitHub Projects board** | https://github.com/users/karllouiehernandez/projects/1 |
@@ -22,11 +22,45 @@ Both Codex and Claude Code must read this file first and update it last, and the
 
 ---
 
-## Resume Here — Sprint 42 Background + Post-Sprint-48.3 Baseline
+## Resume Here — Sprint 42 Background + Post-Sprint-48.4 Baseline
 
 Sprint 48 is completed locally as the Jetson deployment bootstrap sprint, and Sprint 48.2 added a runtime liveness surface for the workbench. Sprint 42 remains the background operational thread because reviewed paper artifact `#8` still needs real tagged BUY and SELL trades before deterministic paper evidence can advance.
 
 Goal: lock the deployed base application so future post-deploy work focuses on creating compatible strategies rather than patching core app code.
+
+### Latest Completed — Sprint 48.4 (2026-04-25)
+
+- **What changed**
+  - Added [deployment/jetson_fan_control.py](deployment/jetson_fan_control.py):
+    - reads `thermal-fan-est` when available, otherwise falls back across Jetson thermal zones
+    - applies hysteresis so the fan does not flap around thresholds
+    - default behavior:
+      - medium fan at `50C`
+      - high fan at `58C`
+      - back to medium at `52C`
+      - fully off once cooled to `42C`
+  - Added [deployment/crypto-trader-fan.service](deployment/crypto-trader-fan.service):
+    - root-owned `systemd` service for PWM fan control
+  - Updated Jetson installer paths:
+    - [deployment/install.sh](deployment/install.sh)
+    - [deployment/install_from_bundle.sh](deployment/install_from_bundle.sh)
+    - [deployment/bootstrap_python310_install.sh](deployment/bootstrap_python310_install.sh)
+    - all now install and enable `crypto-trader-fan`
+  - Updated [deployment/README.md](deployment/README.md) with fan-service operations and thresholds
+  - Added regression coverage in [tests/test_jetson_fan_control.py](tests/test_jetson_fan_control.py)
+- **What was verified**
+  - `pytest tests/test_jetson_fan_control.py -q` → **3 passed**
+  - `python -m py_compile deployment/jetson_fan_control.py tests/test_jetson_fan_control.py` → clean
+  - `pytest tests/ -q` → **707 passed, 4 warnings**
+  - Deployed to Jetson in place over SSH/SFTP
+  - `crypto-trader-fan.service` active under `systemd`
+  - Jetson fan controller selected `off` at `39.2C` control temperature and PWM currently reads `0`
+- **What remains next**
+  - Keep Sprint 42 as the background operational observation thread:
+    - Jetson runtime, dashboard, and fan control now all survive reboots
+    - active paper target artifact `#8` is still valid on-device
+    - snapshots are advancing, but artifact `#8` still has `0` tagged trades
+    - the next strategy-focused corrective sprint should still target entry scarcity / market fit if that remains true after a longer observation window
 
 ### Latest Completed — Sprint 48.3 (2026-04-25)
 

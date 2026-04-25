@@ -1,0 +1,21 @@
+[Unit]
+Description=Crypto AI Trader Jetson Fan Control
+After=multi-user.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/jetson/crypto_ai_trader
+ExecStart=/usr/bin/python3 /home/jetson/crypto_ai_trader/deployment/jetson_fan_control.py
+Restart=always
+RestartSec=5s
+KillSignal=SIGINT
+TimeoutStopSec=15s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-trader-fan
+
+[Install]
+WantedBy=multi-user.target

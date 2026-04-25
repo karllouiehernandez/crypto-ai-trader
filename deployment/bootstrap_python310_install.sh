@@ -14,6 +14,7 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/crypto_ai_trader}"
 VENV_DIR="$INSTALL_DIR/.venv"
 SERVICE_NAME="crypto-trader"
 DASHBOARD_SERVICE_NAME="crypto-trader-dashboard"
+FAN_SERVICE_NAME="crypto-trader-fan"
 MAKE_JOBS="${MAKE_JOBS:-2}"
 
 echo "=== Crypto AI Trader — Jetson Python 3.10 Bootstrap ==="
@@ -90,6 +91,8 @@ sed "s/User=jetson/User=$(whoami)/g; \
     | sudo tee /etc/systemd/system/$DASHBOARD_SERVICE_NAME.service > /dev/null
 
 sudo systemctl enable "$DASHBOARD_SERVICE_NAME"
+sudo cp "$INSTALL_DIR/deployment/crypto-trader-fan.service" /etc/systemd/system/$FAN_SERVICE_NAME.service
+sudo systemctl enable "$FAN_SERVICE_NAME"
 if [[ -f "$INSTALL_DIR/deployment/crypto-trader.logrotate" ]]; then
     sudo cp "$INSTALL_DIR/deployment/crypto-trader.logrotate" /etc/logrotate.d/crypto-trader
 fi
@@ -108,6 +111,8 @@ echo "  2. Start service:     sudo systemctl start $SERVICE_NAME"
 echo "  3. Start dashboard:   sudo systemctl start $DASHBOARD_SERVICE_NAME"
 echo "  4. Check trader:      sudo systemctl status $SERVICE_NAME --no-pager"
 echo "  5. Check dashboard:   sudo systemctl status $DASHBOARD_SERVICE_NAME --no-pager"
-echo "  6. Follow trader:     journalctl -fu $SERVICE_NAME"
-echo "  7. Follow dashboard:  journalctl -fu $DASHBOARD_SERVICE_NAME"
-echo "  8. Visit dashboard:   http://$(hostname -I | awk '{print $1}'):8501"
+echo "  6. Check fan:         sudo systemctl status $FAN_SERVICE_NAME --no-pager"
+echo "  7. Follow trader:     journalctl -fu $SERVICE_NAME"
+echo "  8. Follow dashboard:  journalctl -fu $DASHBOARD_SERVICE_NAME"
+echo "  9. Follow fan:        journalctl -fu $FAN_SERVICE_NAME"
+echo " 10. Visit dashboard:   http://$(hostname -I | awk '{print $1}'):8501"

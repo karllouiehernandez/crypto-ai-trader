@@ -14,6 +14,7 @@ INSTALL_DIR="$HOME/crypto_ai_trader"
 VENV_DIR="$INSTALL_DIR/.venv"
 SERVICE_NAME="crypto-trader"
 DASHBOARD_SERVICE_NAME="crypto-trader-dashboard"
+FAN_SERVICE_NAME="crypto-trader-fan"
 
 if [[ -z "$BUNDLE_DIR" ]]; then
     echo "Bundle path is required."
@@ -102,6 +103,10 @@ sed "s/User=jetson/User=$(whoami)/g; \
 sudo systemctl enable "$DASHBOARD_SERVICE_NAME"
 echo "  Dashboard service installed and enabled (will start on boot)."
 
+sudo cp "$INSTALL_DIR/deployment/crypto-trader-fan.service" /etc/systemd/system/$FAN_SERVICE_NAME.service
+sudo systemctl enable "$FAN_SERVICE_NAME"
+echo "  Fan control service installed and enabled (will start on boot)."
+
 if [[ -f "$INSTALL_DIR/deployment/crypto-trader.logrotate" ]]; then
     sudo cp "$INSTALL_DIR/deployment/crypto-trader.logrotate" /etc/logrotate.d/crypto-trader
     echo "  Logrotate template installed at /etc/logrotate.d/crypto-trader."
@@ -121,5 +126,6 @@ echo "  2. Start the trader:       sudo systemctl start $SERVICE_NAME"
 echo "  3. Start dashboard:        sudo systemctl start $DASHBOARD_SERVICE_NAME"
 echo "  4. Watch trader logs:      journalctl -fu $SERVICE_NAME"
 echo "  5. Watch dashboard logs:   journalctl -fu $DASHBOARD_SERVICE_NAME"
-echo "  6. Visit dashboard:        http://$(hostname -I | awk '{print $1}'):8501"
-echo "  7. Optional MCP server:    cd $INSTALL_DIR && $VENV_DIR/bin/python run_mcp_server.py"
+echo "  6. Watch fan logs:         journalctl -fu $FAN_SERVICE_NAME"
+echo "  7. Visit dashboard:        http://$(hostname -I | awk '{print $1}'):8501"
+echo "  8. Optional MCP server:    cd $INSTALL_DIR && $VENV_DIR/bin/python run_mcp_server.py"
